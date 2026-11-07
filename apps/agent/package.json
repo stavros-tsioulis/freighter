@@ -1,0 +1,31 @@
+{
+  "name": "@freighter/agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@freighter/core": "workspace:*",
+    "@freighter/protocol": "workspace:*",
+    "@freighter/systemd": "workspace:*",
+    "@freighter/haproxy": "workspace:*",
+    "@freighter/manifest": "workspace:*",
+    "zod": "^3.25.0",
+    "@freighter/pki": "workspace:*",
+    "yaml": "^2.8.0"
+  },
+  "devDependencies": {
+    "@freighter/tsconfig": "workspace:*",
+    "@freighter/manifest": "workspace:*"
+  },
+  "bin": {
+    "freighter-agent": "./src/main.ts"
+  }
+}

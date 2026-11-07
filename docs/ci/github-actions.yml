@@ -1,0 +1,42 @@
+# Build in GitHub Actions and deploy the result to Freighter (no server-side build, no deploy key, no webhook).
+# Repository secrets/variables needed:  secrets.FREIGHTER_TOKEN (a *deployer* token)  and  vars.FREIGHTER_URL (https://freighter.example.com)
+# The artifact is a .tar.gz with app.yaml at its root; name: in app.yaml decides which app is deployed.
+name: deploy
+on:
+  push:
+    branches: [main]
+
+concurrency: { group: deploy-${{ github.ref }}, cancel-in-progress: false }
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # --- your build ---
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: corepack enable && pnpm install --frozen-lockfile && pnpm build
+      # --- package: whatever the server needs to run the app (app.yaml, build output, production deps) ---
+      - name: Package
+        run: tar -czf artifact.tar.gz --exclude=.git --exclude=artifact.tar.gz .
+      - name: Upload and wait for the deployment
+        env:
+          FREIGHTER_URL: ${{ vars.FREIGHTER_URL }}
+          FREIGHTER_TOKEN: ${{ secrets.FREIGHTER_TOKEN }}
+          APP: myapp                      # must equal name: in app.yaml
+        run: |
+          set -euo pipefail
+          id=$(curl -fsS -X POST "$FREIGHTER_URL/api/v1/apps/$APP/deployments" \
+                 -H "Authorization: Bearer $FREIGHTER_TOKEN" -H "Content-Type: application/gzip" \
+                 --data-binary @artifact.tar.gz | jq -r .id)
+          echo "deployment $id"
+          for _ in $(seq 1 300); do
+            d=$(curl -fsS "$FREIGHTER_URL/api/v1/deployments/$id" -H "Authorization: Bearer $FREIGHTER_TOKEN")
+            case "$(jq -r .status <<<"$d")" in
+              success) echo "deployed $(jq -r .releaseId <<<"$d")"; exit 0 ;;
+              failed)  echo "::error::$(jq -r .error <<<"$d")"; exit 1 ;;
+            esac
+            sleep 2
+          done
+          echo "::error::timed out waiting for the deployment"; exit 1

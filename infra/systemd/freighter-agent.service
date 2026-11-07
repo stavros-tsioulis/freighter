@@ -1,0 +1,19 @@
+[Unit]
+Description=Freighter agent (privileged helper)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/freighter-agent
+Restart=on-failure
+RestartSec=2
+# /run/freighter holds the unix socket; the agent chgrp's it to the "freighter" group.
+RuntimeDirectory=freighter
+RuntimeDirectoryMode=0750
+# The agent needs root (systemctl, useradd, haproxy, certbot), so keep what it does not need locked down.
+NoNewPrivileges=false
+PrivateTmp=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

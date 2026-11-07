@@ -1,0 +1,39 @@
+# Build in GitLab CI and deploy the result to Freighter (no server-side build, no deploy key, no webhook).
+# CI/CD variables needed:  FREIGHTER_URL (https://freighter.example.com)  and  FREIGHTER_TOKEN (a *deployer* token, masked).
+# The artifact is a .tar.gz with app.yaml at its root; name: in app.yaml decides which app is deployed.
+stages: [build, deploy]
+
+build:
+  stage: build
+  image: node:24
+  script:
+    - corepack enable && pnpm install --frozen-lockfile && pnpm build
+    - tar -czf artifact.tar.gz --exclude=.git --exclude=artifact.tar.gz .
+  artifacts: { paths: [artifact.tar.gz], expire_in: 1 day }
+  rules: [{ if: '$CI_COMMIT_BRANCH == "main"' }]
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs: [build]
+  resource_group: production            # one deployment at a time
+  variables:
+    APP: myapp                          # must equal name: in app.yaml
+  before_script: [apk add --no-cache curl jq]
+  script:
+    - |
+      set -eu
+      id=$(curl -fsS -X POST "$FREIGHTER_URL/api/v1/apps/$APP/deployments" \
+             -H "Authorization: Bearer $FREIGHTER_TOKEN" -H "Content-Type: application/gzip" \
+             --data-binary @artifact.tar.gz | jq -r .id)
+      echo "deployment $id"
+      for i in $(seq 1 300); do
+        d=$(curl -fsS "$FREIGHTER_URL/api/v1/deployments/$id" -H "Authorization: Bearer $FREIGHTER_TOKEN")
+        case "$(echo "$d" | jq -r .status)" in
+          success) echo "deployed $(echo "$d" | jq -r .releaseId)"; exit 0 ;;
+          failed)  echo "deployment failed: $(echo "$d" | jq -r .error)"; exit 1 ;;
+        esac
+        sleep 2
+      done
+      echo "timed out waiting for the deployment"; exit 1
+  rules: [{ if: '$CI_COMMIT_BRANCH == "main"' }]

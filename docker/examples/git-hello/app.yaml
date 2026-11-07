@@ -1,0 +1,17 @@
+name: gitdemo
+
+services:
+  web:
+    command: node server.mjs
+    resources: { memory: 128M }
+    healthcheck: { path: /health, timeout: 20s }
+
+# Runs on the server in a sandbox (unprivileged user, CPU/memory/time limits) every time a push is deployed.
+build:
+  timeout: 2m
+  commands:
+    - echo "built at $(date -u +%H:%M:%S) by $(id -un)" > BUILT
+    - if ls /srv/apps >/dev/null 2>&1; then echo "the sandbox should hide /srv/apps" >&2; exit 1; fi
+    - test -f message.txt
+
+# Domains are not set here: add them on the app (dashboard → app → Domains, `freighter domain add`, or the API).

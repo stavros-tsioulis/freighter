@@ -1,0 +1,20 @@
+{
+  "name": "@freighter/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@freighter/manifest": "workspace:*",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@freighter/tsconfig": "workspace:*"
+  }
+}

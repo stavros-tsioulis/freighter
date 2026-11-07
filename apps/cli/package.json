@@ -1,0 +1,30 @@
+{
+  "name": "@freighter/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests",
+    "dev": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@freighter/core": "workspace:*",
+    "@freighter/manifest": "workspace:*",
+    "@freighter/systemd": "workspace:*",
+    "citty": "^0.1.6",
+    "zod": "^3.25.0",
+    "@freighter/haproxy": "workspace:*",
+    "@freighter/registry": "workspace:*",
+    "@freighter/pki": "workspace:*",
+    "@freighter/api": "workspace:*"
+  },
+  "devDependencies": {
+    "@freighter/tsconfig": "workspace:*",
+    "h3": "^1.15.0",
+    "@freighter/protocol": "workspace:*"
+  },
+  "bin": {
+    "freighter": "./src/cli.ts"
+  }
+}

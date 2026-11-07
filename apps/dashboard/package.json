@@ -1,0 +1,36 @@
+{
+  "name": "@freighter/dashboard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "postinstall": "nuxt prepare",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "nuxt typecheck"
+  },
+  "dependencies": {
+    "@fontsource/barlow": "5.3.0",
+    "@freighter/api": "workspace:*",
+    "@freighter/core": "workspace:*",
+    "@freighter/manifest": "workspace:*",
+    "@freighter/pki": "workspace:*",
+    "@freighter/protocol": "workspace:*",
+    "@freighter/registry": "workspace:*",
+    "@primeuix/themes": "3.1.0",
+    "@primevue/nuxt-module": "5.0.4",
+    "@tailwindcss/vite": "4.3.4",
+    "@tanstack/vue-query": "5.106.1",
+    "nuxt": "^4.0.0",
+    "primeicons": "8.0.2",
+    "primevue": "5.0.4",
+    "tailwindcss": "4.3.4",
+    "tailwindcss-primeui": "0.6.1",
+    "vue": "^3.5.0"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.0",
+    "vue-tsc": "3.3.14"
+  }
+}

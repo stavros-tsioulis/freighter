@@ -1,0 +1,7 @@
+[Unit]
+Description=Renew Freighter TLS certificates
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/freighter certs renew

@@ -1,0 +1,26 @@
+{
+  "name": "@freighter/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./config": "./src/config.ts",
+    "./testing": "./test/helpers.ts",
+    "./testing/git": "./test/gitrepo.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@freighter/manifest": "workspace:*",
+    "@freighter/systemd": "workspace:*",
+    "@freighter/haproxy": "workspace:*",
+    "yaml": "^2.8.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@freighter/tsconfig": "workspace:*"
+  }
+}

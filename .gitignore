@@ -1,0 +1,11 @@
+node_modules
+dist
+.nuxt
+.output
+.data
+*.log
+.DS_Store
+.env*
+!.env.example
+docker/workspace/*
+!docker/workspace/.gitkeep

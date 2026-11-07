@@ -1,0 +1,38 @@
+name: myapp
+
+source:
+  type: git
+  repository: git@github.com:org/myapp.git
+  branch: main
+
+build:
+  commands:
+    - pnpm install --frozen-lockfile
+    - pnpm build
+
+services:
+  web:
+    command: node .output/server/index.mjs
+    port: 3100
+    replicas: 1
+    resources:
+      memory: 256M
+      cpu: 0.8
+    healthcheck:
+      path: /health
+      interval: 10s
+    restart: on-failure
+
+  worker:
+    command: node dist/worker.js
+    resources:
+      memory: 128M
+
+# Domains are not set here: add them on the app (dashboard → app → Domains, `freighter domain add`, or the API).
+
+environment:
+  NODE_ENV: production
+
+secrets:
+  - DATABASE_URL
+  - SESSION_SECRET

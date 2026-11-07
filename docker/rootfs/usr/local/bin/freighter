@@ -1,0 +1,5 @@
+#!/bin/sh
+# Freighter CLI (runs from the workspace in /opt/freighter).
+# Node reads package.json from the working directory; if we were started somewhere unreadable (e.g. sudo -u from /root), move.
+[ -x "$PWD" ] && [ -r "$PWD" ] || cd /
+exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/cli/src/cli.ts "$@"

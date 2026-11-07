@@ -1,0 +1,33 @@
+#!/bin/sh
+# Helper for `lab.sh git-demo` / `git-push`. Runs as root inside the control server, which doubles as the "git host":
+# bare repositories live in /home/git/repos and are reached over SSH as git@<host>:repos/<app>.git with the lab key.
+set -eu
+KEY=/opt/freighter-lab/lab_key
+export GIT_SSH_COMMAND="ssh -i $KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+app=${2:-}
+case "${1:-}" in
+  init) # init <app> <example>: a bare repository plus a working clone in /work/<app>, seeded from an example app
+    ex=${3:?usage: lab-git-demo init <app> <example>}
+    rm -rf "/home/git/repos/$app.git" "/home/git/secrets/$app" "/work/$app"
+    git init --bare -q -b main "/home/git/repos/$app.git"
+    install -m 0755 /usr/local/bin/lab-post-receive "/home/git/repos/$app.git/hooks/post-receive"
+    chown -R git:git "/home/git/repos/$app.git"
+    git clone -q "git@localhost:repos/$app.git" "/work/$app" 2>/dev/null
+    cp -r "/opt/freighter-lab/examples/$ex/." "/work/$app/"
+    cd "/work/$app"
+    git config user.name "Lab Dev"
+    git config user.email dev@lab.local
+    git checkout -q -b main 2>/dev/null || true
+    git add -A
+    git commit -q -m "Initial commit"
+    git push -q origin main ;;   # no secret yet, so the hook stays quiet; the first deploy is started through the API
+  secret) install -m 0600 -o git -g git /dev/null "/home/git/secrets/$app"; printf '%s' "${3:?secret}" > "/home/git/secrets/$app" ;;
+  push) # commit whatever changed in the working clone and push it (the post-receive hook sends the webhook)
+    cd "/work/$app"
+    git add -A
+    git diff --cached --quiet || git commit -q -m "${3:-Update from the lab}"   # nothing new? just push what exists
+    git push -q origin main ;;
+  break) sed -i 's/- test -f message.txt/- exit 9/' "/work/$app/app.yaml" ;;
+  message) printf '%s\n' "${3:?text}" > "/work/$app/message.txt" ;;
+  *) echo "usage: lab-git-demo init <app> <example> | secret <app> <secret> | push <app> [msg] | break <app> | message <app> <text>" >&2; exit 2 ;;
+esac

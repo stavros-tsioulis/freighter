@@ -1,0 +1,2 @@
+# Load Freighter's generated backends alongside the main config (this is the "extra -f" from `freighter haproxy setup`).
+EXTRAOPTS="-S /run/haproxy-master.sock -f /etc/haproxy/freighter/backends.cfg"

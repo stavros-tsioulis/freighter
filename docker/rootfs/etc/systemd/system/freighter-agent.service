@@ -1,0 +1,14 @@
+[Unit]
+Description=Freighter agent (privileged helper)
+After=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/freighter-agent
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=freighter
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

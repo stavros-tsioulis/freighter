@@ -1,0 +1,15 @@
+#!/bin/sh
+# Plays the git host's webhook for the lab: after every push, POST a push event to Freighter, signed with the app's
+# secret exactly like GitHub does (X-Hub-Signature-256 = HMAC-SHA256 of the body). Installed in each bare repository.
+app=$(basename "$(pwd)" .git)
+secret_file=/home/git/secrets/$app
+[ -r "$secret_file" ] || exit 0          # not linked yet: nothing to notify
+secret=$(cat "$secret_file")
+while read -r old new ref; do
+  body=$(printf '{"ref":"%s","after":"%s","deleted":false}' "$ref" "$new")
+  sig=$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$secret" | sed 's/^.* //')
+  curl -s -X POST "http://localhost:3000/api/v1/hooks/$app" \
+    -H 'content-type: application/json' -H 'x-github-event: push' -H "x-hub-signature-256: sha256=$sig" \
+    -d "$body" >/dev/null
+  echo "freighter: push to $ref sent to the webhook"
+done

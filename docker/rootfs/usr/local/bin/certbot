@@ -1,0 +1,19 @@
+#!/bin/sh
+# ============================ LAB SHIM - NOT REAL CERTBOT ============================
+# There is no public DNS or Internet-reachable port 80 in this sandbox, so Let's Encrypt cannot issue anything.
+# This stand-in understands just the flags Freighter passes and writes a self-signed certificate where certbot
+# would, so that the `tls: auto` code path (issue -> combine PEM -> HAProxy reload -> renewal) can be exercised.
+# =====================================================================================
+host=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --cert-name|-d) host="$2"; shift ;;
+  esac
+  shift
+done
+[ -n "$host" ] || { echo "certbot (lab shim): no -d/--cert-name given" >&2; exit 2; }
+dir="/etc/letsencrypt/live/$host"
+mkdir -p "$dir"
+openssl req -x509 -newkey rsa:2048 -nodes -days 90 -subj "/CN=$host" -addext "subjectAltName=DNS:$host" \
+  -keyout "$dir/privkey.pem" -out "$dir/fullchain.pem" 2>/dev/null || { echo "certbot (lab shim): openssl failed" >&2; exit 1; }
+echo "certbot (lab shim): wrote a SELF-SIGNED certificate for $host (valid 90 days)"

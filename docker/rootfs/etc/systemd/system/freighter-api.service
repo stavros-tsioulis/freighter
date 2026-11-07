@@ -1,0 +1,23 @@
+[Unit]
+Description=Freighter API and dashboard
+After=freighter-agent.service
+Wants=freighter-agent.service
+
+[Service]
+Type=simple
+User=freighter
+Group=freighter
+WorkingDirectory=/opt/freighter/apps/dashboard
+ExecStart=/usr/local/bin/node .output/server/index.mjs
+Environment=NITRO_HOST=0.0.0.0
+Environment=NITRO_PORT=3000
+Restart=on-failure
+RestartSec=2
+StateDirectory=freighter
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

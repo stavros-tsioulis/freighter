@@ -1,0 +1,7 @@
+# Host configuration for the lab server (every key is optional; these are the ones worth changing in a sandbox).
+acme:
+  email: lab@example.com      # required for `tls: auto`; certificates come from the self-signed certbot shim here
+api:
+  syncSeconds: 10             # refresh the registry quickly so the dashboard feels live
+  metricsSeconds: 5
+  publicUrl: http://localhost:3000   # what your browser uses; shown in webhook URLs

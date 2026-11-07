@@ -1,0 +1,25 @@
+[Unit]
+Description=Freighter API and dashboard
+After=freighter-agent.service
+Wants=freighter-agent.service
+
+[Service]
+Type=simple
+User=freighter
+Group=freighter
+# Build output of apps/dashboard (`pnpm --filter @freighter/dashboard build`), copied here.
+WorkingDirectory=/srv/freighter/dashboard
+ExecStart=/usr/bin/node .output/server/index.mjs
+Environment=NITRO_HOST=127.0.0.1
+Environment=NITRO_PORT=3000
+Restart=on-failure
+RestartSec=2
+# Registry DB and the upload spool live under /var/lib/freighter.
+StateDirectory=freighter
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,47 @@
+# Two clean "servers" with systemd as PID 1, to try Freighter end to end:
+#   control  - HAProxy + the Freighter agent + API/dashboard (this is where you manage things from)
+#   remote   - HAProxy + the Freighter agent, not yet enrolled (a second, managed server)
+# Start with ./docker/lab.sh up. State lives inside the containers: `down` throws the "servers" away.
+name: freighter-lab
+
+x-server: &server
+  privileged: true            # systemd needs cgroups and mount namespaces, like on a real host
+  cgroup: host
+  tty: true
+  stop_signal: SIGRTMIN+3     # systemd's clean-shutdown signal
+  tmpfs: [/run, /run/lock, /tmp]
+  volumes: ["/sys/fs/cgroup:/sys/fs/cgroup:rw"]
+  restart: "no"
+
+services:
+  control:
+    <<: *server
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: server
+      args: { ROLE: control, PUBLIC_HTTPS_PORT: "8443" }
+    image: freighter-lab:control
+    hostname: control
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./workspace:/work     # drop your own app directories here; they appear in /work on control
+    ports:
+      - "3000:3000"           # dashboard + API
+      - "8080:80"             # HAProxy HTTP   (apps on control)
+      - "8443:443"            # HAProxy HTTPS
+
+  remote:
+    <<: *server
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: server
+      args: { ROLE: remote, PUBLIC_HTTPS_PORT: "8444" }
+    image: freighter-lab:remote
+    hostname: remote
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    ports:
+      - "8081:80"             # HAProxy HTTP   (apps on remote)
+      - "8444:443"            # HAProxy HTTPS
