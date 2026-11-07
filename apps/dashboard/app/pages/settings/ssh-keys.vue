@@ -3,6 +3,7 @@ import type { SshKey } from "~/types";
 import { timeAgo } from "~/utils/format";
 
 definePageMeta({ role: "admin" });
+useHead({ title: "SSH keys - Freighter" });
 const { data: keys, isLoading } = useSshKeys();
 const importKey = useImportSshKey();
 const remove = useRemoveSshKey();
@@ -73,26 +74,24 @@ function askRemove(k: SshKey) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <div>
-        <h1 class="text-2xl font-semibold">SSH keys</h1>
-      </div>
-      <div class="flex gap-2">
-        <Button label="Generate key" icon="pi pi-plus" size="small" severity="secondary" outlined @click="openGen" />
-        <Button label="Import key" icon="pi pi-upload" size="small" @click="open" />
-      </div>
-    </div>
+  <div class="flex flex-col gap-8">
+    <PageHeader title="SSH keys">
+      Keys Freighter uses to clone private repositories. Generate one here and add its public half to your git host, or import a key you already use.
+      <template #actions>
+        <Button label="Import key" icon="pi pi-upload" size="small" severity="secondary" outlined @click="open" />
+        <Button label="Generate key" icon="pi pi-plus" size="small" @click="openGen" />
+      </template>
+    </PageHeader>
 
-    <DataTable scrollable :value="keys ?? []" :loading="isLoading" size="small" striped-rows data-key="id">
-      <template #empty><span class="text-muted-color">No keys yet.</span></template>
-      <Column header="Name" field="name" />
-      <Column header="Type"><template #body="{ data }"><Tag :value="data.keyType" severity="secondary" /></template></Column>
-      <Column header="Fingerprint"><template #body="{ data }"><code class="text-xs break-all">{{ data.fingerprint }}</code></template></Column>
+    <DataTable scrollable :value="keys ?? []" :loading="isLoading" data-key="id">
+      <template #empty><span class="text-muted-color">No keys yet. Public repositories over HTTPS don't need one.</span></template>
+      <Column header="Name" field="name"><template #body="{ data }"><span class="font-medium">{{ data.name }}</span></template></Column>
+      <Column header="Type"><template #body="{ data }"><code>{{ data.keyType }}</code></template></Column>
+      <Column header="Fingerprint"><template #body="{ data }"><code class="text-xs text-muted-color break-all">{{ data.fingerprint }}</code></template></Column>
       <Column header="Apps" field="appCount" />
       <Column header="Imported"><template #body="{ data }">{{ timeAgo(data.createdAt) }}</template></Column>
       <Column header="Last used"><template #body="{ data }">{{ data.lastUsedAt ? timeAgo(data.lastUsedAt) : "never" }}</template></Column>
-      <Column header="">
+      <Column header="" class="text-right whitespace-nowrap">
         <template #body="{ data }">
           <Button icon="pi pi-copy" text rounded size="small" severity="secondary" aria-label="Copy public key" @click="copy(data.publicKey)" />
           <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Delete key" @click="askRemove(data)" />
@@ -104,7 +103,7 @@ function askRemove(k: SshKey) {
       <form v-if="!generated" class="flex flex-col gap-3" @submit.prevent="genValid && submitGen()">
         <div class="flex flex-col gap-1">
           <label for="gen-name" class="text-sm font-medium">Name</label>
-          <InputText id="gen-name" v-model="genName" placeholder="e.g. deploy-acme" maxlength="64" autocomplete="off" />
+          <InputText id="gen-name" v-model="genName" placeholder="deploy-acme" maxlength="64" autocomplete="off" />
         </div>
         <Message v-if="generate.error.value" severity="error" size="small">{{ generate.error.value.message }}</Message>
         <button type="submit" class="hidden" tabindex="-1" aria-hidden="true" />
@@ -112,14 +111,14 @@ function askRemove(k: SshKey) {
       <div v-else class="flex flex-col gap-2">
         <p class="text-sm">Add this public key to your git host. Read access is enough.</p>
         <div class="flex gap-2 items-start">
-          <pre class="flex-1 font-mono text-xs p-3 rounded-md bg-surface-100 dark:bg-surface-800 whitespace-pre-wrap break-all" tabindex="0">{{ generated.publicKey }}</pre>
+          <pre class="well flex-1" tabindex="0">{{ generated.publicKey }}</pre>
           <Button icon="pi pi-copy" aria-label="Copy public key" @click="copy(generated.publicKey)" />
         </div>
         <small class="text-muted-color break-all">Fingerprint {{ generated.fingerprint }}</small>
       </div>
       <template #footer>
         <Button :label="generated ? 'Done' : 'Cancel'" severity="secondary" text @click="showGen = false" />
-        <Button v-if="!generated" label="Generate" icon="pi pi-check" :disabled="!genValid" :loading="generate.isPending.value" @click="submitGen" />
+        <Button v-if="!generated" label="Generate key" :disabled="!genValid" :loading="generate.isPending.value" @click="submitGen" />
       </template>
     </Dialog>
 
@@ -127,7 +126,7 @@ function askRemove(k: SshKey) {
       <form class="flex flex-col gap-3" autocomplete="off" @submit.prevent="valid && submit()">
         <div class="flex flex-col gap-1">
           <label for="key-name" class="text-sm font-medium">Name</label>
-          <InputText id="key-name" v-model="name" placeholder="e.g. work-github" maxlength="64" autocomplete="off" />
+          <InputText id="key-name" v-model="name" placeholder="work-github" maxlength="64" autocomplete="off" />
         </div>
         <div class="flex flex-col gap-1">
           <label for="key-pem" class="text-sm font-medium">Private key</label>
@@ -143,7 +142,7 @@ function askRemove(k: SshKey) {
       </form>
       <template #footer>
         <Button label="Cancel" severity="secondary" text @click="show = false" />
-        <Button label="Import" icon="pi pi-check" :disabled="!valid" :loading="importKey.isPending.value" @click="submit" />
+        <Button label="Import key" :disabled="!valid" :loading="importKey.isPending.value" @click="submit" />
       </template>
     </Dialog>
   </div>

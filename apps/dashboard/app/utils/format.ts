@@ -11,7 +11,7 @@ export function formatBytes(n: number | null | undefined): string {
   return `${i === 0 ? v : v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
 }
 
-/** 83_000 -> "1m 23s". */
+/** 83_000 -> "1m 23s"; past two days, "26d 5h". */
 export function formatDuration(ms: number | null | undefined): string {
   if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return "–";
   if (ms < 1000) return `${Math.round(ms)}ms`;
@@ -20,7 +20,8 @@ export function formatDuration(ms: number | null | undefined): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ${s % 60}s`;
   const h = Math.floor(m / 60);
-  return `${h}h ${m % 60}m`;
+  if (h < 48) return `${h}h ${m % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
 
 /** "2 minutes ago" / "in 3 days" relative to `now`. */

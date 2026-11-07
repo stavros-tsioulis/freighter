@@ -37,7 +37,7 @@ const hookSteps = computed(() =>
       <h3 class="font-medium">Read access (deploy key)</h3>
       <p class="text-sm text-muted-color">{{ keySteps }}</p>
       <div class="flex gap-2 items-start">
-        <pre class="flex-1 font-mono text-xs p-3 rounded-md bg-surface-100 dark:bg-surface-800 whitespace-pre-wrap break-all" tabindex="0">{{ link.publicKey }}</pre>
+        <pre class="well flex-1" tabindex="0">{{ link.publicKey }}</pre>
         <Button icon="pi pi-copy" aria-label="Copy deploy key" @click="copy(link.publicKey, 'Deploy key')" />
       </div>
       <small class="text-muted-color break-all">Fingerprint {{ link.keyFingerprint }}.</small>

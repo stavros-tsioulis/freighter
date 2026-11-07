@@ -1,4 +1,5 @@
 export * from "./config.ts";
+export * from "./config-edit.ts";
 export * from "./deps.ts";
 export * from "./releases.ts";
 export * from "./history.ts";

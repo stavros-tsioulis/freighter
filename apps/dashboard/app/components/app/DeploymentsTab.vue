@@ -26,25 +26,26 @@ watch(showRollback, (v) => {
 function startRollback() {
   rollback.mutate(target.value, { onSuccess: (r) => (rollbackId.value = r.id) });
 }
-const triggerLabel = (d: DeploymentRow) => ({ upload: "upload", manual: "deploy latest", webhook: "push", host: "host CLI" })[d.trigger] ?? d.trigger;
+const triggerLabel = (d: DeploymentRow) => ({ upload: "Upload", manual: "Deploy latest", webhook: "Git push", host: "Host CLI" })[d.trigger] ?? d.trigger;
 const isGit = (d: DeploymentRow) => d.trigger === "manual" || d.trigger === "webhook";
 const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error;
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
-    <div v-if="can('deployer')" class="flex gap-2 justify-end">
+    <div v-if="can('deployer')" class="flex flex-wrap items-center gap-2">
+      <p class="text-sm text-muted-color mr-auto">Open a row for its build log and details.</p>
       <Button label="Roll back" icon="pi pi-history" severity="secondary" outlined size="small" @click="showRollback = true" />
-      <Button label="Deploy" icon="pi pi-upload" size="small" @click="showDeploy = true" />
+      <Button label="Upload archive" icon="pi pi-upload" size="small" @click="showDeploy = true" />
     </div>
 
-    <DataTable scrollable v-model:expanded-rows="expanded" :value="deployments ?? []" :loading="isLoading" data-key="id" size="small" striped-rows paginator :rows="10" :rows-per-page-options="[10, 25, 50]">
+    <DataTable scrollable v-model:expanded-rows="expanded" :value="deployments ?? []" :loading="isLoading" data-key="id" paginator :rows="10" :rows-per-page-options="[10, 25, 50]">
       <template #empty><span class="text-muted-color">No deployments recorded yet.</span></template>
       <Column expander style="width: 3rem" />
       <Column header="When">
         <template #body="{ data }"><span :title="data.createdAt">{{ timeAgo(data.createdAt) }}</span></template>
       </Column>
-      <Column header="Action" field="action" />
+      <Column header="Action"><template #body="{ data }">{{ data.action === "rollback" ? "Rollback" : "Deploy" }}</template></Column>
       <Column header="Status">
         <template #body="{ data }"><StatusTag :state="data.status" /></template>
       </Column>
@@ -63,8 +64,8 @@ const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error
       <Column header="From">
         <template #body="{ data }"><span class="font-mono text-xs text-muted-color">{{ shortRelease(data.previousRelease) }}</span></template>
       </Column>
-      <Column header="Trigger">
-        <template #body="{ data }"><Tag :value="triggerLabel(data)" severity="secondary" /></template>
+      <Column header="Started by">
+        <template #body="{ data }"><span class="text-sm text-muted-color whitespace-nowrap">{{ triggerLabel(data) }}</span></template>
       </Column>
       <Column header="Took">
         <template #body="{ data }">{{ formatDuration(durationBetween(data.startedAt, data.finishedAt)) }}</template>
@@ -89,8 +90,9 @@ const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error
 
     <DeployDialog v-model:visible="showDeploy" :app="app.name" />
 
-    <Dialog v-model:visible="showRollback" modal header="Roll back" :style="{ width: '30rem' }">
+    <Dialog v-model:visible="showRollback" modal header="Roll back" :style="{ width: '32rem' }">
       <div class="flex flex-col gap-3">
+        <p v-if="!rollbackId" class="text-sm text-muted-color">Switches traffic back to an earlier release that is still on the server. Nothing is rebuilt.</p>
         <div v-if="!rollbackId" class="flex flex-col gap-1">
           <label for="rb-target" class="text-sm font-medium">Release</label>
           <Select id="rb-target" v-model="target" :options="choices" option-label="label" option-value="value" placeholder="Previous good release (default)" show-clear />

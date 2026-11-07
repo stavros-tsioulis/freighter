@@ -189,3 +189,30 @@ export interface DeployFromGit {
   /** Shown once. */
   webhookSecret: string;
 }
+
+/** One setting of a server's config.yaml, as the settings page renders it. */
+export interface ConfigField {
+  key: string;
+  section: string;
+  label: string;
+  help: string;
+  type: "string" | "number" | "boolean" | "list" | "enum";
+  scope: "agent" | "control";
+  restart: "none" | "agent" | "api";
+  options?: string[];
+  min?: number;
+  max?: number;
+  unit?: string;
+  placeholder?: string;
+  haproxy?: boolean;
+  /** In effect now (the file's value, or the default). */
+  value: unknown;
+  default: unknown;
+  /** The file sets it. */
+  explicit: boolean;
+}
+export interface ConfigSaved {
+  changed: string[];
+  restart: ("agent" | "api")[];
+  haproxy: "applied" | "manual" | "none";
+}

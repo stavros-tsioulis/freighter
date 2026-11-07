@@ -1,8 +1,12 @@
-import { rm, realpath, stat, statfs } from "node:fs/promises";
+import { copyFile, rm, realpath, stat, statfs } from "node:fs/promises";
 import { hostname, freemem, loadavg, totalmem, uptime } from "node:os";
 import { sep } from "node:path";
 import {
   DeployFailedError,
+  SettingsError,
+  applyHaproxyListeners,
+  applySettings,
+  readSettings,
   appInfo,
   BuildFailedError,
   buildLogChunk,
@@ -65,11 +69,13 @@ function toDeployResult(r: Awaited<ReturnType<typeof deploy>>): OpResult<"app.de
   };
 }
 
+const configPath = (d: Deps) => d.configPath ?? "/etc/freighter/config.yaml";
+
 export function createHandlers(d: Deps): Handlers {
   const iso = (x: Date | null) => (x ? x.toISOString() : null);
   return {
     async ping() {
-      return { version: "0.0.0", time: d.now().toISOString(), hostname: hostname(), capabilities: ["artifact.put", "host.status", "git"] };
+      return { version: "0.0.0", time: d.now().toISOString(), hostname: hostname(), capabilities: ["artifact.put", "host.status", "git", "config"] };
     },
     async "host.status"() {
       let disk: { total: number | null; free: number | null } = { total: null, free: null };
@@ -153,6 +159,28 @@ export function createHandlers(d: Deps): Handlers {
       await setEnv(d, app, key, value);
       return {};
     },
+    async "config.get"() {
+      return { fields: await readSettings(configPath(d)) };
+    },
+    async "config.set"({ changes }) {
+      const path = configPath(d);
+      const r = await applySettings(path, changes);
+      let haproxy: "applied" | "manual" | "none" = "none";
+      if (r.haproxyChanged) {
+        try {
+          haproxy = await applyHaproxyListeners(d, r.config);
+        } catch (e) {
+          await copyFile(`${path}.bak`, path).catch(() => {}); // HAProxy said no: leave the file as it was
+          throw e;
+        }
+      }
+      return { changed: r.changed, restart: r.restart, haproxy };
+    },
+    async "service.restart"({ service }) {
+      // After the reply is on the wire: restarting the agent ends this very process.
+      setTimeout(() => void d.run("systemctl", ["restart", "--no-block", service === "api" ? "freighter-api" : "freighter-agent"]), 300).unref();
+      return {};
+    },
     async "certs.status"() {
       return { certs: (await certStatus(d)).map((c) => ({ hostname: c.hostname, expires: iso(c.expires) })) };
     },
@@ -167,7 +195,7 @@ export function classify(e: unknown): WireError {
     return { code: "deploy_failed", message: e.message, rolledBackTo: e.rolledBackTo, releaseId: e.releaseId, historyAt: e.historyAt };
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
-  if (e instanceof BadRequest) return { code: "bad_request", message: e.message };
+  if (e instanceof BadRequest || e instanceof SettingsError) return { code: "bad_request", message: e.message };
   if (e instanceof ZodError) {
     return { code: "bad_request", message: e.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ") };
   }

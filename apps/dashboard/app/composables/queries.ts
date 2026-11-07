@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -494,5 +494,32 @@ export function useRemoveDomain(app: MaybeRef<string>) {
       void qc.invalidateQueries({ queryKey: ["app"] });
     },
     onError: (e) => notify.fail("Could not remove the domain", e),
+  });
+}
+
+// ---- server settings (config.yaml) ----
+export const useServerConfig = (server: MaybeRef<string>) =>
+  useQuery({
+    queryKey: ["server-config", server],
+    queryFn: () => api<{ fields: ConfigField[] }>(`/servers/${toValue(server)}/config`).then((r) => r.fields),
+    retry: false,
+    refetchOnWindowFocus: false, // never replace what someone is in the middle of editing
+  });
+
+export function useSaveServerConfig() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { server: string; changes: Record<string, unknown> }) => api<ConfigSaved>(`/servers/${v.server}/config`, { method: "PUT", body: { changes: v.changes } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["server-config"] }),
+    onError: (e) => notify.fail("Could not save", e),
+  });
+}
+
+export function useRestartService() {
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { server: string; service: "agent" | "api" }) => api(`/servers/${v.server}/restart`, { method: "POST", body: { service: v.service } }),
+    onError: (e) => notify.fail("Could not restart", e),
   });
 }

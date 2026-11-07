@@ -18,7 +18,7 @@ watch(text, async () => {
   <pre
     v-else
     ref="box"
-    class="font-mono text-xs leading-5 p-3 rounded-md bg-surface-950 text-surface-100 overflow-auto max-h-80 whitespace-pre-wrap break-words"
+    class="terminal max-h-80"
     tabindex="0"
     aria-label="Build log"
   >{{ text || (running ? "Waiting for output…" : "No log was recorded.") }}</pre>

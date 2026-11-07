@@ -22,7 +22,7 @@ async function copy(text: string) {
     </Message>
     <p class="text-sm">Run on <b>{{ info.server.name }}</b> as root:</p>
     <div class="flex gap-2 items-start">
-      <pre class="flex-1 font-mono text-xs p-3 rounded-md bg-surface-950 text-surface-100 whitespace-pre-wrap break-all" tabindex="0">{{ info.enrollment.command }}
+      <pre class="terminal flex-1" tabindex="0">{{ info.enrollment.command }}
 systemctl restart freighter-agent</pre>
       <Button icon="pi pi-copy" aria-label="Copy command" @click="copy(info.enrollment.command)" />
     </div>

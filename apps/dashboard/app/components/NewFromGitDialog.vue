@@ -97,7 +97,7 @@ async function openApp() {
 
     <div v-else class="flex flex-col gap-3">
       <DeploymentStatus :id="result.deploymentId" />
-      <div class="border-t border-surface pt-3 flex flex-col gap-2">
+      <div class="border-t border-[var(--fr-line)] pt-3 flex flex-col gap-2">
         <p class="text-sm font-medium">Webhook (deploy on push)</p>
         <div class="grid grid-cols-[5rem_1fr] gap-2 text-sm">
           <span class="text-muted-color">URL</span><code class="break-all">{{ result.webhookUrl }}</code>

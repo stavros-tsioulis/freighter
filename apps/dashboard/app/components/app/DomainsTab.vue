@@ -90,15 +90,15 @@ const url = (d: DomainRow) => `${d.tls === "auto" ? "https" : "http"}://${d.host
 <template>
   <div class="flex flex-col gap-4 max-w-4xl">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="font-medium">Domains</h3>
+      <p class="text-sm text-muted-color">Hostnames that route to this app's services.</p>
       <Button v-if="can('admin')" label="Add domain" icon="pi pi-plus" size="small" @click="openAdd" />
     </div>
 
     <Skeleton v-if="isLoading" height="6rem" />
-    <p v-else-if="!domains.length" class="text-muted-color">No domains yet. Add one to serve this app on your own hostname.</p>
+    <p v-else-if="!domains.length" class="text-muted-color">No domains yet. Add one to serve the app on your own hostname.</p>
 
     <ul v-else class="flex flex-col gap-3">
-      <li v-for="d in domains" :key="d.hostname" class="rounded-lg border border-surface bg-surface-0 dark:bg-surface-900">
+      <li v-for="d in domains" :key="d.hostname" class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)]">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-4">
           <div class="min-w-0 flex-1">
             <a v-if="d.status === 'active'" :href="url(d)" target="_blank" rel="noopener" class="font-medium text-primary hover:underline break-all">{{ d.hostname }}</a>
@@ -112,7 +112,7 @@ const url = (d: DomainRow) => `${d.tls === "auto" ? "https" : "http"}://${d.host
           </div>
         </div>
 
-        <div v-if="d.status === 'pending'" class="border-t border-surface px-5 py-4 flex flex-col gap-3 text-sm">
+        <div v-if="d.status === 'pending'" class="border-t border-[var(--fr-line)] px-5 py-4 flex flex-col gap-3 text-sm">
           <p v-if="isLocalName(d.hostname)">Names ending in <code>.localhost</code> need no DNS setup. Verify to put it live.</p>
           <template v-else-if="records.length">
             <p>At your DNS provider, add {{ records.length > 1 ? "these records" : "this record" }} for <b>{{ d.hostname }}</b>, then verify:</p>

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@fontsource/barlow": "5.3.0",
+    "@fontsource/barlow-condensed": "5.2.6",
     "@freighter/api": "workspace:*",
     "@freighter/core": "workspace:*",
     "@freighter/manifest": "workspace:*",

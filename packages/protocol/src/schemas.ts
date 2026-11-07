@@ -46,6 +46,26 @@ const deployResult = z.object({
   verified: z.boolean(),
   historyAt: iso,
 });
+const configField = z.object({
+  key: z.string(),
+  section: z.string(),
+  label: z.string(),
+  help: z.string(),
+  type: z.enum(["string", "number", "boolean", "list", "enum"]),
+  scope: z.enum(["agent", "control"]),
+  restart: z.enum(["none", "agent", "api"]),
+  options: z.array(z.string()).optional(),
+  min: z.number().optional(),
+  max: z.number().optional(),
+  step: z.number().optional(),
+  unit: z.string().optional(),
+  placeholder: z.string().optional(),
+  haproxy: z.boolean().optional(),
+  value: z.unknown(),
+  default: z.unknown(),
+  explicit: z.boolean(),
+});
+const configValue = z.union([z.string().max(1000), z.number(), z.boolean(), z.array(z.string().max(300)).max(50), z.null()]);
 const commit = z.object({ sha: z.string(), subject: z.string(), author: z.string() });
 const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().min(1).max(100), auth: z.object({ sshKey: z.string().min(40).max(20000) }).optional() };
 
@@ -192,6 +212,20 @@ export const ops = {
     args: z.object({ force: z.boolean().optional() }),
     result: z.object({ certs: z.array(z.object({ hostname: z.string(), issued: z.boolean(), expires: iso.nullable() })) }),
   },
+  /** The settings that can be changed from the dashboard, with their current values. */
+  "config.get": { args: z.object({}), result: z.object({ fields: z.array(configField) }) },
+  /** Change settings (key -> value, or null to go back to the default). All or nothing. */
+  "config.set": {
+    args: z.object({ changes: z.record(z.string(), configValue) }),
+    result: z.object({
+      changed: z.array(z.string()),
+      /** Services that have to be restarted before the changes take effect. */
+      restart: z.array(z.enum(["agent", "api"])),
+      /** HAProxy listener ports: "applied" to a Freighter-managed config, "manual" for one you maintain, "none" when unaffected. */
+      haproxy: z.enum(["applied", "manual", "none"]),
+    }),
+  },
+  "service.restart": { args: z.object({ service: z.enum(["agent", "api"]) }), result: z.object({}) },
 } as const;
 
 export type OpName = keyof typeof ops;

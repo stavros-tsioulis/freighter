@@ -50,25 +50,87 @@ export function renderBackends(routes: Route[], opts: { acmePort: number }): str
   return out;
 }
 
+/** Where HAProxy listens, and what the outside world sees. Defaults: the standard ports, nothing in front. */
+export interface ListenOptions {
+  httpPort?: number;
+  httpsPort?: number;
+  /** HTTPS port clients are redirected to. Defaults to `httpsPort`; set it (e.g. 443) when your own proxy sits in front and maps ports. */
+  publicHttpsPort?: number;
+  /** Expect the PROXY protocol on both listeners (nginx `stream` with `proxy_protocol on`, another HAProxy with `send-proxy`). */
+  acceptProxy?: boolean;
+}
+
+const hostExpr = "req.hdr(host),field(1,:),lower";
+const routeLine = (dir: string) =>
+  `use_backend %[${hostExpr},map(${dir}/hostnames.map)] if { ${hostExpr},map(${dir}/hostnames.map) -m found }`;
+
+function resolve(o: ListenOptions) {
+  const httpPort = o.httpPort ?? 80;
+  const httpsPort = o.httpsPort ?? 443;
+  const publicHttpsPort = o.publicHttpsPort ?? httpsPort;
+  const proxy = o.acceptProxy ? " accept-proxy" : "";
+  // `redirect scheme https` keeps the default port; any other public port has to be spelled out.
+  const redirect =
+    publicHttpsPort === 443
+      ? "http-request redirect scheme https code 301"
+      : `http-request redirect location https://%[req.hdr(host),field(1,:)]:${publicHttpsPort}%[pathq] code 301`;
+  return { httpPort, httpsPort, proxy, redirect };
+}
+
+function httpRules(dir: string, redirect: string): string {
+  return `    acl freighter_acme path_beg /.well-known/acme-challenge/
+    ${redirect} if !{ ssl_fc } !freighter_acme { ${hostExpr},map(${dir}/https.map) -m found }
+    use_backend freighter_acme if freighter_acme
+    ${routeLine(dir)}`;
+}
+
 /** The one-time lines the user adds to their existing HAProxy configuration. */
-export function renderSnippet(o: { dir: string }): string {
-  const host = "req.hdr(host),field(1,:),lower";
-  const route = `use_backend %[${host},map(${o.dir}/hostnames.map)] if { ${host},map(${o.dir}/hostnames.map) -m found }`;
+export function renderSnippet(o: { dir: string } & ListenOptions): string {
+  const { httpPort, httpsPort, proxy, redirect } = resolve(o);
   return `# ---- Freighter: one-time additions to your HAProxy configuration (HAProxy >= 2.4) ----
 #
 # 1. Load the generated backends as an additional config file. Add
 #        -f ${o.dir}/backends.cfg
 #    to the haproxy command line (systemd drop-in) or put it in the config directory your service loads.
 #
-# 2. In the frontend listening on :80, before your other rules:
-    acl freighter_acme path_beg /.well-known/acme-challenge/
-    use_backend freighter_acme if freighter_acme
-    http-request redirect scheme https code 301 if !{ ssl_fc } !freighter_acme { ${host},map(${o.dir}/https.map) -m found }
-    ${route}
+# 2. In the frontend listening on :${httpPort}, before your other rules:
+${httpRules(o.dir, redirect)}
 #
-# 3. In the frontend listening on :443 (the certs directory must contain at least one PEM,
+# 3. In the frontend listening on :${httpsPort} (the certs directory must contain at least one PEM,
 #    e.g. a self-signed placeholder, or HAProxy will refuse to start):
-    bind :443 ssl crt ${o.dir}/certs/
-    ${route}
+    bind :${httpsPort} ssl crt ${o.dir}/certs/${proxy}
+    ${routeLine(o.dir)}
+`;
+}
+
+/**
+ * A complete haproxy.cfg for a Freighter-only HAProxy (the "dedicated" setup), for servers that run no HAProxy of their
+ * own. Load it together with `<dir>/backends.cfg`.
+ */
+export function renderMainConfig(o: { dir: string } & ListenOptions): string {
+  const { httpPort, httpsPort, proxy, redirect } = resolve(o);
+  return `# Managed by freighter (\`freighter haproxy config\`). A dedicated HAProxy for Freighter's apps: it does not touch any other HAProxy on this host.
+# Load with:  haproxy -f <this file> -f ${o.dir}/backends.cfg
+global
+    log /dev/log local0
+    maxconn 2000
+    user haproxy
+    group haproxy
+    ssl-default-bind-options ssl-min-ver TLSv1.2
+
+defaults
+    mode http
+    log global
+    timeout connect 5s
+    timeout client  30s
+    timeout server  30s
+
+frontend freighter_http
+    bind :${httpPort}${proxy}
+${httpRules(o.dir, redirect)}
+
+frontend freighter_https
+    bind :${httpsPort} ssl crt ${o.dir}/certs/${proxy}
+    ${routeLine(o.dir)}
 `;
 }

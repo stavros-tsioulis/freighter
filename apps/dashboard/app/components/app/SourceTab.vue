@@ -97,7 +97,8 @@ function ask(header: string, message: string, label: string, run: () => void) {
   <!-- not linked -->
   <div v-else-if="!link" class="flex flex-col gap-4 max-w-2xl">
     <Message v-if="!can('admin')" severity="info">Deployed from uploaded artifacts. An admin can link a Git repository.</Message>
-    <form v-else class="grid gap-3" @submit.prevent="valid && linkRepo()">
+    <p v-if="can('admin')" class="text-sm text-muted-color">This app is deployed from uploaded archives. Link a repository to build and deploy it from Git instead.</p>
+    <form v-if="can('admin')" class="grid gap-3" @submit.prevent="valid && linkRepo()">
       <SshKeySelect v-model="sshKeyId" allow-generated />
       <div class="flex flex-col gap-1">
         <label for="git-repo" class="text-sm font-medium">Repository (SSH or HTTPS)</label>
@@ -154,7 +155,7 @@ function ask(header: string, message: string, label: string, run: () => void) {
       </template>
     </div>
 
-    <section class="flex flex-col gap-3 max-w-3xl border-t border-surface pt-4">
+    <section class="flex flex-col gap-3 max-w-3xl border-t border-[var(--fr-line)] pt-4">
       <div>
         <h3 class="font-medium">Settings without an app.yaml</h3>
         <p class="text-sm text-muted-color">

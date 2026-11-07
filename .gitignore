@@ -9,3 +9,4 @@ dist
 !.env.example
 docker/workspace/*
 !docker/workspace/.gitkeep
+.vitepress/cache

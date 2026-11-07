@@ -12,7 +12,7 @@ const confirm = useConfirm();
 
 const ranges = [
   { label: "15 min", value: 15 },
-  { label: "1 hour", value: 60 },
+  { label: "hour", value: 60 },
   { label: "6 hours", value: 360 },
 ];
 
@@ -50,12 +50,12 @@ const url = (host: string) => `https://${host}`;
 
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex items-center justify-between">
-      <span class="text-sm text-muted-color">Metrics range</span>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span class="text-sm text-muted-color">Memory and CPU over the last</span>
       <SelectButton v-model="minutes" :options="ranges" option-label="label" option-value="value" :allow-empty="false" size="small" aria-label="Metrics range" />
     </div>
-    <DataTable scrollable :value="rows" data-key="name" size="small" striped-rows>
-      <template #empty><span class="text-muted-color">No services reported yet.</span></template>
+    <DataTable scrollable :value="rows" data-key="name">
+      <template #empty><span class="text-muted-color">No services yet. They appear after the first deploy.</span></template>
       <Column header="Service" field="name">
         <template #body="{ data }">
           <div class="font-medium">{{ data.name }}</div>
@@ -95,9 +95,9 @@ const url = (host: string) => `https://${host}`;
       <Column v-if="can('deployer')" header="" class="text-right">
         <template #body="{ data }">
           <div class="flex gap-1 justify-end">
-            <Button icon="pi pi-refresh" text rounded size="small" severity="secondary" aria-label="Restart" :loading="control.isPending.value" @click="act('restart', data.name)" />
-            <Button v-if="data.activeState === 'active'" icon="pi pi-stop-circle" text rounded size="small" severity="danger" aria-label="Stop" @click="act('stop', data.name)" />
-            <Button v-else icon="pi pi-play" text rounded size="small" severity="success" aria-label="Start" @click="act('start', data.name)" />
+            <Button icon="pi pi-refresh" text rounded size="small" severity="secondary" aria-label="Restart" title="Restart" :loading="control.isPending.value" @click="act('restart', data.name)" />
+            <Button v-if="data.activeState === 'active'" icon="pi pi-stop-circle" text rounded size="small" severity="danger" aria-label="Stop" title="Stop" @click="act('stop', data.name)" />
+            <Button v-else icon="pi pi-play" text rounded size="small" severity="success" aria-label="Start" title="Start" @click="act('start', data.name)" />
           </div>
         </template>
       </Column>

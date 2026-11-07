@@ -1,0 +1,23 @@
+# The docs deploy with Freighter itself: link this repository with subdirectory apps/docs,
+# or build locally and push app.yaml, serve.mjs and .vitepress/dist (see README.md).
+name: docs
+
+build:
+  commands:
+    - corepack enable
+    - pnpm install --ignore-workspace
+    - pnpm build
+  memory: 1G
+
+services:
+  web:
+    command: node serve.mjs
+    port: 3200
+    resources:
+      memory: 96M
+      cpu: 0.25
+    healthcheck:
+      path: /health
+
+releases:
+  keep: 3

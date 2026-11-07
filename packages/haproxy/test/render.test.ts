@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderBackends, renderHostnameMap, renderHttpsMap, renderSnippet, type Route } from "../src/index.ts";
+import { renderBackends, renderHostnameMap, renderHttpsMap, renderMainConfig, renderSnippet, type Route } from "../src/index.ts";
 
 const routes: Route[] = [
   { app: "shop", service: "web", hostname: "shop.example.com", tls: "auto", port: 20001, healthPath: "/health" },
@@ -50,5 +50,25 @@ backend freighter_acme
     expect(s).toContain("bind :443 ssl crt /etc/haproxy/freighter/certs/");
     expect(s).toContain("map(/etc/haproxy/freighter/hostnames.map)");
     expect(s).toContain("use_backend freighter_acme if freighter_acme");
+  });
+
+  it("uses custom ports, a spelled-out redirect and the PROXY protocol", () => {
+    const s = renderSnippet({ dir: "/d", httpPort: 4080, httpsPort: 4443, acceptProxy: true });
+    expect(s).toContain("listening on :4080");
+    expect(s).toContain("bind :4443 ssl crt /d/certs/ accept-proxy");
+    expect(s).toContain("redirect location https://%[req.hdr(host),field(1,:)]:4443%[pathq] code 301");
+    expect(s).not.toContain("redirect scheme");
+  });
+
+  it("redirects to the standard port when a proxy in front maps 443", () => {
+    const s = renderSnippet({ dir: "/d", httpsPort: 4443, publicHttpsPort: 443 });
+    expect(s).toContain("redirect scheme https code 301");
+  });
+
+  it("renders a complete dedicated config", () => {
+    const c = renderMainConfig({ dir: "/d", httpPort: 4080, httpsPort: 4443 });
+    expect(c).toContain("frontend freighter_http\n    bind :4080\n");
+    expect(c).toContain("bind :4443 ssl crt /d/certs/\n");
+    expect(c).toContain("user haproxy");
   });
 });

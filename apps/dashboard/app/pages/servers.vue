@@ -52,84 +52,110 @@ function askRemove(s: ServerRow) {
   });
 }
 
-const statusSeverity = (s: ServerRow["status"]) => ({ online: "success", offline: "danger", pending: "warn", error: "danger" })[s] as "success" | "danger" | "warn";
+useHead({ title: "Servers - Freighter" });
 const certDays = (s: ServerRow) => daysUntil(s.certExpiresAt);
-const used = (s: ServerRow) => (s.host ? formatBytes(s.host.memTotal - s.host.memFree) + " / " + formatBytes(s.host.memTotal) : "–");
+const memUsed = (s: ServerRow) => (s.host ? formatBytes(s.host.memTotal - s.host.memFree) : "–");
+const memPct = (s: ServerRow) => (s.host && s.host.memTotal ? Math.round(((s.host.memTotal - s.host.memFree) / s.host.memTotal) * 100) : null);
+const certText = (s: ServerRow) => {
+  const d = certDays(s);
+  return d === null ? "None" : d < 0 ? "Expired" : `${d} days left`;
+};
+const certTone = (s: ServerRow) => {
+  const d = certDays(s);
+  return d === null || d < 7 ? "text-red-600 dark:text-red-400" : d < 30 ? "text-amber-600 dark:text-amber-400" : "";
+};
+const online = computed(() => (servers.value ?? []).filter((s) => s.status === "online").length);
+const summary = computed(() => {
+  const list = servers.value ?? [];
+  if (!list.length) return "";
+  const down = list.filter((s) => s.status === "offline" || s.status === "error").map((s) => s.name);
+  return down.length ? `${online.value} of ${list.length} online. Can't reach ${down.join(", ")}.` : `${list.length === 1 ? "The server is" : `All ${list.length} servers are`} online.`;
+});
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h1 class="text-2xl font-semibold">Servers</h1>
-      <Button v-if="can('admin')" label="Add server" icon="pi pi-plus" size="small" @click="openAdd" />
-    </div>
+  <div class="flex flex-col gap-8">
+    <PageHeader title="Servers">
+      {{ summary || "Machines that run your apps." }}
+      <template #actions>
+        <Button v-if="can('admin')" label="Add server" icon="pi pi-plus" size="small" @click="openAdd" />
+      </template>
+    </PageHeader>
 
-    <Skeleton v-if="isLoading" height="8rem" />
-    <ul v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <li v-for="s in servers" :key="s.name" class="relative rounded-lg border border-surface bg-surface-0 dark:bg-surface-900 p-5 flex flex-col gap-4">
-        <span class="absolute -top-1.5 -left-1.5 size-3.5 rounded-full ring-4 ring-surface-0 dark:ring-surface-950" :class="s.status === 'online' ? 'bg-green-500' : s.status === 'pending' ? 'bg-amber-500' : 'bg-red-500'" aria-hidden="true" />
-        <div class="flex items-start justify-between gap-3">
-          <div class="min-w-0">
-            <h2 class="font-semibold text-lg truncate">{{ s.name }}</h2>
-            <p class="text-sm text-muted-color truncate">{{ s.address ?? "this host" }}</p>
+    <Skeleton v-if="isLoading" height="10rem" />
+    <ul v-else class="flex flex-col gap-5">
+      <li v-for="s in servers" :key="s.name" class="flex flex-col gap-3">
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h2 class="font-display font-semibold text-[1.5rem] leading-tight">{{ s.name }}</h2>
+          <StatusTag :state="s.status" />
+          <span class="text-sm text-muted-color truncate">{{ s.address ?? "This machine" }}</span>
+          <div v-if="can('admin')" class="ml-auto flex gap-1">
+            <Button label="Check now" icon="pi pi-refresh" text size="small" severity="secondary" :loading="check.isPending.value && check.variables.value === s.name" @click="check.mutate(s.name)" />
+            <template v-if="s.kind === 'remote'">
+              <Button label="Re-enroll" icon="pi pi-key" text size="small" severity="secondary" title="Create a new enrollment command" @click="newToken(s)" />
+              <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Remove server" :title="s.appCount > 0 ? 'Move or delete its apps first' : 'Remove server'" :disabled="s.appCount > 0" @click="askRemove(s)" />
+            </template>
           </div>
-          <Tag :value="s.status" :severity="statusSeverity(s.status)" />
         </div>
-        <p v-if="s.status === 'pending'" class="text-sm text-muted-color">{{ s.enrollmentPending ? "Waiting for enrollment" : "Token used; start the agent" }}</p>
-        <p v-else-if="s.lastError" class="text-sm text-red-500 line-clamp-2" :title="s.lastError">{{ s.lastError }}</p>
+        <Message v-if="s.status === 'pending'" severity="warn" size="small">
+          <template v-if="s.enrollmentPending">Run the enrollment command on the server to connect it.</template>
+          <template v-else>Enrolled. Start the agent on the server with <code>systemctl restart freighter-agent</code>.</template>
+        </Message>
+        <Message v-else-if="s.lastError" severity="error" size="small"><span class="line-clamp-2" :title="s.lastError">{{ s.lastError }}</span></Message>
 
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+        <Facts>
           <template v-if="s.host">
-            <dt class="text-muted-color">Host</dt><dd class="truncate">{{ s.hostname }}, up {{ formatDuration(s.host.uptimeSeconds * 1000) }}</dd>
-            <dt class="text-muted-color">Load</dt><dd>{{ s.host.load1.toFixed(2) }}</dd>
-            <dt class="text-muted-color">Memory</dt><dd>{{ used(s) }}</dd>
-            <dt class="text-muted-color">Disk free</dt><dd>{{ formatBytes(s.host.diskFreeBytes) }}</dd>
+            <Fact label="Hostname" :title="s.hostname ?? ''">{{ s.hostname }}</Fact>
+            <Fact label="Up for">{{ formatDuration(s.host.uptimeSeconds * 1000) }}</Fact>
+            <Fact label="Load (1 min)">{{ s.host.load1.toFixed(2) }}</Fact>
+            <Fact label="Memory used" :title="`${memUsed(s)} of ${formatBytes(s.host.memTotal)}`">
+              {{ memUsed(s) }}<span class="text-muted-color font-normal"> of {{ formatBytes(s.host.memTotal) }}</span>
+              <span class="meter" :style="{ '--v': `${memPct(s) ?? 0}%` }" aria-hidden="true" />
+            </Fact>
+            <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
           </template>
-          <dt class="text-muted-color">Agent</dt><dd>{{ s.agentVersion ?? "–" }}</dd>
-          <dt class="text-muted-color">Last seen</dt><dd :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</dd>
-          <template v-if="s.kind === 'remote'">
-            <dt class="text-muted-color">Certificate</dt>
-            <dd>
-              <Tag v-if="certDays(s) === null" value="none" severity="secondary" />
-              <Tag v-else :value="certDays(s)! < 0 ? 'expired' : `${certDays(s)} days`" :severity="certDays(s)! < 7 ? 'danger' : certDays(s)! < 30 ? 'warn' : 'success'" />
-            </dd>
-          </template>
-          <dt class="text-muted-color">Apps</dt><dd>{{ s.appCount }}</dd>
-        </dl>
-
-        <div v-if="can('admin')" class="flex gap-1 justify-end mt-auto -mb-2 -mr-2">
-          <Button icon="pi pi-heart" text rounded size="small" severity="secondary" aria-label="Check now" :loading="check.isPending.value && check.variables.value === s.name" @click="check.mutate(s.name)" />
-          <template v-if="s.kind === 'remote'">
-            <Button icon="pi pi-key" text rounded size="small" severity="secondary" aria-label="New enrollment token" @click="newToken(s)" />
-            <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Remove server" :disabled="s.appCount > 0" @click="askRemove(s)" />
-          </template>
-        </div>
+          <Fact label="Apps">{{ s.appCount }}</Fact>
+          <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
+          <Fact label="Agent">{{ s.agentVersion ?? "–" }}</Fact>
+          <Fact v-if="s.kind === 'remote'" label="Agent certificate"><span :class="certTone(s)">{{ certText(s) }}</span></Fact>
+        </Facts>
       </li>
     </ul>
 
     <Dialog v-model:visible="showAdd" modal header="Add a server" :style="{ width: '30rem' }">
-      <form class="flex flex-col gap-3" @submit.prevent="validAdd && submitAdd()">
+      <form class="flex flex-col gap-4" @submit.prevent="validAdd && submitAdd()">
+        <p class="text-sm text-muted-color">Freighter gives you a one-time command to run on the new server. The agent then connects back to this dashboard.</p>
         <div class="flex flex-col gap-1">
           <label for="srv-name" class="text-sm font-medium">Name</label>
-          <InputText id="srv-name" v-model="name" placeholder="e.g. vps-fra-1" :invalid="!!nameError" autocomplete="off" />
+          <InputText id="srv-name" v-model="name" placeholder="vps-fra-1" :invalid="!!nameError" autocomplete="off" />
           <small v-if="nameError" class="text-red-500">{{ nameError }}</small>
         </div>
         <div class="flex flex-col gap-1">
           <label for="srv-addr" class="text-sm font-medium">Agent address</label>
           <InputText id="srv-addr" v-model="address" placeholder="vps1.example.com or 203.0.113.7:7443" autocomplete="off" />
-          <small class="text-muted-color">Host name or IP the control plane connects to (default port 7443).</small>
+          <small class="text-muted-color">Host name or IP this dashboard connects to. Port 7443 unless you add one.</small>
         </div>
-        <button type="submit" class="hidden" />
+        <button type="submit" class="hidden" tabindex="-1" aria-hidden="true" />
       </form>
       <template #footer>
         <Button label="Cancel" severity="secondary" text @click="showAdd = false" />
-        <Button label="Add" icon="pi pi-check" :disabled="!validAdd" :loading="add.isPending.value" @click="submitAdd" />
+        <Button label="Add server" :disabled="!validAdd" :loading="add.isPending.value" @click="submitAdd" />
       </template>
     </Dialog>
 
-    <Dialog v-model:visible="showEnrollment" modal header="Enroll the server" :style="{ width: '40rem' }">
+    <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.meter {
+  display: block;
+  height: 3px;
+  margin-top: 0.4rem;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--p-primary-color) var(--v), var(--fr-line) var(--v));
+}
+</style>

@@ -10,6 +10,13 @@ export const hostConfigSchema = z.object({
       mainConfig: z.string().default("/etc/haproxy/haproxy.cfg"),
       bin: z.string().default("haproxy"),
       reloadCommand: z.array(z.string()).min(1).default(["systemctl", "reload", "haproxy"]),
+      /** Ports HAProxy listens on. Used by `freighter haproxy setup|config`; your own haproxy.cfg has the final say. */
+      httpPort: z.number().int().min(1).max(65535).default(80),
+      httpsPort: z.number().int().min(1).max(65535).default(443),
+      /** HTTPS port clients are redirected to. Defaults to httpsPort; set 443 when your own proxy maps 443 to httpsPort. */
+      publicHttpsPort: z.number().int().min(1).max(65535).optional(),
+      /** Expect the PROXY protocol on both listeners. */
+      acceptProxy: z.boolean().default(false),
     })
     .default({}),
   acme: z

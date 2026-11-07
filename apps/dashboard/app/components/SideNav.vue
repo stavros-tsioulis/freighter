@@ -9,18 +9,22 @@ const groups = computed(() => [
   {
     label: "",
     items: [
-      { to: "/", label: "Overview", icon: "pi pi-th-large" },
+      { to: "/", label: "Apps", icon: "pi pi-th-large" },
       { to: "/servers", label: "Servers", icon: "pi pi-server" },
-      { to: "/certs", label: "Certificates", icon: "pi pi-lock" },
+      { to: "/certs", label: "Certificates", icon: "pi pi-shield" },
     ],
   },
   ...(can("admin")
     ? [
         {
-          label: "Settings",
+          label: "Configuration",
+          items: [{ to: "/settings/server", label: "Server settings", icon: "pi pi-sliders-h" }],
+        },
+        {
+          label: "Access",
           items: [
-            { to: "/settings/ssh-keys", label: "SSH keys", icon: "pi pi-lock-open" },
-            { to: "/settings/tokens", label: "Tokens", icon: "pi pi-key" },
+            { to: "/settings/tokens", label: "API tokens", icon: "pi pi-key" },
+            { to: "/settings/ssh-keys", label: "SSH keys", icon: "pi pi-lock" },
             { to: "/settings/audit", label: "Audit log", icon: "pi pi-history" },
           ],
         },
@@ -28,37 +32,59 @@ const groups = computed(() => [
     : []),
 ]);
 const active = (to: string) => (to === "/" ? route.path === "/" || route.path.startsWith("/apps") : route.path.startsWith(to));
+const roleLabel = computed(() => ({ viewer: "Viewer", deployer: "Deployer", admin: "Admin" })[me.value?.role ?? "viewer"]);
 </script>
 
 <template>
   <div class="h-full flex flex-col">
-    <NuxtLink to="/" class="flex items-center gap-2 font-semibold text-lg px-4 h-14 shrink-0" @click="emit('navigate')">
-      <i class="pi pi-box text-primary" />
+    <NuxtLink to="/" class="flex items-center gap-2.5 px-5 h-16 shrink-0 font-display font-semibold text-[1.45rem] tracking-[0.01em]" @click="emit('navigate')">
+      <AppMark :size="24" />
       Freighter
     </NuxtLink>
-    <nav class="flex-1 overflow-y-auto px-2 pb-2 flex flex-col gap-4" aria-label="Main">
-      <div v-for="(g, i) in groups" :key="i" class="flex flex-col gap-0.5">
-        <p v-if="g.label" class="px-3 pb-1 text-sm text-muted-color">{{ g.label }}</p>
+    <nav class="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-6" aria-label="Main">
+      <div v-for="(g, i) in groups" :key="i" class="flex flex-col gap-px">
+        <p v-if="g.label" class="px-3 pb-1.5 text-[0.8rem] text-muted-color">{{ g.label }}</p>
         <NuxtLink
           v-for="l in g.items"
           :key="l.to"
           :to="l.to"
-          class="px-3 py-2 rounded-md text-sm flex items-center gap-3 hover:bg-surface-100 dark:hover:bg-surface-800"
-          :class="active(l.to) ? 'bg-surface-100 dark:bg-surface-800 font-medium' : 'text-muted-color'"
+          class="nav-link"
           :aria-current="active(l.to) ? 'page' : undefined"
           @click="emit('navigate')"
         >
-          <i :class="l.icon" />{{ l.label }}
+          <i :class="l.icon" aria-hidden="true" />{{ l.label }}
         </NuxtLink>
       </div>
     </nav>
-    <div class="border-t border-surface p-3 flex items-center gap-2 shrink-0">
-      <div class="min-w-0 flex-1">
-        <p v-if="me" class="text-sm font-medium truncate" :title="me.name">{{ me.name }}</p>
-        <p v-if="me" class="text-xs text-muted-color">{{ me.role }}</p>
+    <div class="border-t border-[var(--fr-line)] px-4 py-3 flex items-center gap-1 shrink-0">
+      <div v-if="me" class="min-w-0 flex-1">
+        <p class="text-sm font-medium truncate" :title="me.name">{{ me.name }}</p>
+        <p class="text-[0.8rem] text-muted-color">{{ roleLabel }}</p>
       </div>
-      <Button :icon="dark ? 'pi pi-sun' : 'pi pi-moon'" text rounded severity="secondary" :aria-label="dark ? 'Switch to light theme' : 'Switch to dark theme'" @click="toggle" />
-      <Button icon="pi pi-sign-out" text rounded severity="secondary" aria-label="Sign out" :loading="logout.isPending.value" @click="logout.mutate()" />
+      <Button :icon="dark ? 'pi pi-sun' : 'pi pi-moon'" text rounded severity="secondary" size="small" :aria-label="dark ? 'Use light theme' : 'Use dark theme'" :title="dark ? 'Use light theme' : 'Use dark theme'" @click="toggle" />
+      <Button icon="pi pi-sign-out" text rounded severity="secondary" size="small" aria-label="Sign out" title="Sign out" :loading="logout.isPending.value" @click="logout.mutate()" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--p-border-radius-md);
+  font-size: 0.95rem;
+  color: var(--p-text-muted-color);
+  border: 1px solid transparent;
+}
+.nav-link i { font-size: 0.9rem; width: 1rem; text-align: center; }
+.nav-link:hover { color: var(--p-text-color); background: color-mix(in srgb, var(--p-text-color) 5%, transparent); }
+.nav-link[aria-current="page"] {
+  color: var(--p-text-color);
+  font-weight: 500;
+  background: var(--fr-panel);
+  border-color: var(--fr-line);
+}
+.nav-link[aria-current="page"] i { color: var(--p-primary-color); }
+</style>

@@ -4,13 +4,15 @@ import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { createHaproxy, ensureCert, type Haproxy } from "@freighter/haproxy";
 import { createSystemd, defaultLayout, defaultRun, type Layout, type Run, type Systemd } from "@freighter/systemd";
-import { loadConfig, type HostConfig } from "./config.ts";
+import { HOST_CONFIG_PATH, loadConfig, type HostConfig } from "./config.ts";
 
 export interface Deps {
   layout: Layout;
   systemd: Systemd;
   haproxy: Haproxy;
   config: HostConfig;
+  /** Where `config` was read from (and where the settings UI writes it back). Default: /etc/freighter/config.yaml. */
+  configPath?: string;
   /** Runs host commands that change the machine (id, useradd, chown, systemctl, certbot, haproxy). A no-op under --prefix. */
   run: Run;
   /** Always runs for real, even under --prefix: read-mostly tools such as git, ssh-keygen and tar. */
@@ -99,6 +101,7 @@ export async function defaultDeps(opts: { prefix?: string } = {}): Promise<Deps>
   const deps: Deps = {
     layout,
     config,
+    configPath: prefix + HOST_CONFIG_PATH,
     run,
     exec: defaultRun,
     runLogged,

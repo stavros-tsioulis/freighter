@@ -5,30 +5,132 @@
 @import "@fontsource/barlow/400.css";
 @import "@fontsource/barlow/500.css";
 @import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+
+/* Condensed Barlow carries titles and app names, like the lettering painted on a container.
+   Monospace is only for literal values: hashes, release ids, commands. */
+@theme {
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Barlow", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+:root {
+  --fr-rail: var(--p-surface-100);      /* navigation */
+  --fr-page: var(--p-surface-0);        /* where content sits */
+  --fr-panel: var(--p-surface-0);       /* bordered groups inside the page */
+  --fr-sunken: var(--p-surface-50);     /* table heads, inline code wells */
+  --fr-line: var(--p-surface-200);
+}
+.app-dark {
+  --fr-rail: var(--p-surface-950);
+  --fr-page: #131b23;
+  --fr-panel: var(--p-surface-900);
+  --fr-sunken: #141c24;
+  --fr-line: var(--p-surface-800);
+}
 
 html {
-  font-family: "Barlow", system-ui, sans-serif;
+  font-family: var(--font-sans);
   font-size: 17px; /* Barlow sets small; keep body text comfortable */
   color-scheme: light;
+  -webkit-font-smoothing: antialiased;
 }
 html.app-dark {
   color-scheme: dark;
 }
 body {
-  background: var(--p-content-background);
+  background: var(--fr-page);
   color: var(--p-text-color);
+  font-feature-settings: "tnum" 0;
 }
 
-h1, h2 {
-  letter-spacing: -0.01em;
-}
-:where(a, button, [tabindex]):focus-visible {
+code, pre, kbd { font-family: var(--font-mono); font-size: 0.86em; }
+.num { font-variant-numeric: tabular-nums; }
+
+:where(a, button, [tabindex], summary):focus-visible {
   outline: 2px solid var(--p-primary-color);
   outline-offset: 2px;
+  border-radius: 3px;
 }
+
+/* ---- PrimeVue refinements: calmer tables, panels that sit on the page ---- */
+.p-datatable {
+  border: 1px solid var(--fr-line);
+  border-radius: var(--p-border-radius-lg);
+  overflow: hidden;
+  background: var(--fr-panel);
+}
+.p-datatable .p-datatable-table-container { background: var(--fr-panel); }
+.p-datatable .p-datatable-thead > tr > th {
+  background: var(--fr-sunken);
+  color: var(--p-text-muted-color);
+  font-weight: 500;
+  font-size: 0.82rem;
+  border-color: var(--fr-line);
+}
+.p-datatable .p-datatable-tbody > tr { background: var(--fr-panel); }
+.p-datatable .p-datatable-tbody > tr > td { border-color: var(--fr-line); }
+.p-datatable .p-datatable-tbody > tr:last-child > td { border-bottom: 0; }
+.p-datatable .p-paginator { background: var(--fr-sunken); border-top: 1px solid var(--fr-line); }
+
+.p-tablist, .p-tablist-content, .p-tablist-tab-list, .p-tablist-nav-button { background: transparent; }
+.p-tablist-tab-list { border-color: var(--fr-line); }
+.p-tabpanels { background: transparent; padding-inline: 0; }
+.p-tab { font-weight: 500; }
+
+.p-dialog .p-dialog-title { font-family: var(--font-display); font-weight: 600; font-size: 1.45rem; letter-spacing: 0; }
+
+/* A well for literal values the user copies (keys, commands, records). */
+.well {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--p-border-radius-md);
+  background: var(--fr-sunken);
+  border: 1px solid var(--fr-line);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+/* Terminal output keeps its own dark surface in both themes. */
+.terminal {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  padding: 0.85rem 1rem;
+  border-radius: var(--p-border-radius-md);
+  background: #0f161d;
+  color: #d5dde4;
+  border: 1px solid transparent;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Native file pickers, styled to sit with PrimeVue's secondary buttons. */
+input[type="file"] { font-size: 0.9rem; color: var(--p-text-muted-color); }
+input[type="file"]::file-selector-button {
+  font: inherit;
+  font-weight: 500;
+  color: var(--p-text-color);
+  margin-right: 0.75rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--p-border-radius-md);
+  border: 1px solid var(--p-surface-300);
+  background: var(--fr-panel);
+  cursor: pointer;
+}
+.app-dark input[type="file"]::file-selector-button { border-color: var(--p-surface-700); }
+input[type="file"]::file-selector-button:hover { background: var(--fr-sunken); }
+.p-togglebutton-label { white-space: nowrap; }
+.app-dark .terminal { border-color: var(--fr-line); }

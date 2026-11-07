@@ -13,10 +13,11 @@ const showCreate = ref(false);
 const name = ref("");
 const role = ref<Role>("deployer");
 const roles = [
-  { label: "Viewer — read-only", value: "viewer" },
-  { label: "Deployer — deploy and operate", value: "deployer" },
-  { label: "Admin — everything", value: "admin" },
+  { label: "Viewer", hint: "Sees everything, changes nothing", value: "viewer" },
+  { label: "Deployer", hint: "Deploys, rolls back, restarts and reads logs", value: "deployer" },
+  { label: "Admin", hint: "Everything, including servers, domains, secrets and tokens", value: "admin" },
 ];
+const roleName = (r: Role) => roles.find((x) => x.value === r)?.label ?? r;
 const created = ref<string | null>(null);
 
 function open() {
@@ -51,20 +52,23 @@ function askRevoke(t: TokenRow) {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h1 class="text-2xl font-semibold">API tokens</h1>
-      <Button label="New token" icon="pi pi-plus" size="small" @click="open" />
-    </div>
-    <DataTable scrollable :value="tokens ?? []" :loading="isLoading" size="small" striped-rows data-key="id">
-      <Column header="Name" field="name" />
-      <Column header="Role"><template #body="{ data }"><Tag :value="data.role" severity="secondary" /></template></Column>
+  <div class="flex flex-col gap-8">
+    <PageHeader title="API tokens">
+      Tokens sign in to this dashboard and let the CLI and CI jobs call the API. Give each one the smallest role it needs.
+      <template #actions>
+        <Button label="New token" icon="pi pi-plus" size="small" @click="open" />
+      </template>
+    </PageHeader>
+    <DataTable scrollable :value="tokens ?? []" :loading="isLoading" data-key="id">
+      <template #empty><span class="text-muted-color">No tokens yet.</span></template>
+      <Column header="Name" field="name"><template #body="{ data }"><span class="font-medium" :class="{ 'line-through text-muted-color': data.revokedAt }">{{ data.name }}</span></template></Column>
+      <Column header="Role"><template #body="{ data }">{{ roleName(data.role) }}</template></Column>
       <Column header="Created"><template #body="{ data }">{{ timeAgo(data.createdAt) }}</template></Column>
       <Column header="Last used"><template #body="{ data }">{{ data.lastUsedAt ? timeAgo(data.lastUsedAt) : "never" }}</template></Column>
-      <Column header="">
+      <Column header="" class="text-right" style="width: 7rem">
         <template #body="{ data }">
-          <Tag v-if="data.revokedAt" value="revoked" severity="danger" />
-          <Button v-else icon="pi pi-trash" text rounded severity="danger" size="small" aria-label="Revoke token" @click="askRevoke(data)" />
+          <span v-if="data.revokedAt" class="text-sm text-muted-color">Revoked</span>
+          <Button v-else label="Revoke" text severity="danger" size="small" @click="askRevoke(data)" />
         </template>
       </Column>
     </DataTable>
@@ -73,23 +77,26 @@ function askRevoke(t: TokenRow) {
       <div v-if="!created" class="flex flex-col gap-3">
         <div class="flex flex-col gap-1">
           <label for="tok-name" class="text-sm font-medium">Name</label>
-          <InputText id="tok-name" v-model="name" placeholder="e.g. github-actions" maxlength="64" />
+          <InputText id="tok-name" v-model="name" placeholder="github-actions" maxlength="64" />
         </div>
         <div class="flex flex-col gap-1">
           <label for="tok-role" class="text-sm font-medium">Role</label>
-          <Select id="tok-role" v-model="role" :options="roles" option-label="label" option-value="value" />
+          <Select id="tok-role" v-model="role" :options="roles" option-label="label" option-value="value">
+            <template #option="{ option }"><div><div>{{ option.label }}</div><div class="text-sm text-muted-color">{{ option.hint }}</div></div></template>
+          </Select>
+          <small class="text-muted-color">{{ roles.find((r) => r.value === role)?.hint }}</small>
         </div>
       </div>
       <div v-else class="flex flex-col gap-3">
         <Message severity="warn" size="small">Copy this token now. It is not stored and cannot be shown again.</Message>
         <div class="flex gap-2">
           <InputText :model-value="created" readonly class="font-mono flex-1" aria-label="New token" @focus="($event.target as HTMLInputElement).select()" />
-          <Button icon="pi pi-copy" aria-label="Copy token" @click="copy" />
+          <Button icon="pi pi-copy" label="Copy" severity="secondary" outlined @click="copy" />
         </div>
       </div>
       <template #footer>
         <Button :label="created ? 'Done' : 'Cancel'" severity="secondary" text @click="showCreate = false" />
-        <Button v-if="!created" label="Create" icon="pi pi-check" :disabled="!name.trim()" :loading="create.isPending.value" @click="submit" />
+        <Button v-if="!created" label="Create token" :disabled="!name.trim()" :loading="create.isPending.value" @click="submit" />
       </template>
     </Dialog>
   </div>

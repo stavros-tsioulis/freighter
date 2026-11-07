@@ -4,11 +4,11 @@ The web UI (phase 6) and the host process for the API. A Nuxt 4 SPA (PrimeVue + 
 
 | Page | What it shows | Role |
 | --- | --- | --- |
-| Overview | app/service counts, apps table, recent deployments, "Deploy app" | viewer (deploy: deployer) |
+| Apps | one row per app with service states, attention first; recent deployments; "Deploy from Git", "Upload archive" | viewer (deploy: deployer) |
 | App → Services | state, ports, hostnames, restarts, memory and CPU with sparklines (15 min / 1 h / 6 h), start/stop/restart | viewer (actions: deployer) |
 | App → Deployments | history (API and host-CLI deploys), deploy by uploading a `.tar.gz`, roll back with live status | viewer (actions: deployer) |
 | App → Logs | journal tail, Live mode (3 s polling), copy/download | deployer |
-| App → Environment | secret names (values are write-only), set a secret, warns about secrets declared in `app.yaml` but missing | viewer (set: admin) |
+| App → Secrets | secret names (values are write-only), set a secret, warns about secrets declared in `app.yaml` but missing | viewer (set: admin) |
 | Servers | status, last seen, agent version, load/memory/disk, certificate expiry, app count; add a server (shows the enrollment command once), new token, check now, remove | viewer (manage: admin) |
 | Certificates | expiry per `tls: auto` hostname, renew | viewer (renew: admin) |
 | Tokens, Audit | create/revoke API tokens (shown once), activity log | admin |

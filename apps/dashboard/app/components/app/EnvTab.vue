@@ -35,14 +35,14 @@ function save() {
     <Message v-if="missing.length" severity="warn" size="small">
       Declared in <code>app.yaml</code> but not set: <b>{{ missing.join(", ") }}</b>. Deploys fail until they exist.
     </Message>
-    <div class="flex items-center justify-between">
-      <h3 class="font-medium">Secrets</h3>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <p class="text-sm text-muted-color max-w-[60ch]">Secrets reach the app as environment variables. Values are write-only: once saved, they can't be shown here again.</p>
       <Button v-if="can('admin')" label="Set secret" icon="pi pi-plus" size="small" @click="open()" />
     </div>
     <Skeleton v-if="isLoading" height="3rem" />
     <div v-else class="flex flex-wrap gap-2">
       <Tag v-for="n in names ?? []" :key="n" severity="secondary" class="font-mono">{{ n }}</Tag>
-      <span v-if="!(names ?? []).length" class="text-muted-color text-sm">No secrets set.</span>
+      <span v-if="!(names ?? []).length" class="text-muted-color text-sm">No secrets yet.</span>
     </div>
     <Button v-for="m in can('admin') ? missing : []" :key="m" :label="`Set ${m}`" size="small" outlined severity="warn" class="self-start" @click="open(m)" />
 
@@ -61,7 +61,7 @@ function save() {
       </form>
       <template #footer>
         <Button label="Cancel" severity="secondary" text @click="show = false" />
-        <Button label="Save" icon="pi pi-check" :disabled="!valid" :loading="setEnv.isPending.value" @click="save" />
+        <Button label="Save secret" :disabled="!valid" :loading="setEnv.isPending.value" @click="save" />
       </template>
     </Dialog>
   </div>

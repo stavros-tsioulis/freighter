@@ -54,6 +54,6 @@ function download() {
       </div>
     </div>
     <Message v-if="error" severity="error" size="small">{{ error.message }}</Message>
-    <pre ref="box" class="font-mono text-xs leading-5 p-3 rounded-md bg-surface-950 text-surface-100 overflow-auto h-[28rem] whitespace-pre-wrap break-words" tabindex="0">{{ text || (isFetching ? "Loading…" : "No log lines.") }}</pre>
+    <pre ref="box" class="terminal h-[30rem]" tabindex="0">{{ text || (isFetching ? "Loading…" : "No log lines.") }}</pre>
   </div>
 </template>

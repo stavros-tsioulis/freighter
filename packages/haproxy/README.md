@@ -9,7 +9,7 @@ Routing and TLS integration (phase 4). Freighter manages **only** these files in
 | `backends.cfg` | one backend per routed service + the `freighter_acme` backend |
 | `certs/<host>.pem` | combined cert + key per `tls: auto` hostname |
 
-Your own `haproxy.cfg` stays yours. Run `freighter haproxy setup` once and paste the printed lines into your :80 and :443 frontends, and load `backends.cfg` with an extra `-f` (HAProxy >= 2.4).
+Your own `haproxy.cfg` stays yours. No HAProxy on the host, or its ports are taken? `freighter haproxy config` prints a complete config for a Freighter-only instance (unit: `infra/systemd/freighter-haproxy.service`); `haproxy.httpPort`/`httpsPort` choose its ports, so it can sit behind your own reverse proxy (see the docs, *Connect HAProxy*). Run `freighter haproxy setup` once and paste the printed lines into your :80 and :443 frontends, and load `backends.cfg` with an extra `-f` (HAProxy >= 2.4).
 
 ## Host config (`/etc/freighter/config.yaml`, all optional except the email for `tls: auto`)
 ```yaml

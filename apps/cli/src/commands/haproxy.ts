@@ -1,5 +1,5 @@
 import { certStatus, haproxySync, renewCerts } from "@freighter/core";
-import { renderSnippet } from "@freighter/haproxy";
+import { renderMainConfig, renderSnippet } from "@freighter/haproxy";
 import { defineCommand } from "citty";
 import { common, depsFrom, guard } from "../common.ts";
 
@@ -9,10 +9,20 @@ const setup = defineCommand({
   run: ({ args }) =>
     guard(async () => {
       const d = await depsFrom(args);
-      process.stdout.write(renderSnippet({ dir: d.config.haproxy.dir }));
+      process.stdout.write(renderSnippet(d.config.haproxy));
       if (!d.config.acme.email) {
         console.error("\nnote: set acme.email in /etc/freighter/config.yaml before deploying domains with `tls: auto`");
       }
+    }),
+});
+
+const fullConfig = defineCommand({
+  meta: { name: "config", description: "Print a complete haproxy.cfg for a Freighter-only HAProxy (servers without their own)" },
+  args: { ...common },
+  run: ({ args }) =>
+    guard(async () => {
+      const d = await depsFrom(args);
+      process.stdout.write(renderMainConfig(d.config.haproxy));
     }),
 });
 
@@ -28,7 +38,7 @@ const sync = defineCommand({
 
 export const haproxy = defineCommand({
   meta: { name: "haproxy", description: "Manage the HAProxy integration" },
-  subCommands: { setup, sync },
+  subCommands: { setup, config: fullConfig, sync },
 });
 
 const renew = defineCommand({

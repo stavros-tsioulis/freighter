@@ -52,28 +52,30 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal :header="app ? `Deploy ${app}` : 'Deploy app'" :style="{ width: '32rem' }" :closable="!uploading">
+  <Dialog v-model:visible="visible" modal :header="app ? `Deploy ${app} from an archive` : 'Upload an archive'" :style="{ width: '32rem' }" :closable="!uploading">
     <div class="flex flex-col gap-4">
       <div v-if="!app" class="flex flex-col gap-1">
         <label for="deploy-name" class="text-sm font-medium">App name</label>
-        <InputText id="deploy-name" v-model="name" placeholder="must match name: in app.yaml" :invalid="!!nameError" />
+        <InputText id="deploy-name" v-model="name" placeholder="shop" :invalid="!!nameError" />
         <small v-if="nameError" class="text-red-500">{{ nameError }}</small>
+        <small v-else class="text-muted-color">Must match <code>name:</code> in the archive's <code>app.yaml</code>.</small>
       </div>
       <div v-if="showServer" class="flex flex-col gap-1">
         <label for="deploy-server" class="text-sm font-medium">Server</label>
         <Select v-if="!pinned" id="deploy-server" v-model="server" :options="choices" option-label="label" option-value="value" />
-        <div v-else class="text-sm"><Tag :value="pinned" severity="secondary" icon="pi pi-server" /> <span class="text-muted-color">pinned</span></div>
+        <div v-else class="text-sm"><Tag :value="pinned" severity="secondary" icon="pi pi-server" /> <span class="text-muted-color">The app already runs here.</span></div>
       </div>
       <div class="flex flex-col gap-1">
-        <label for="deploy-file" class="text-sm font-medium">Artifact</label>
+        <label for="deploy-file" class="text-sm font-medium">Archive</label>
         <input id="deploy-file" type="file" accept=".gz,.tgz,application/gzip" class="text-sm" :disabled="uploading || !!deploymentId" @change="onFile" />
+        <small class="text-muted-color">A <code>.tar.gz</code> with <code>app.yaml</code> at its root.</small>
       </div>
       <ProgressBar v-if="uploading" :value="Math.round(progress * 100)" />
       <DeploymentStatus v-if="deploymentId" :id="deploymentId" @finished="finished = $event" />
     </div>
     <template #footer>
       <Button :label="deploymentId ? 'Close' : 'Cancel'" severity="secondary" text :disabled="uploading" @click="visible = false" />
-      <Button v-if="!deploymentId" label="Deploy" icon="pi pi-upload" :disabled="!canSubmit" :loading="uploading" @click="submit" />
+      <Button v-if="!deploymentId" label="Upload and deploy" :disabled="!canSubmit" :loading="uploading" @click="submit" />
     </template>
   </Dialog>
 </template>

@@ -73,7 +73,7 @@ const addService = () => form.value.services.push(newService(form.value.services
         <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="form.env.splice(i, 1)" />
       </div>
       <div class="flex flex-col gap-1 mt-1">
-        <label for="mf-secrets" class="text-sm font-medium">Secret names <span class="text-muted-color font-normal">(values go on the Environment tab)</span></label>
+        <label for="mf-secrets" class="text-sm font-medium">Secret names <span class="text-muted-color font-normal">(set their values on the Secrets tab)</span></label>
         <Textarea id="mf-secrets" v-model="form.secrets" rows="2" auto-resize placeholder="DATABASE_URL" class="font-mono" />
       </div>
     </section>
@@ -101,7 +101,7 @@ const addService = () => form.value.services.push(newService(form.value.services
     <section class="flex flex-col gap-2" aria-live="polite">
       <h3 class="font-medium">Equivalent <code>app.yaml</code></h3>
       <Message v-if="preview.error.value" severity="warn" size="small">{{ preview.error.value.message }}</Message>
-      <pre v-if="preview.data.value && !preview.error.value" class="text-xs bg-surface-100 dark:bg-surface-800 rounded-md p-3 overflow-auto max-h-72">{{ preview.data.value.text }}</pre>
+      <pre v-if="preview.data.value && !preview.error.value" class="well !break-normal overflow-auto max-h-72">{{ preview.data.value.text }}</pre>
       <p v-else-if="!preview.error.value" class="text-sm text-muted-color">Add a service with a start command.</p>
     </section>
   </div>

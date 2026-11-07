@@ -25,7 +25,6 @@ watch(
 <template>
   <div v-if="data" class="flex flex-col gap-2" aria-live="polite">
     <div class="flex items-center gap-2">
-      <i v-if="data.status === 'queued' || data.status === 'running'" class="pi pi-spin pi-spinner" />
       <StatusTag :state="data.status" />
       <span v-if="data.releaseId" class="text-sm text-muted-color font-mono">{{ data.releaseId }}</span>
       <span v-if="data.finishedAt" class="text-sm text-muted-color">{{ formatDuration(durationBetween(data.startedAt, data.finishedAt)) }}</span>

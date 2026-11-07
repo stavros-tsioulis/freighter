@@ -7,6 +7,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { IDENT_RE, domainSchema, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
 import { isRole, type GitLinkRow, type PendingDomainRow, type Role } from "@freighter/registry";
 import {
@@ -836,6 +837,38 @@ export function createApi(ctx: ApiContext): Api {
     const name = sName(event);
     needServer(name);
     return (await checkServer(ctx, name)) ?? needServer(name);
+  }));
+
+  // ---- host settings: /etc/freighter/config.yaml of a server, edited through its agent ----
+  /** The settings available on a server: the control-plane ones exist only on `local`, where the API runs. */
+  const settingsFor = async (name: string) => {
+    const s = needServer(name);
+    const { fields } = await ctx.agents.forServer(name).call("config.get", {});
+    return { server: s, fields: s.kind === "local" ? fields : fields.filter((f) => f.scope === "agent") };
+  };
+  router.get("/v1/servers/:name/config", route("admin", async (event) => {
+    const { fields } = await settingsFor(sName(event));
+    return { fields };
+  }));
+  router.put("/v1/servers/:name/config", route("admin", async (event, who) => {
+    const name = sName(event);
+    const { changes } = await body(event, ops["config.set"].args);
+    const { fields } = await settingsFor(name);
+    const allowed = new Set(fields.map((f) => f.key));
+    for (const key of Object.keys(changes)) {
+      if (!allowed.has(key)) throw new ApiError(400, "bad_request", `"${key}" is not a setting that can be changed on ${name}`);
+    }
+    const result = await ctx.agents.forServer(name).call("config.set", { changes });
+    audit(who, "config.set", undefined, { server: name, changes });
+    return result;
+  }));
+  router.post("/v1/servers/:name/restart", route("admin", async (event, who) => {
+    const name = sName(event);
+    const { service } = await body(event, ops["service.restart"].args);
+    const s = needServer(name);
+    if (service === "api" && s.kind !== "local") throw new ApiError(400, "bad_request", "the API runs on the control server only");
+    audit(who, "service.restart", undefined, { server: name, service });
+    return ctx.agents.forServer(name).call("service.restart", { service });
   }));
 
   router.delete("/v1/servers/:name", route("admin", (event, who) => {
