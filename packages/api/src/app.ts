@@ -133,8 +133,24 @@ export function createApi(ctx: ApiContext): Api {
     const v = getQuery(event).server;
     return typeof v === "string" && v !== "" ? v : undefined;
   };
-  /** The server an app lives on: its pin if it has one, else the requested server, else "local". */
-  const serverOf = (event: H3Event, name: string) => ctx.registry.apps.get(name)?.server ?? requestedServer(event) ?? "local";
+  /**
+   * The server used when none is named: "local" if this control server runs apps itself, else the only enrolled server.
+   * With several, the caller has to say which.
+   */
+  const defaultServer = (): string => {
+    if (ctx.registry.servers.get("local")) return "local";
+    const usable = reachableServers(ctx);
+    if (usable.length === 1) return usable[0]!.name;
+    throw new ApiError(400, "bad_request", usable.length ? "choose a server: this control server runs no apps of its own" : "there is no server to run apps yet: add one under Servers");
+  };
+  /** The agent for work that belongs to no server (validating or generating SSH keys): this machine's, else any online one. */
+  const anyAgent = () => {
+    const s = ctx.registry.servers.get("local") ?? reachableServers(ctx).find((x) => x.status === "online");
+    if (!s) throw new ApiError(409, "no_server", "no server is online to do this; add and enroll a server first");
+    return ctx.agents.forServer(s.name);
+  };
+  /** The server an app lives on: its pin if it has one, else the requested server, else the default. */
+  const serverOf = (event: H3Event, name: string) => ctx.registry.apps.get(name)?.server ?? requestedServer(event) ?? defaultServer();
   const agentFor = (event: H3Event, name: string) => ctx.agents.forServer(serverOf(event, name));
   const origin = (event: H3Event) => {
     const u = getRequestURL(event, { xForwardedHost: ctx.trustProxy, xForwardedProto: ctx.trustProxy });
@@ -463,7 +479,7 @@ export function createApi(ctx: ApiContext): Api {
       passphrase: z.string().max(1000).optional(),
     }));
     if (ctx.registry.sshKeys.list().some((k) => k.name === b.name)) throw new ApiError(409, "conflict", `a key named "${b.name}" already exists`);
-    const k = await ctx.agents.forServer("local").call("ssh.import", { privateKey: b.privateKey, passphrase: b.passphrase });
+    const k = await anyAgent().call("ssh.import", { privateKey: b.privateKey, passphrase: b.passphrase });
     const dup = ctx.registry.sshKeys.list().find((x) => x.fingerprint === k.fingerprint);
     if (dup) throw new ApiError(409, "conflict", `this key is already imported as "${dup.name}"`);
     const created = ctx.registry.sshKeys.create({ name: b.name, keyType: k.keyType, publicKey: k.publicKey, fingerprint: k.fingerprint, comment: k.comment || null, privateKey: k.privateKey, createdBy: who.id });
@@ -476,7 +492,7 @@ export function createApi(ctx: ApiContext): Api {
   router.post("/v1/ssh-keys/generate", route("admin", async (event, who) => {
     const b = await body(event, z.object({ name: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 ._@-]{0,63}$/, "name: letters, digits, spaces and . _ @ -") }));
     if (ctx.registry.sshKeys.list().some((k) => k.name === b.name)) throw new ApiError(409, "conflict", `a key named "${b.name}" already exists`);
-    const k = await ctx.agents.forServer("local").call("ssh.generate", { comment: `freighter:${b.name}` });
+    const k = await anyAgent().call("ssh.generate", { comment: `freighter:${b.name}` });
     const created = ctx.registry.sshKeys.create({ name: b.name, keyType: k.keyType, publicKey: k.publicKey, fingerprint: k.fingerprint, comment: k.comment || null, privateKey: k.privateKey, createdBy: who.id });
     audit(who, "ssh-key.generate", undefined, { name: created.name, fingerprint: created.fingerprint });
     setResponseStatus(event, 201);
@@ -555,7 +571,7 @@ export function createApi(ctx: ApiContext): Api {
   function queueGitDeploy(name: string, link: GitLinkRow, trigger: "manual" | "webhook", requestedBy: string | null, skipIfUnchanged: boolean) {
     const waiting = jobs.queuedGit(name);
     if (waiting) return { id: waiting, status: "queued" as const, coalesced: true };
-    const server = ctx.registry.apps.get(name)?.server ?? "local";
+    const server = ctx.registry.apps.get(name)?.server ?? defaultServer();
     const id = randomUUID();
     ctx.registry.deployments.create({ id, app: name, server, action: "deploy", trigger, requestedBy });
     jobs.enqueueGit({ id, app: name, server, repository: link.repository, branch: link.branch, subpath: link.subpath, skipIfUnchanged, trigger, sshKeyId: ctx.registry.gitLinks.get(name)?.sshKeyId ?? link.sshKeyId, fallbackManifest: fallbackFor(link) });
@@ -571,7 +587,7 @@ export function createApi(ctx: ApiContext): Api {
     const existing = ctx.registry.gitLinks.get(name);
     const pinned = ctx.registry.apps.get(name)?.server;
     if (pinned && b.server && b.server !== pinned) throw new ApiError(409, "pinned_to_other_server", `app "${name}" is pinned to server "${pinned}"`);
-    const server = pinned ?? b.server ?? "local";
+    const server = pinned ?? b.server ?? defaultServer();
     const target = ctx.registry.servers.get(server);
     if (!target) throw new ApiError(404, "not_found", `unknown server "${server}"`);
     if (target.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${server}" has not been enrolled yet`);
@@ -717,7 +733,7 @@ export function createApi(ctx: ApiContext): Api {
   /** Which server runs the git operation: the app's pinned one, the requested one, or local. */
   const gitServer = (requested: string | undefined, appNameOrNull?: string) => {
     const pinned = appNameOrNull ? ctx.registry.apps.get(appNameOrNull)?.server : undefined;
-    const name = pinned ?? requested ?? "local";
+    const name = pinned ?? requested ?? defaultServer();
     const srv = ctx.registry.servers.get(name);
     if (!srv) throw new ApiError(404, "not_found", `unknown server "${name}"`);
     if (srv.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${name}" has not been enrolled yet`);

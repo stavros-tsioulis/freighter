@@ -54,6 +54,9 @@ const summary = computed(() => {
       <div v-else-if="!apps.length && serverFilter" class="text-muted-color">No apps on {{ serverFilter }}.</div>
       <div v-else-if="!apps.length" class="rounded-[var(--p-border-radius-lg)] border border-dashed border-[var(--p-surface-300)] dark:border-[var(--p-surface-700)] px-6 py-10 sm:px-10 max-w-3xl">
         <h2 class="font-display font-semibold text-2xl">Ship your first app</h2>
+        <Message v-if="servers && !servers.length" severity="warn" :closable="false" class="mt-3">
+          This control server runs no apps of its own. <NuxtLink to="/servers" class="underline">Add a server</NuxtLink> to run them on.
+        </Message>
         <p class="mt-1.5 text-muted-color max-w-[56ch]">
           Point Freighter at a Git repository and it builds and deploys on every push, or upload a <code>.tar.gz</code> that contains an <code>app.yaml</code>.
         </p>

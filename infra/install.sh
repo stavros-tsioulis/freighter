@@ -18,6 +18,9 @@
 #   --email <addr>         Let's Encrypt contact (acme.email)    [FREIGHTER_ACME_EMAIL]
 #   --public-url <url>     URL of the dashboard (control only)   [FREIGHTER_PUBLIC_URL]
 #   --node-version <v>     Node.js major to install              [FREIGHTER_NODE_MAJOR, default 24]
+#   --with-agent           control role only: also run apps on this machine, through an agent of its own (with
+#                          HAProxy and certbot). By default a control server only manages remote servers and
+#                          runs no apps itself.                                       [FREIGHTER_WITH_AGENT=1]
 #   --haproxy auto|dedicated|existing
 #                          auto: use the HAProxy already on this server if there is one, else a dedicated one.
 #                          dedicated: a separate Freighter-only HAProxy (own unit, own config); the system's
@@ -118,6 +121,7 @@ preflight() {
 
 # Decide between the HAProxy the operator already runs and a Freighter-only one.
 detect_haproxy_mode() {
+	if [ "$HAPROXY_MODE" = none ]; then ok "No agent on this machine: it runs no apps, so no HAProxy or certbot either"; return; fi
 	if [ "$HAPROXY_MODE" = auto ]; then
 		if dpkg -s haproxy >/dev/null 2>&1 && systemctl is-enabled haproxy >/dev/null 2>&1; then HAPROXY_MODE=existing; else HAPROXY_MODE=dedicated; fi
 		ok "HAProxy: $HAPROXY_MODE ($([ "$HAPROXY_MODE" = existing ] && echo "found one on this server; --haproxy dedicated to use a separate one" || echo "none running here; Freighter gets its own"))"
@@ -144,7 +148,8 @@ port_in_use() {
 # ---------- 2. system packages ----------
 install_packages() {
 	step "Installing system packages"
-	pkgs="git openssh-client tar gzip curl ca-certificates openssl xz-utils haproxy certbot"
+	pkgs="git tar gzip curl ca-certificates openssl xz-utils"
+	[ "$HAS_AGENT" = 0 ] || pkgs="$pkgs openssh-client haproxy certbot"
 	missing=
 	for p in $pkgs; do
 		dpkg -s "$p" >/dev/null 2>&1 || missing="$missing $p"
@@ -208,7 +213,13 @@ create_user_and_dirs() {
 	if [ "$DRY_RUN" = 1 ]; then
 		printf '  %s$%s %sinstall -d /var/lib/freighter /srv/apps /etc/freighter{,/apps,/agent}%s\n' "$DIM" "$RST" "$DIM" "$RST"; return
 	fi
-	if [ "$ROLE" = control ]; then
+	if [ "$ROLE" = control ] && [ "$HAS_AGENT" = 0 ]; then
+		install -d -o freighter -g freighter -m 0755 /var/lib/freighter
+		install -d -o freighter -g freighter -m 0750 /var/lib/freighter/artifacts   # uploads wait here on their way to a server
+		install -d -m 0755 /etc/freighter
+		ok "/var/lib/freighter, /etc/freighter"
+		return
+	elif [ "$ROLE" = control ]; then
 		install -d -o freighter -g freighter -m 0755 /var/lib/freighter
 		install -d -o root -g freighter -m 0770 /var/lib/freighter/artifacts
 	else
@@ -256,13 +267,14 @@ install_freighter() {
 			write_file "/usr/local/bin/$1" 0755 || true
 	}
 	launcher freighter apps/cli/src/cli.ts
-	launcher freighter-agent apps/agent/src/main.ts
+	[ "$HAS_AGENT" = 0 ] || launcher freighter-agent apps/agent/src/main.ts
 }
 
 # ---------- 6. HAProxy ----------
 # Freighter never edits an haproxy.cfg you own. It owns /etc/haproxy/freighter. Either it is loaded by the HAProxy you
 # already run (existing), or by a separate instance with its own unit and config (dedicated).
 setup_haproxy() {
+	[ "$HAPROXY_MODE" != none ] || return 0
 	step "Preparing HAProxy ($HAPROXY_MODE)"
 	if [ "$DRY_RUN" = 1 ]; then
 		printf '  %s$%s %screate /etc/haproxy/freighter, placeholder certificate, %s%s\n' "$DIM" "$RST" "$DIM" \
@@ -307,6 +319,9 @@ write_config() {
 	step "Writing configuration"
 	if [ -e /etc/freighter/config.yaml ]; then
 		skip "/etc/freighter/config.yaml exists, left alone"
+		if [ "$ROLE" = control ] && [ "$HAS_AGENT" = 1 ] && ! grep -Eq '^[[:space:]]+localAgent:[[:space:]]*true' /etc/freighter/config.yaml; then
+			warn "to run apps on this control server, set  api: { localAgent: true }  in it, then: systemctl restart freighter-api"
+		fi
 		if [ "$HAPROXY_MODE" = dedicated ]; then
 			warn "make sure it has:  haproxy: { mainConfig: /etc/freighter/haproxy/haproxy.cfg, reloadCommand: [systemctl, reload, freighter-haproxy], httpPort: $HTTP_PORT, httpsPort: $HTTPS_PORT }"
 		fi
@@ -325,9 +340,13 @@ write_config() {
 			[ -z "$PUBLIC_HTTPS_PORT" ] || echo "  publicHttpsPort: $PUBLIC_HTTPS_PORT"
 			[ "$ACCEPT_PROXY" = 0 ] || echo "  acceptProxy: true"
 		fi
-		if [ -n "$ACME_EMAIL" ]; then echo "acme:"; echo "  email: $ACME_EMAIL"; else echo "# acme:"; echo "#   email: ops@example.com   # required before any domain uses tls: auto"; fi
+		if [ "$HAS_AGENT" = 0 ]; then :
+		elif [ -n "$ACME_EMAIL" ]; then echo "acme:"; echo "  email: $ACME_EMAIL"; else echo "# acme:"; echo "#   email: ops@example.com   # required before any domain uses tls: auto"; fi
 		if [ "$ROLE" = control ]; then
-			if [ -n "$PUBLIC_URL" ]; then echo "api:"; echo "  publicUrl: $PUBLIC_URL"; else echo "# api:"; echo "#   publicUrl: https://freighter.example.com"; fi
+			echo "api:"
+			if [ "$HAS_AGENT" = 1 ]; then echo "  localAgent: true    # this control server also runs apps, through its own agent"
+			else echo "  localAgent: false   # this control server runs no apps; it manages remote servers"; fi
+			if [ -n "$PUBLIC_URL" ]; then echo "  publicUrl: $PUBLIC_URL"; else echo "  # publicUrl: https://freighter.example.com"; fi
 		fi
 	} | write_file /etc/freighter/config.yaml 0644 || true
 }
@@ -336,7 +355,8 @@ install_units() {
 	step "Installing systemd services"
 	src="$DIR/infra/systemd"
 	[ "$DRY_RUN" = 1 ] && [ ! -d "$src" ] && src=${FROM:+$FROM/infra/systemd}
-	units="freighter-agent.service freighter-renew.service freighter-renew.timer"
+	units=
+	[ "$HAS_AGENT" = 0 ] || units="freighter-agent.service freighter-renew.service freighter-renew.timer"
 	[ "$ROLE" = control ] && units="$units freighter-api.service"
 	[ "$HAPROXY_MODE" = dedicated ] && units="$units freighter-haproxy.service"
 	changed=0
@@ -352,7 +372,9 @@ install_units() {
 start_services() {
 	step "Starting services"
 	if [ "$NO_START" = 1 ]; then skip "--no-start: not enabling or starting anything"; return; fi
-	if [ "$HAPROXY_MODE" = dedicated ]; then
+	if [ "$HAPROXY_MODE" = none ]; then
+		:
+	elif [ "$HAPROXY_MODE" = dedicated ]; then
 		run "enabled Freighter's HAProxy" systemctl enable freighter-haproxy
 		run "started Freighter's HAProxy on :$HTTP_PORT and :$HTTPS_PORT" systemctl restart freighter-haproxy
 	else
@@ -363,9 +385,11 @@ start_services() {
 			run "restarted HAProxy" systemctl restart haproxy
 		fi
 	fi
-	run "enabled the agent" systemctl enable freighter-agent
-	run "started the agent" systemctl restart freighter-agent
-	run "enabled certificate renewal" systemctl enable --now freighter-renew.timer
+	if [ "$HAS_AGENT" = 1 ]; then
+		run "enabled the agent" systemctl enable freighter-agent
+		run "started the agent" systemctl restart freighter-agent
+		run "enabled certificate renewal" systemctl enable --now freighter-renew.timer
+	fi
 	if [ "$ROLE" = control ]; then
 		run "enabled the API and dashboard" systemctl enable freighter-api
 		run "started the API and dashboard" systemctl restart freighter-api
@@ -373,8 +397,10 @@ start_services() {
 
 	[ "$DRY_RUN" = 1 ] && return
 	# Wait for what we started to actually answer, so "Installation complete" is true.
-	i=0; until [ -S /run/freighter/agent.sock ]; do i=$((i + 1)); [ $i -le 20 ] || die "the agent did not create /run/freighter/agent.sock (journalctl -u freighter-agent)."; sleep 1; done
-	ok "agent is listening on /run/freighter/agent.sock"
+	if [ "$HAS_AGENT" = 1 ]; then
+		i=0; until [ -S /run/freighter/agent.sock ]; do i=$((i + 1)); [ $i -le 20 ] || die "the agent did not create /run/freighter/agent.sock (journalctl -u freighter-agent)."; sleep 1; done
+		ok "agent is listening on /run/freighter/agent.sock"
+	fi
 	if [ "$ROLE" = control ]; then
 		i=0; until $DL http://127.0.0.1:3000/ >/dev/null 2>&1; do i=$((i + 1)); [ $i -le 30 ] || die "the dashboard did not come up on 127.0.0.1:3000 (journalctl -u freighter-api)."; sleep 1; done
 		ok "dashboard is answering on 127.0.0.1:3000"
@@ -386,10 +412,12 @@ summary() {
 	printf '\n%sFreighter %s server installed%s%s\n' "$GRN$B" "$ROLE" "$RST" "$([ "$DRY_RUN" = 1 ] && printf ' (dry run: nothing was changed)')"
 	printf '\nNext steps:\n'
 	n=1
-	if [ -z "$ACME_EMAIL" ]; then
+	if [ -z "$ACME_EMAIL" ] && [ "$HAS_AGENT" = 1 ]; then
 		printf '  %d. Set the Let'"'"'s Encrypt contact before using tls: auto:\n       edit /etc/freighter/config.yaml  ->  acme.email\n' $n; n=$((n + 1))
 	fi
-	if [ "$HAPROXY_MODE" = dedicated ]; then
+	if [ "$HAPROXY_MODE" = none ]; then
+		:
+	elif [ "$HAPROXY_MODE" = dedicated ]; then
 		printf '  %d. Freighter'"'"'s HAProxy listens on :%s (HTTP) and :%s (HTTPS).\n' $n "$HTTP_PORT" "$HTTPS_PORT"; n=$((n + 1))
 		if [ "$HTTP_PORT" != 80 ] || [ "$HTTPS_PORT" != 443 ]; then
 			printf '       Point your reverse proxy at them: public :80 -> :%s, public :443 -> :%s.\n       Let'"'"'s Encrypt validates over public :80, so it must reach :%s. See "Behind your own reverse proxy" in the docs.\n' "$HTTP_PORT" "$HTTPS_PORT" "$HTTP_PORT"
@@ -397,7 +425,11 @@ summary() {
 	else
 		printf '  %d. Connect your HAProxy (Freighter does not edit your haproxy.cfg):\n       freighter haproxy setup\n' $n; n=$((n + 1))
 	fi
-	if [ "$ROLE" = control ]; then
+	if [ "$ROLE" = control ] && [ "$HAS_AGENT" = 0 ]; then
+		printf '  %d. Create the first admin token:\n       sudo -u freighter freighter token create --name admin --role admin\n' $n; n=$((n + 1))
+		printf '  %d. Publish the dashboard (127.0.0.1:3000) through your reverse proxy, with HTTPS.\n' $n; n=$((n + 1))
+		printf '  %d. Add the servers that will run your apps (Servers -> Add server), then enroll each:\n       freighter server add <name> --address <host> --control https://<dashboard>\n' $n
+	elif [ "$ROLE" = control ]; then
 		printf '  %d. Create the first admin token%s:\n       sudo -u freighter freighter token create --name admin --role admin\n' $n "$([ "$HAPROXY_MODE" = existing ] && echo ", then publish 127.0.0.1:3000 through HAProxy" || echo ", then publish 127.0.0.1:3000 as your dashboard hostname")"
 	else
 		printf '  %d. Allow only the control server to reach the agent:\n       ufw allow from <control-server-ip> to any port 7443 proto tcp\n' $n; n=$((n + 1))
@@ -411,6 +443,7 @@ main() {
 	ROLE=${FREIGHTER_ROLE:-control}; REF=${FREIGHTER_REF:-main}; FROM=${FREIGHTER_FROM:-}; DIR=${FREIGHTER_DIR:-/opt/freighter}
 	ACME_EMAIL=${FREIGHTER_ACME_EMAIL:-}; PUBLIC_URL=${FREIGHTER_PUBLIC_URL:-}; NODE_MAJOR=${FREIGHTER_NODE_MAJOR:-24}
 	HAPROXY_MODE=${FREIGHTER_HAPROXY:-auto}; HTTP_PORT=${FREIGHTER_HTTP_PORT:-80}; HTTPS_PORT=${FREIGHTER_HTTPS_PORT:-443}; PUBLIC_HTTPS_PORT=${FREIGHTER_PUBLIC_HTTPS_PORT:-}; ACCEPT_PROXY=0
+	HAS_AGENT=0; [ "${FREIGHTER_WITH_AGENT:-0}" = 1 ] && HAS_AGENT=1
 	NO_START=0; DRY_RUN=0; HAPROXY_MANUAL=0; DL=; NODE_BIN=; NODE_ARCH=
 
 	while [ $# -gt 0 ]; do
@@ -427,6 +460,8 @@ main() {
 			--https-port) HTTPS_PORT=${2:?--https-port needs a number}; shift 2 ;;
 			--public-https-port) PUBLIC_HTTPS_PORT=${2:?--public-https-port needs a number}; shift 2 ;;
 			--accept-proxy) ACCEPT_PROXY=1; shift ;;
+			--with-agent) HAS_AGENT=1; shift ;;
+			--no-agent) HAS_AGENT=0; shift ;; # the default; kept for scripts written before it was
 			--no-start) NO_START=1; shift ;;
 			--dry-run) DRY_RUN=1; shift ;;
 			-h|--help) usage; exit 0 ;;
@@ -434,7 +469,9 @@ main() {
 		esac
 	done
 	case $ROLE in control|agent) ;; *) die "--role must be 'control' or 'agent'." ;; esac
-	case $HAPROXY_MODE in auto|dedicated|existing) ;; *) die "--haproxy must be auto, dedicated or existing." ;; esac
+	[ "$ROLE" != agent ] || HAS_AGENT=1 # a remote server is its agent
+	[ "$HAS_AGENT" = 1 ] || HAPROXY_MODE=none
+	case $HAPROXY_MODE in none|auto|dedicated|existing) ;; *) die "--haproxy must be auto, dedicated or existing." ;; esac
 	for pv in "$HTTP_PORT" "$HTTPS_PORT" "$PUBLIC_HTTPS_PORT"; do
 		case $pv in ''|*[!0-9]*) [ -z "$pv" ] && continue; die "ports must be numbers, got '$pv'." ;; esac
 		[ "$pv" -ge 1 ] && [ "$pv" -le 65535 ] || die "port out of range: $pv."

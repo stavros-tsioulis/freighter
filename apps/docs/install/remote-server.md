@@ -1,6 +1,6 @@
-# Add a remote server
+# Add a server
 
-A remote server runs only `freighter-agent`. The control server manages it over mutual TLS: each side proves who it is with a certificate from the control server's private CA. Enrollment is a one-time step per server.
+A server for your apps runs `freighter-agent` and your apps, but not the dashboard or API, which stay on the control server. The control server manages it over mutual TLS: each side proves who it is with a certificate from the control server's private CA. Enrollment is a one-time step per server.
 
 ## 1. Prepare the server
 
@@ -8,18 +8,91 @@ A remote server runs only `freighter-agent`. The control server manages it over 
 The script does steps 1 to 4 below in one go (and prepares the HAProxy directories from step 5): `curl -fsSL …/install.sh | sudo sh -s -- --role agent`. See [Install with the script](/install/script).
 :::
 
-On the new server, as root, follow the control server steps that apply to an agent:
+On the new server, as root:
 
-1. [Install system packages](/install/control-server#_1-install-system-packages), including Node 24. HAProxy and certbot are needed if apps on this server will have domains.
-2. [Install Freighter](/install/control-server#_2-install-freighter). You can skip the dashboard build, and only the `freighter-agent` and `freighter` launchers are needed.
-3. Create the group the agent hands its socket to, and the directories:
+1. Install packages and Node.js 24. HAProxy and certbot are needed if apps on this server will have domains:
+   ```sh
+   apt-get update
+   apt-get install -y haproxy certbot git openssh-client tar gzip curl ca-certificates openssl
+   node --version    # v24.x, from nodejs.org or your distribution
+   ```
+2. Install Freighter. You don't need the dashboard build:
+   ```sh
+   git clone https://github.com/stavros-tsioulis/freighter.git /opt/freighter
+   cd /opt/freighter
+   corepack enable
+   pnpm install --frozen-lockfile
+   ```
+   Add the launchers:
+   ```sh
+   cat > /usr/local/bin/freighter <<'EOF'
+   #!/bin/sh
+   [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
+   exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/cli/src/cli.ts "$@"
+   EOF
+
+   cat > /usr/local/bin/freighter-agent <<'EOF'
+   #!/bin/sh
+   [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
+   exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/agent/src/main.ts "$@"
+   EOF
+
+   chmod +x /usr/local/bin/freighter /usr/local/bin/freighter-agent
+   ```
+3. Create the group the agent hands its socket to (skip `groupadd` on a control server that already has the `freighter` user), and the directories:
    ```sh
    groupadd --system freighter
    install -d -m 0755 /srv/apps /etc/freighter/apps /etc/freighter/agent
-   install -d -m 0750 /var/lib/freighter /var/lib/freighter/artifacts
+   install -d -m 0750 -g freighter /var/lib/freighter /var/lib/freighter/artifacts
    ```
-4. Install and enable `freighter-agent.service` and `freighter-renew.timer` from the [control server page](/install/control-server#_5-install-the-services). Don't install `freighter-api.service`.
-5. [Connect HAProxy](/install/haproxy), and set `acme.email` in `/etc/freighter/config.yaml` if apps here will use `tls: auto`.
+4. Install the services: the agent, and daily certificate renewal.
+   ```ini
+   # /etc/systemd/system/freighter-agent.service
+   [Unit]
+   Description=Freighter agent (privileged helper)
+   After=network-online.target
+
+   [Service]
+   Type=simple
+   ExecStart=/usr/local/bin/freighter-agent
+   Restart=on-failure
+   RestartSec=2
+   RuntimeDirectory=freighter
+   RuntimeDirectoryMode=0750
+   PrivateTmp=true
+   ProtectHome=true
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   ```ini
+   # /etc/systemd/system/freighter-renew.service
+   [Unit]
+   Description=Renew Freighter TLS certificates
+   After=network-online.target
+
+   [Service]
+   Type=oneshot
+   ExecStart=/usr/local/bin/freighter certs renew
+   ```
+   ```ini
+   # /etc/systemd/system/freighter-renew.timer
+   [Unit]
+   Description=Daily Freighter certificate renewal
+
+   [Timer]
+   OnCalendar=daily
+   RandomizedDelaySec=1h
+   Persistent=true
+
+   [Install]
+   WantedBy=timers.target
+   ```
+   ```sh
+   systemctl daemon-reload
+   systemctl enable --now freighter-agent freighter-renew.timer
+   ```
+5. [Connect HAProxy](/install/haproxy) (yours, or a dedicated one for Freighter), and set `acme.email` in `/etc/freighter/config.yaml` if apps here will use `tls: auto`.
 6. Open port `7443/tcp` to the control server's address only, for example:
    ```sh
    ufw allow from 198.51.100.10 to any port 7443 proto tcp

@@ -502,6 +502,7 @@ export const useServerConfig = (server: MaybeRef<string>) =>
   useQuery({
     queryKey: ["server-config", server],
     queryFn: () => api<{ fields: ConfigField[] }>(`/servers/${toValue(server)}/config`).then((r) => r.fields),
+    enabled: computed(() => toValue(server) !== ""),
     retry: false,
     refetchOnWindowFocus: false, // never replace what someone is in the middle of editing
   });

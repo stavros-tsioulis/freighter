@@ -1,6 +1,6 @@
 # Set up the control server
 
-The control server runs the agent, the API and the dashboard. It can also run apps of its own: its agent is the server called `local`.
+The control server runs the API and the dashboard, and manages your [servers](/install/remote-server). By default it runs no apps of its own and no agent: it needs only Node and Freighter, with no HAProxy, certbot or root service. The servers that run your apps are separate machines, added later. If you want this machine to host apps too, see [Also run apps on this server](#also-run-apps-on-this-server).
 
 Run everything on this page as root.
 
@@ -12,14 +12,13 @@ Run everything on this page as root.
 
 ```sh
 apt-get update
-apt-get install -y haproxy certbot git openssh-client tar gzip curl ca-certificates
+apt-get install -y git curl ca-certificates tar gzip openssl
 ```
 
 Install Node.js 24 from [nodejs.org](https://nodejs.org) or your distribution's Node 24 packages, then check:
 
 ```sh
 node --version    # v24.x
-haproxy -v        # 2.4 or later
 ```
 
 ## 2. Install Freighter
@@ -34,7 +33,7 @@ pnpm install --frozen-lockfile
 pnpm --filter @freighter/dashboard build
 ```
 
-Add two small launchers to `/usr/local/bin`:
+Add a small launcher for the `freighter` command to `/usr/local/bin`:
 
 ```sh
 cat > /usr/local/bin/freighter <<'EOF'
@@ -43,70 +42,41 @@ cat > /usr/local/bin/freighter <<'EOF'
 exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/cli/src/cli.ts "$@"
 EOF
 
-cat > /usr/local/bin/freighter-agent <<'EOF'
-#!/bin/sh
-[ -x "$PWD" ] && [ -r "$PWD" ] || cd /
-exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/agent/src/main.ts "$@"
-EOF
-
-chmod +x /usr/local/bin/freighter /usr/local/bin/freighter-agent
+chmod +x /usr/local/bin/freighter
 freighter --help
 ```
 
 ## 3. Create the user and directories
 
-The API runs as the unprivileged `freighter` user. The agent runs as root and lets members of the `freighter` group use its socket.
+The API runs as the unprivileged `freighter` user. Uploads wait in `/var/lib/freighter/artifacts` on their way to a server.
 
 ```sh
 useradd --system --home-dir /var/lib/freighter --shell /usr/sbin/nologin freighter
 install -d -o freighter -g freighter -m 0755 /var/lib/freighter
-install -d -o root -g freighter -m 0770 /var/lib/freighter/artifacts
-install -d -m 0755 /srv/apps /etc/freighter/apps /etc/freighter/agent
+install -d -o freighter -g freighter -m 0750 /var/lib/freighter/artifacts
+install -d -m 0755 /etc/freighter
 ```
 
 ## 4. Write the configuration
 
-Every key in `/etc/freighter/config.yaml` is optional. These are the ones you'll usually set on a control server:
+Every key in `/etc/freighter/config.yaml` is optional. The ones you'll usually set on a control server:
 
 ```yaml
 # /etc/freighter/config.yaml
-acme:
-  email: ops@example.com                     # required before any domain uses tls: auto
 api:
+  localAgent: false                          # the default: this server runs no apps, it manages other servers
   publicUrl: https://freighter.example.com   # used in webhook and enrollment URLs
-  publicIps: [203.0.113.7]                   # this server's public IP, shown as the DNS target for domains
 ```
 
-All other keys and their defaults are listed in the [config.yaml reference](/reference/config-yaml).
+All other keys and their defaults are listed in the [config.yaml reference](/reference/config-yaml). Each server you add has its own `config.yaml`.
 
-## 5. Install the services
-
-```ini
-# /etc/systemd/system/freighter-agent.service
-[Unit]
-Description=Freighter agent (privileged helper)
-After=network-online.target
-
-[Service]
-Type=simple
-ExecStart=/usr/local/bin/freighter-agent
-Restart=on-failure
-RestartSec=2
-RuntimeDirectory=freighter
-RuntimeDirectoryMode=0750
-PrivateTmp=true
-ProtectHome=true
-
-[Install]
-WantedBy=multi-user.target
-```
+## 5. Install the service
 
 ```ini
 # /etc/systemd/system/freighter-api.service
 [Unit]
 Description=Freighter API and dashboard
-After=freighter-agent.service
-Wants=freighter-agent.service
+After=network-online.target
 
 [Service]
 Type=simple
@@ -128,45 +98,44 @@ PrivateTmp=true
 WantedBy=multi-user.target
 ```
 
-Adjust `ExecStart` if `node` lives elsewhere (`command -v node`). Then add daily certificate renewal:
-
-```ini
-# /etc/systemd/system/freighter-renew.service
-[Unit]
-Description=Renew Freighter TLS certificates
-After=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/freighter certs renew
-```
-
-```ini
-# /etc/systemd/system/freighter-renew.timer
-[Unit]
-Description=Daily Freighter certificate renewal
-
-[Timer]
-OnCalendar=daily
-RandomizedDelaySec=1h
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-Start everything:
+Adjust `ExecStart` if `node` lives elsewhere (`command -v node`). Then start it:
 
 ```sh
 systemctl daemon-reload
-systemctl enable --now freighter-agent freighter-api freighter-renew.timer
-systemctl status freighter-agent freighter-api
+systemctl enable --now freighter-api
+systemctl status freighter-api
 curl -s http://127.0.0.1:3000/api/health
 ```
 
-## 6. Connect HAProxy
+## 6. Publish the dashboard
 
-Freighter needs HAProxy to route app domains. If you already run one, a few lines go in its config. If you don't, Freighter can run its own, on the ports you choose, behind your own reverse proxy if you have one. Follow [Connect HAProxy](/install/haproxy) now. The same page shows how to publish the dashboard on `https://freighter.example.com`.
+The dashboard listens on `127.0.0.1:3000`. Put your own reverse proxy in front of it, with HTTPS. For example, with Caddy (certificates are automatic):
+
+```txt
+freighter.example.com {
+    reverse_proxy 127.0.0.1:3000
+}
+```
+
+or nginx:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name freighter.example.com;
+    ssl_certificate     /etc/ssl/freighter.example.com.pem;
+    ssl_certificate_key /etc/ssl/freighter.example.com.key;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        client_max_body_size 200m;   # as large as api.maxUploadMb
+    }
+}
+```
+
+Remote servers reach the control server's address (`api.publicUrl`) to enroll, so it must be reachable from them. Serve it over HTTPS only. See [Security model](/operate/security).
 
 ## 7. Create the first admin token
 
@@ -180,8 +149,29 @@ The token (`fr_…`) is printed once. Open the dashboard, paste it on the sign-i
 
 ## Next
 
+- [Add a server](/install/remote-server) to run apps on. Until you do, there is nowhere to deploy.
 - [Deploy your first app](/deploy/first-app).
-- [Add a remote server](/install/remote-server).
+
+## Also run apps on this server
+
+The control server can host apps like any other server. It then runs an agent too, and the dashboard shows it as the server `local`.
+
+1. Do the [server preparation](/install/remote-server#_1-prepare-the-server) on this machine: packages (HAProxy, certbot, `git`, `openssh-client`), the `freighter-agent` launcher, the agent and renewal services, and [HAProxy](/install/haproxy). You don't need to open port 7443 or enroll: `local` talks to its agent over a unix socket.
+2. Let the agent read the upload spool:
+   ```sh
+   install -d -o root -g freighter -m 0770 /var/lib/freighter/artifacts
+   ```
+3. Turn it on and restart the API:
+   ```yaml
+   # /etc/freighter/config.yaml
+   api:
+     localAgent: true
+   ```
+   ```sh
+   systemctl restart freighter-api
+   ```
+
+With the script, `--with-agent` does all of this. To go back, set `localAgent: false`. `local` disappears once no app or deployment history points at it.
 
 ## Upgrading
 

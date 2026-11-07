@@ -17,6 +17,8 @@ export function useFreighter(): Promise<FreighterRuntime> {
   runtime ??= (async () => {
     const config = await loadConfig(process.env.FREIGHTER_PREFIX || undefined);
     const registry = openRegistry(config.registry.path);
+    // Whether this control server also runs apps through an agent of its own (the server "local").
+    if (!registry.servers.setLocal(config.api.localAgent)) console.warn('[freighter] api.localAgent is false but apps still point at the server "local"; keeping it until they are gone');
     const pki = new PkiStore(config.pki.dir);
     const ctx: ApiContext = {
       registry,

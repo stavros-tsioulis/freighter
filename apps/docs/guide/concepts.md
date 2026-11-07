@@ -18,7 +18,7 @@ One attempt to change what runs: a deploy or a rollback. A deployment has a stat
 
 ### Server
 
-A machine with `freighter-agent` on it. The control server's own agent is always called `local`. Remote servers are added by name and address, then enrolled once.
+A machine with `freighter-agent` on it. The control server's own agent, when it has one, is called `local`. Remote servers are added by name and address, then enrolled once.
 
 ### Domain
 

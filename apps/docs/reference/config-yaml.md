@@ -143,6 +143,7 @@ Control server only.
 
 | Key | Default | |
 | --- | --- | --- |
+| `localAgent` | `false` | Whether this control server also runs apps, through the agent on the same machine (the server named `local`). Off by default: a control server manages remote servers. See [Also run apps on this server](/install/control-server#also-run-apps-on-this-server). |
 | `publicUrl` | derived from each request | This control server's public URL, used in webhook URLs and enrollment commands. Set it when the API sits behind a proxy. |
 | `publicIps` | `[]` | The control server's public IPs, shown as the DNS target when adding domains to apps on `local`. |
 | `dnsServers` | `[1.1.1.1, 8.8.8.8]` | Resolvers used to verify domains. `[]` uses the system resolver, for split-horizon DNS for example. |

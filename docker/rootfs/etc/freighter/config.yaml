@@ -2,6 +2,7 @@
 acme:
   email: lab@example.com      # required for `tls: auto`; certificates come from the self-signed certbot shim here
 api:
+  localAgent: true           # the lab's control server also runs apps, through its own agent
   syncSeconds: 10             # refresh the registry quickly so the dashboard feels live
   metricsSeconds: 5
   publicUrl: http://localhost:3000   # what your browser uses; shown in webhook URLs

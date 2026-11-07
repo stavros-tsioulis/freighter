@@ -22,6 +22,10 @@ Each setting shows its default and a **Use default** link, which removes the ent
 
 Every save is recorded in the [audit log](/operate/access).
 
+## Control servers without an agent
+
+On a control server that [runs no apps itself](/install/control-server) (the default) there is no `local` server to show, and so no way to edit the dashboard and API settings from here. Edit `/etc/freighter/config.yaml` and restart `freighter-api`. Remote servers' settings work as usual.
+
 ## Remote servers
 
 A remote server shows the settings that apply to it. The dashboard and API section is missing, because those run on the control server only. Changes go to that server's agent over the same mutual-TLS connection as everything else, so the server must be online.

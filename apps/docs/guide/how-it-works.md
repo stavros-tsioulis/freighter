@@ -54,4 +54,4 @@ Each server is the source of truth for what runs on it. The registry mirrors it:
 
 ## Apps are pinned to a server
 
-Every app lives on exactly one server, chosen on its first deploy (`local` unless you pick another). Later deploys go to the same server, and a deploy that names a different one is refused. To move an app, deploy it under the new server and remove the old one by hand.
+Every app lives on exactly one server, chosen on its first deploy (`local` if this control server runs apps, the only enrolled server if there is one, otherwise you pick). Later deploys go to the same server, and a deploy that names a different one is refused. To move an app, deploy it under the new server and remove the old one by hand.

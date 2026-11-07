@@ -191,6 +191,11 @@ export interface Registry {
     list(): ServerRow[];
     remove(name: string): boolean;
     /** Start (or restart) enrollment: returns the plaintext one-time token; only its hash is stored. */
+    /**
+     * Whether this control server also runs apps through its own agent (the server "local"). Turning it off removes
+     * the row unless apps or deployments still point at it; returns whether the row is now as asked.
+     */
+    setLocal(enabled: boolean): boolean;
     newEnrollment(name: string, ttlMs?: number): string;
     /** Redeem a token exactly once; returns the server it was issued for, or null if unknown/expired/used. */
     consumeEnrollment(token: string): ServerRow | null;
@@ -359,6 +364,16 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
       },
       list: () => all(`${SERVER_SELECT} ORDER BY (s.kind = 'local') DESC, s.name`).map(serverFrom),
       remove: (name) => Number(run("DELETE FROM servers WHERE name = ? AND kind = 'remote'", name).changes) > 0,
+      setLocal(enabled) {
+        if (enabled) {
+          run("INSERT OR IGNORE INTO servers (name, kind, status, created_at) VALUES ('local', 'local', 'online', ?)", now());
+          return true;
+        }
+        const pinned = one("SELECT (SELECT COUNT(*) FROM apps WHERE server = 'local') + (SELECT COUNT(*) FROM deployments WHERE server = 'local') AS n")!.n as number;
+        if (pinned > 0) return false; // history that still points at it: keep the row rather than orphan it
+        run("DELETE FROM servers WHERE name = 'local' AND kind = 'local'");
+        return true;
+      },
       newEnrollment(name, ttlMs = 3_600_000) {
         const token = `fre_${randomBytes(24).toString("base64url")}`;
         const r = run(

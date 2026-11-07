@@ -133,6 +133,18 @@ describe("registry", () => {
     expect(r.servers.list().map((s) => [s.name, s.kind, s.status, s.appCount])).toEqual([["local", "local", "online", 1]]);
   });
 
+  it("can run without a local server, unless apps or history still point at it", () => {
+    const r = openRegistry(":memory:");
+    expect(r.servers.setLocal(false)).toBe(true);
+    expect(r.servers.list()).toEqual([]);
+    expect(r.servers.setLocal(true)).toBe(true);
+    expect(r.servers.get("local")?.kind).toBe("local");
+    r.apps.upsert({ name: "shop", server: "local", manifestText: null, currentRelease: null, previousRelease: null, status: "undeployed" });
+    expect(r.servers.setLocal(false)).toBe(false); // an app is pinned to it
+    expect(r.servers.get("local")).not.toBeNull();
+    expect(r.servers.setLocal(true)).toBe(true); // idempotent
+  });
+
   it("manages remote servers and their one-time enrollment tokens", () => {
     let t = Date.parse("2026-11-06T10:00:00.000Z");
     const r = openRegistry(":memory:", { now: () => new Date(t) });

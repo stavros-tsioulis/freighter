@@ -81,6 +81,11 @@ export const hostConfigSchema = z.object({
       dnsServers: z.array(z.string().ip()).default(["1.1.1.1", "8.8.8.8"]),
       /** Public IP address(es) of this host, shown as the DNS target when adding domains to apps on the local server. */
       publicIps: z.array(z.string().ip()).default([]),
+      /**
+       * Whether this control server also runs apps, through the agent on the same machine (the server named "local").
+       * Off by default: a control plane manages remote servers and runs no agent of its own.
+       */
+      localAgent: z.boolean().default(false),
       /** Trust X-Forwarded-For (the API normally sits behind HAProxy on localhost). */
       trustProxy: z.boolean().default(true),
     })

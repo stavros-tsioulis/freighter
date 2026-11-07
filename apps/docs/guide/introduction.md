@@ -21,7 +21,7 @@ Freighter fits if you:
 | API and dashboard | Keeps state in SQLite, serves the web UI and the HTTP API, asks agents to act. | The control server, as the `freighter` user |
 | `freighter` CLI | Deploys and operates apps from a shell on the server, manages tokens and servers, or pushes builds from CI. | Servers and CI |
 
-The **control server** (sometimes called the master) is the one machine that runs the API and dashboard. It is also a normal deployment target: its own agent is the server called `local`. Other machines are **remote servers**. They only run the agent, and the control server reaches them over mutual TLS on port 7443.
+The **control server** (sometimes called the master) is the one machine that runs the API and dashboard. By default it only manages: your apps run on the servers you add. It can also [run apps itself](/install/control-server#also-run-apps-on-this-server), through an agent that appears as the server called `local`. Other machines are **remote servers**. They only run the agent, and the control server reaches them over mutual TLS on port 7443.
 
 You can stop at one server. Everything works with only the control server, and remote servers are added later when you need them.
 

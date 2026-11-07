@@ -8,10 +8,10 @@ Any Linux distribution with **systemd** works. The commands in these docs assume
 
 | Needed on | Software | Why |
 | --- | --- | --- |
-| every server | **systemd** (with `systemd-run`) | runs every service and every build |
-| every server | **Node.js 24** | runs the agent, and the CLI |
-| every server | **HAProxy 2.4 or later** | routes domains to services, terminates TLS. Your own, or a separate one Freighter runs for itself |
-| every server | `tar`, `gzip` | unpacks uploaded releases |
+| every server | **systemd** (with `systemd-run`) | runs every service and every build (a control server needs it only for its own service) |
+| every server | **Node.js 24** | runs the agent, the API, and the CLI |
+| servers that run apps | **HAProxy 2.4 or later** | routes domains to services, terminates TLS. Your own, or a separate one Freighter runs for itself |
+| servers that run apps | `tar`, `gzip` | unpacks uploaded releases |
 | servers with `tls: auto` domains | **certbot** | requests Let's Encrypt certificates (standalone mode) |
 | servers that build from Git | **git**, **openssh-client** | fetches repositories |
 | servers that build from Git | your toolchain (Node, pnpm, Python, Go…) | runs your `build.commands` |

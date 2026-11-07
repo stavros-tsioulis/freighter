@@ -55,3 +55,46 @@ describe("server settings", () => {
     expect((await t.request("/v1/servers/vps-1/restart", { method: "POST", token: t.tokens.admin, json: { service: "api" } })).status).toBe(400);
   });
 });
+
+describe("a control server without a local agent", () => {
+  const without = async () => {
+    const t = await makeApi();
+    t.registry.servers.setLocal(false);
+    return t;
+  };
+  const enrolled = (t: Api, name: string) => {
+    t.registry.servers.create({ name, address: `${name}.example.com` });
+    t.registry.servers.setCert(name, "SHA256:x", "2027-01-01T00:00:00.000Z");
+  };
+
+  it("sends work to the only enrolled server when none is named, and asks when there are several", async () => {
+    const t = await without();
+    const none = await t.request("/v1/git/branches", { method: "POST", token: t.tokens.deployer, json: { repository: "git@git.example.com:a/b.git" } });
+    expect(none.status).toBe(400);
+    expect(none.json.error.message).toMatch(/add one under Servers/);
+    enrolled(t, "vps-1");
+    expect((await t.request("/v1/git/branches", { method: "POST", token: t.tokens.deployer, json: { repository: "git@git.example.com:a/b.git" } })).status).toBe(200);
+    expect(t.remote("vps-1").calls.some((c) => c.op === "git.branches")).toBe(true);
+    enrolled(t, "vps-2");
+    const many = await t.request("/v1/git/branches", { method: "POST", token: t.tokens.deployer, json: { repository: "git@git.example.com:a/b.git" } });
+    expect(many.status).toBe(400);
+    expect(many.json.error.message).toMatch(/choose a server/);
+  });
+
+  it("validates SSH keys on an online server instead of the missing local one", async () => {
+    const t = await without();
+    const key = { name: "work", privateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY-----" };
+    expect((await t.request("/v1/ssh-keys", { method: "POST", token: t.tokens.admin, json: key })).status).toBe(409);
+    enrolled(t, "vps-1");
+    t.registry.servers.markSeen("vps-1", {});
+    const ok = await t.request("/v1/ssh-keys", { method: "POST", token: t.tokens.admin, json: key });
+    expect(ok.status).toBe(201);
+    expect(t.remote("vps-1").calls.some((c) => c.op === "ssh.import")).toBe(true);
+  });
+
+  it("has no local settings to edit", async () => {
+    const t = await without();
+    expect((await t.request("/v1/servers/local/config", { token: t.tokens.admin })).status).toBe(404);
+  });
+});
+

@@ -10,7 +10,7 @@ const deploy = useDeployFromGit();
 const sshKeyId = ref<string | null>(null);
 const repository = ref("");
 const branch = ref<string | null>(null);
-const server = ref("local");
+const server = ref("");
 const result = ref<{ app: string; deploymentId: string; webhookSecret: string; webhookUrl: string } | null>(null);
 const showSetup = ref(false);
 // Only used when the repository has no app.yaml.
@@ -20,13 +20,15 @@ const form = ref(emptyForm());
 const repoError = computed(() => (repository.value ? validateRepoUrl(repository.value) : ""));
 const urlOk = computed(() => repository.value.trim() !== "" && !repoError.value);
 const choices = computed(() => (servers.value ?? []).filter((s) => s.kind === "local" || s.status !== "pending").map((s) => ({ label: s.name, value: s.name })));
+const first = computed(() => choices.value[0]?.value ?? "");
+watch(first, () => { if (!choices.value.some((c) => c.value === server.value)) server.value = first.value; }, { immediate: true });
 const inspect = useInspect(repository, branch, sshKeyId, () => urlOk.value, server);
 const info = computed(() => (urlOk.value && branch.value ? inspect.data.value : undefined));
 const manual = computed(() => info.value?.hasManifest === false);
 const nameError = computed(() => (appName.value && !IDENT_RE.test(appName.value) ? "Lowercase letters, digits and single hyphens, starting with a letter." : ""));
 const ready = computed(
   () =>
-    urlOk.value && !!branch.value && !deploy.isPending.value &&
+    urlOk.value && !!branch.value && !deploy.isPending.value && choices.value.length > 0 &&
     (info.value?.valid === true || (manual.value && IDENT_RE.test(appName.value) && hasService(form.value))),
 );
 
@@ -35,7 +37,7 @@ watch(visible, (v) => {
   sshKeyId.value = null;
   repository.value = "";
   branch.value = null;
-  server.value = "local";
+  server.value = first.value;
   result.value = null;
   showSetup.value = false;
   appName.value = "";
@@ -60,6 +62,9 @@ async function openApp() {
 <template>
   <Dialog v-model:visible="visible" modal header="Deploy from Git" :style="{ width: manual ? '48rem' : '40rem' }" :closable="!deploy.isPending.value">
     <div v-if="!result" class="flex flex-col gap-4">
+      <Message v-if="!choices.length" severity="warn" :closable="false">
+        This control server runs no apps of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline" @click="visible = false">Add a server</NuxtLink> first.
+      </Message>
       <SshKeySelect v-model="sshKeyId" />
       <div class="flex flex-col gap-1">
         <label for="ng-repo" class="text-sm font-medium">Repository</label>
@@ -68,7 +73,7 @@ async function openApp() {
       </div>
       <BranchSelect v-model="branch" :repository="repository" :ssh-key-id="sshKeyId" :server="server" />
 
-      <div v-if="(servers?.length ?? 0) > 1" class="flex flex-col gap-1">
+      <div v-if="choices.length > 1" class="flex flex-col gap-1">
         <label for="ng-server" class="text-sm font-medium">Server</label>
         <Select id="ng-server" v-model="server" :options="choices" option-label="label" option-value="value" fluid />
       </div>

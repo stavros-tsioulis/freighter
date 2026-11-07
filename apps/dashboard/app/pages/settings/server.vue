@@ -5,8 +5,10 @@ import { errorMessage } from "~/composables/api";
 definePageMeta({ role: "admin" });
 const notify = useNotify();
 const { data: servers } = useServers();
-const server = ref("local");
+const server = ref("");
 const choices = computed(() => (servers.value ?? []).filter((s) => s.kind === "local" || s.status !== "pending").map((s) => ({ label: s.name, value: s.name })));
+const first = computed(() => choices.value[0]?.value ?? "");
+watch(first, () => { if (!choices.value.some((c) => c.value === server.value)) server.value = first.value; }, { immediate: true });
 const { data: fields, isLoading, error } = useServerConfig(server);
 const save = useSaveServerConfig();
 const restart = useRestartService();
@@ -119,7 +121,10 @@ async function restartPending() {
       This server uses an HAProxy configuration you maintain, so its ports were not changed. Update your <code>haproxy.cfg</code> to match; <code>freighter haproxy setup</code> prints the lines.
     </Message>
 
-    <Skeleton v-if="isLoading" height="16rem" />
+    <Message v-if="!choices.length" severity="info" :closable="false">
+      This control server runs no agent of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline">Add a server</NuxtLink> to manage its settings here.
+    </Message>
+    <Skeleton v-else-if="isLoading" height="16rem" />
     <Message v-else-if="error" severity="error" :closable="false">Could not read this server's settings: {{ errorMessage(error) }}</Message>
 
     <section v-for="s in sections" v-else :key="s.name" class="flex flex-col gap-1">
