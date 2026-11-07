@@ -19,6 +19,11 @@ Paste an API token on `/login` (`freighter token create` on the server). The API
 ## Metrics
 The API asks the agent for a snapshot every `api.metricsSeconds` (15) and keeps `api.metricsRetentionHours` (6) of history in SQLite. CPU % is derived from systemd's `CPUUsageNSec`; it is blank across a new release (new unit) or a restart.
 
+## Install as an app (PWA)
+The dashboard is installable: a web app manifest, icons (`public/`, drawn from `public/icon.svg`) and a service worker that keeps the app shell (scripts, styles, fonts, icons) so it opens at once. `/api` is never cached: everything on screen is live state. Browsers only offer installation over HTTPS (or on `localhost`). The service worker is off in `nuxt dev`.
+
+On touch screens the page opts out of the tap delay (`touch-action: manipulation`) and keeps text fields at 16px or more, so iOS Safari doesn't zoom in when one is focused.
+
 ## Develop
 ```sh
 pnpm --filter @freighter/agent dev --prefix /tmp/fr &      # fake host under /tmp/fr

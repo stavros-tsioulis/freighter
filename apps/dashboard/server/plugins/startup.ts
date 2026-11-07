@@ -1,6 +1,8 @@
 import { pruneSpool, sampleOnce } from "@freighter/api";
 
 export default defineNitroPlugin(async (nitro) => {
+  // The build renders the app shell once (prerender). It must not open the registry or start the loops.
+  if (import.meta.prerender) return;
   const { api, ctx, syncSeconds, metricsSeconds } = await useFreighter();
 
   // Anything still queued/running belonged to a previous process.

@@ -31,6 +31,24 @@
   --fr-line: var(--p-surface-800);
 }
 
+/* Touch screens. `manipulation` takes the double-tap-to-zoom wait out of taps on controls (the 300ms delay on iOS). */
+a, button, [role="button"], [role="tab"], [role="menuitem"], summary, label, input, select, textarea, .p-button, .p-select, .p-datatable-sortable-column {
+  touch-action: manipulation;
+}
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+}
+/* iOS Safari zooms the page into any text field smaller than 16px when it is focused (small PrimeVue sizes are). Keep
+   fields at least 16px on touch screens, instead of disabling zoom, which people with low vision rely on. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+}
+
 html {
   font-family: var(--font-sans);
   font-size: 17px; /* Barlow sets small; keep body text comfortable */

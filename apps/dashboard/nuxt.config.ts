@@ -33,8 +33,10 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-11-01",
   // The dashboard sits behind a login and talks to /api, so it is a plain SPA.
   ssr: false,
+  // The app shell at "/" is written out as a file, so the service worker can keep it for offline start-up.
+  nitro: { prerender: { routes: ["/"] } },
   devtools: { enabled: false },
-  modules: ["@primevue/nuxt-module"],
+  modules: ["@primevue/nuxt-module", "@vite-pwa/nuxt"],
   css: ["primeicons/primeicons.css", "~/assets/css/main.css"],
   vite: { plugins: [tailwindcss()] },
   primevue: {
@@ -48,7 +50,54 @@ export default defineNuxtConfig({
       },
     },
   },
-  app: { head: { title: "Freighter", meta: [{ name: "viewport", content: "width=device-width, initial-scale=1" }] } },
+  app: {
+    head: {
+      title: "Freighter",
+      meta: [
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { name: "description", content: "Deploy to your own servers, without containers." },
+        // The browser bar follows the page: white in light mode, the dark page colour in dark mode.
+        { name: "theme-color", content: "#ffffff", media: "(prefers-color-scheme: light)" },
+        { name: "theme-color", content: "#131b23", media: "(prefers-color-scheme: dark)" },
+        { name: "mobile-web-app-capable", content: "yes" },
+        { name: "apple-mobile-web-app-capable", content: "yes" },
+        { name: "apple-mobile-web-app-title", content: "Freighter" },
+      ],
+      link: [
+        { rel: "icon", type: "image/svg+xml", href: "/icon.svg" },
+        { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+        { rel: "manifest", href: "/manifest.webmanifest" },
+      ],
+    },
+  },
+  // An installable app. The service worker keeps the app shell (scripts, styles, icons) so it opens at once; the API
+  // is never cached, because everything on screen is live state.
+  pwa: {
+    registerType: "autoUpdate",
+    manifest: {
+      name: "Freighter",
+      short_name: "Freighter",
+      description: "Deploy to your own servers, without containers.",
+      start_url: "/",
+      scope: "/",
+      display: "standalone",
+      background_color: "#ffffff",
+      theme_color: "#2e46c8",
+      icons: [
+        { src: "/pwa-192.png", sizes: "192x192", type: "image/png" },
+        { src: "/pwa-512.png", sizes: "512x512", type: "image/png" },
+        { src: "/pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      ],
+    },
+    workbox: {
+      globPatterns: ["**/*.{js,css,html,png,svg,ico,woff,woff2}"],
+      navigateFallback: "/",
+      navigateFallbackDenylist: [/^\/api\//],
+      cleanupOutdatedCaches: true,
+    },
+    client: { installPrompt: false },
+    devOptions: { enabled: false },
+  },
   routeRules: {
     "/**": {
       headers: {
