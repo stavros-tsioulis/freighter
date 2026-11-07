@@ -10,7 +10,7 @@ WORKDIR /app
 RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile \
- && pnpm --filter @freighter/dashboard build
+ && pnpm --filter @freighter/cli --filter @freighter/agent --filter @freighter/dashboard build
 
 # ---------- the "server" ----------
 FROM debian:bookworm-slim AS server

@@ -10,13 +10,13 @@ import { openRegistry } from "@freighter/registry";
 import { createApp, toNodeListener, useBase } from "h3";
 import { afterEach, describe, expect, it } from "vitest";
 
-const cli = join(import.meta.dirname, "../src/cli.ts");
+const cli = join(import.meta.dirname, "../dist/cli.js");
 const hello = join(import.meta.dirname, "../../../examples/hello");
 const run = (...args: string[]) =>
-  spawnSync(process.execPath, ["--import", "tsx", cli, ...args], { encoding: "utf8", cwd: join(import.meta.dirname, "..") });
+  spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", cwd: join(import.meta.dirname, "..") });
 const runAsync = (args: string[], env: Record<string, string> = {}) =>
   new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
-    execFile(process.execPath, ["--import", "tsx", cli, ...args], { cwd: join(import.meta.dirname, ".."), env: { ...process.env, ...env } }, (err, stdout, stderr) =>
+    execFile(process.execPath, [cli, ...args], { cwd: join(import.meta.dirname, ".."), env: { ...process.env, ...env } }, (err, stdout, stderr) =>
       resolve({ status: err ? ((err as { code?: number }).code ?? 1) : 0, stdout, stderr }),
     );
   });

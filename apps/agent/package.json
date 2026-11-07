@@ -9,7 +9,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "dev": "tsx src/main.ts"
+    "dev": "pnpm build && node --enable-source-maps dist/main.js",
+    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.js"
   },
   "dependencies": {
     "@freighter/core": "workspace:*",
@@ -26,6 +27,6 @@
     "@freighter/manifest": "workspace:*"
   },
   "bin": {
-    "freighter-agent": "./src/main.ts"
+    "freighter-agent": "./dist/main.js"
   }
 }

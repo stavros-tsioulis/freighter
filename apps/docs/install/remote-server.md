@@ -22,19 +22,20 @@ On the new server, as root:
    cd /opt/freighter
    corepack enable
    pnpm install --frozen-lockfile
+   pnpm --filter @freighter/cli --filter @freighter/agent build
    ```
-   Add the launchers:
+   Everything is compiled to plain JavaScript and run with `node`. Add the launchers:
    ```sh
    cat > /usr/local/bin/freighter <<'EOF'
    #!/bin/sh
    [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
-   exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/cli/src/cli.ts "$@"
+   exec node --enable-source-maps /opt/freighter/apps/cli/dist/cli.js "$@"
    EOF
 
    cat > /usr/local/bin/freighter-agent <<'EOF'
    #!/bin/sh
    [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
-   exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/agent/src/main.ts "$@"
+   exec node --enable-source-maps /opt/freighter/apps/agent/dist/main.js "$@"
    EOF
 
    chmod +x /usr/local/bin/freighter /usr/local/bin/freighter-agent

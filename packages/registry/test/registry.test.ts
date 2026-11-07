@@ -145,6 +145,21 @@ describe("registry", () => {
     expect(r.servers.setLocal(true)).toBe(true); // idempotent
   });
 
+  it("bootstraps one admin token on first run only", () => {
+    const r = openRegistry(":memory:");
+    const token = "fr_" + "a".repeat(40);
+    expect(() => r.tokens.bootstrap("fr_short")).toThrow(/at least 32/);
+    expect(r.tokens.bootstrap(token)).toBe(true);
+    expect(r.tokens.verify(token)).toMatchObject({ name: "bootstrap", role: "admin" });
+    expect(r.tokens.bootstrap(token)).toBe(false); // already there
+    r.tokens.revoke(r.tokens.list()[0]!.id);
+    expect(r.tokens.bootstrap(token)).toBe(false); // revoking it does not bring it back
+    expect(r.tokens.verify(token)).toBeNull();
+    const other = openRegistry(":memory:");
+    other.tokens.create({ name: "me", role: "admin" });
+    expect(other.tokens.bootstrap(token)).toBe(false); // someone already has access
+  });
+
   it("manages remote servers and their one-time enrollment tokens", () => {
     let t = Date.parse("2026-11-06T10:00:00.000Z");
     const r = openRegistry(":memory:", { now: () => new Date(t) });

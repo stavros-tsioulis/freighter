@@ -33,6 +33,7 @@ export default defineConfig({
           { text: "Requirements", link: "/install/requirements" },
           { text: "Install with the script", link: "/install/script" },
           { text: "Set up the control server (manual)", link: "/install/control-server" },
+          { text: "Run it on Railway", link: "/install/railway" },
           { text: "Connect HAProxy", link: "/install/haproxy" },
           { text: "Add a remote server", link: "/install/remote-server" },
         ],

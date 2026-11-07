@@ -40,6 +40,7 @@ Import an SSH key under Settings, point Freighter at a repository (`git@host:org
 ```sh
 pnpm install
 pnpm typecheck && pnpm test
-pnpm --filter @freighter/cli dev validate examples/app.yaml
+pnpm --filter @freighter/cli dev validate examples/app.yaml   # builds, then runs the built CLI with node
+pnpm build   # compile everything (CLI, agent, dashboard); nothing runs TypeScript directly
 pnpm dev   # dashboard
 ```

@@ -256,18 +256,22 @@ install_freighter() {
 		# pnpm is fetched by corepack on first use; a CI-style non-interactive install avoids download prompts.
 		COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=1 run "installed dependencies" sh -c "cd '$DIR' && pnpm install --frozen-lockfile"
 	fi
-	if [ "$ROLE" = control ]; then
-		if [ "$DRY_RUN" = 1 ]; then printf '  %s$%s %spnpm --filter @freighter/dashboard build%s\n' "$DIM" "$RST" "$DIM" "$RST"
-		else CI=1 run "built the dashboard" sh -c "cd '$DIR' && pnpm --filter @freighter/dashboard build"; fi
+	# Everything is built to plain JavaScript and run with node; no TypeScript runs on the server.
+	builds="@freighter/cli"
+	[ "$HAS_AGENT" = 0 ] || builds="$builds @freighter/agent"
+	[ "$ROLE" != control ] || builds="$builds @freighter/dashboard"
+	if [ "$DRY_RUN" = 1 ]; then printf '  %s$%s %spnpm --filter %s build%s\n' "$DIM" "$RST" "$DIM" "$(echo "$builds" | sed 's/ / --filter /g')" "$RST"
+	else
+		for b in $builds; do CI=1 run "built $b" sh -c "cd '$DIR' && pnpm --filter $b build"; done
 	fi
 
-	# Launchers: the CLI and the agent run from the checkout through tsx.
-	launcher() { # launcher <name> <entry>
-		printf '#!/bin/sh\n[ -x "$PWD" ] && [ -r "$PWD" ] || cd /\nexec %s/node_modules/.bin/tsx %s/%s "$@"\n' "$DIR" "$DIR" "$2" |
+	# Launchers: plain node, running the built files.
+	launcher() { # launcher <name> <built file>
+		printf '#!/bin/sh\n[ -x "$PWD" ] && [ -r "$PWD" ] || cd /\nexec %s --enable-source-maps %s/%s "$@"\n' "$NODE_BIN" "$DIR" "$2" |
 			write_file "/usr/local/bin/$1" 0755 || true
 	}
-	launcher freighter apps/cli/src/cli.ts
-	[ "$HAS_AGENT" = 0 ] || launcher freighter-agent apps/agent/src/main.ts
+	launcher freighter apps/cli/dist/cli.js
+	[ "$HAS_AGENT" = 0 ] || launcher freighter-agent apps/agent/dist/main.js
 }
 
 # ---------- 6. HAProxy ----------

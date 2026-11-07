@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 import { defineCommand, runMain } from "citty";
 import { deploy } from "./commands/deploy.ts";
 import { domain } from "./commands/domain.ts";

@@ -6,7 +6,8 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run --passWithNoTests",
-    "dev": "tsx src/cli.ts"
+    "dev": "pnpm build && node --enable-source-maps dist/cli.js",
+    "build": "node ../../scripts/bundle.mjs src/cli.ts dist/cli.js"
   },
   "dependencies": {
     "@freighter/core": "workspace:*",
@@ -25,6 +26,6 @@
     "@freighter/protocol": "workspace:*"
   },
   "bin": {
-    "freighter": "./src/cli.ts"
+    "freighter": "./dist/cli.js"
   }
 }

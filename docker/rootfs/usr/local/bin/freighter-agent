@@ -2,4 +2,4 @@
 # Freighter agent (runs from the workspace in /opt/freighter).
 # Node reads package.json from the working directory; if we were started somewhere unreadable (e.g. sudo -u from /root), move.
 [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
-exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/agent/src/main.ts "$@"
+exec node --enable-source-maps /opt/freighter/apps/agent/dist/main.js "$@"

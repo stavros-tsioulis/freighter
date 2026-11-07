@@ -1,4 +1,4 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 import { resolve } from "node:path";
 import { HOST_CONFIG_PATH, defaultDeps, loadConfig } from "@freighter/core";
 import { enroll } from "./enroll.ts";

@@ -229,6 +229,11 @@ export interface Registry {
   };
   tokens: {
     create(o: { name: string; role: Role }): { token: string; row: TokenRow };
+    /**
+     * First-run sign-in for hosts without a shell: when no token has ever been created, store `token` (supplied by the
+     * operator, e.g. through an environment variable) as an admin token named "bootstrap". Returns whether it did.
+     */
+    bootstrap(token: string): boolean;
     verify(token: string): TokenRow | null;
     list(): TokenRow[];
     revoke(id: string): boolean;
@@ -524,6 +529,12 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         const id = `tok_${randomBytes(6).toString("hex")}`;
         run("INSERT INTO api_tokens (id, name, role, token_hash, created_at) VALUES (?, ?, ?, ?, ?)", id, name, role, hashToken(token), now());
         return { token, row: tokenFrom(one("SELECT * FROM api_tokens WHERE id = ?", id)!) };
+      },
+      bootstrap(token) {
+        if (!/^fr_[A-Za-z0-9_-]{32,}$/.test(token)) throw new Error("the bootstrap token must look like fr_ followed by at least 32 letters, digits, - or _");
+        if (Number(one("SELECT COUNT(*) AS n FROM api_tokens")!.n) > 0) return false; // revoked tokens count: it is a first-run helper only
+        run("INSERT INTO api_tokens (id, name, role, token_hash, created_at) VALUES (?, 'bootstrap', 'admin', ?, ?)", `tok_${randomBytes(6).toString("hex")}`, hashToken(token), now());
+        return true;
       },
       verify(token) {
         const r = one("SELECT * FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL", hashToken(token));

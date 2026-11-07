@@ -1,6 +1,6 @@
 # Set up the control server
 
-The control server runs the API and the dashboard, and manages your [servers](/install/remote-server). By default it runs no apps of its own and no agent: it needs only Node and Freighter, with no HAProxy, certbot or root service. The servers that run your apps are separate machines, added later. If you want this machine to host apps too, see [Also run apps on this server](#also-run-apps-on-this-server).
+The control server runs the API and the dashboard, and manages your [servers](/install/remote-server). It doesn't have to be a server of your own either: it also runs as a container, for example [on Railway](/install/railway). By default it runs no apps of its own and no agent: it needs only Node and Freighter, with no HAProxy, certbot or root service. The servers that run your apps are separate machines, added later. If you want this machine to host apps too, see [Also run apps on this server](#also-run-apps-on-this-server).
 
 Run everything on this page as root.
 
@@ -30,16 +30,16 @@ git clone https://github.com/stavros-tsioulis/freighter.git /opt/freighter
 cd /opt/freighter
 corepack enable
 pnpm install --frozen-lockfile
-pnpm --filter @freighter/dashboard build
+pnpm --filter @freighter/cli --filter @freighter/dashboard build
 ```
 
-Add a small launcher for the `freighter` command to `/usr/local/bin`:
+Everything is compiled to plain JavaScript and run with `node`: no TypeScript runs on the server. Add a small launcher for the `freighter` command to `/usr/local/bin`:
 
 ```sh
 cat > /usr/local/bin/freighter <<'EOF'
 #!/bin/sh
 [ -x "$PWD" ] && [ -r "$PWD" ] || cd /
-exec /opt/freighter/node_modules/.bin/tsx /opt/freighter/apps/cli/src/cli.ts "$@"
+exec node --enable-source-maps /opt/freighter/apps/cli/dist/cli.js "$@"
 EOF
 
 chmod +x /usr/local/bin/freighter
@@ -175,14 +175,16 @@ With the script, `--with-agent` does all of this. To go back, set `localAgent: f
 
 ## Upgrading
 
-Pull the new version, reinstall dependencies, rebuild the dashboard and restart both services:
+Pull the new version, reinstall dependencies, rebuild and restart the services (leave out `freighter-agent` if this control server has none):
 
 ```sh
 cd /opt/freighter
 git pull
 pnpm install --frozen-lockfile
-pnpm --filter @freighter/dashboard build
+pnpm --filter @freighter/cli --filter @freighter/agent --filter @freighter/dashboard build
 systemctl restart freighter-agent freighter-api
 ```
+
+The script does all of this when you run it again.
 
 Running apps aren't affected by restarting Freighter: they are ordinary systemd units. If the API stops while a deployment is queued or running, that deployment is marked failed when the API starts again. Deploy again.

@@ -17,6 +17,9 @@ export function useFreighter(): Promise<FreighterRuntime> {
   runtime ??= (async () => {
     const config = await loadConfig(process.env.FREIGHTER_PREFIX || undefined);
     const registry = openRegistry(config.registry.path);
+    // Hosts without a shell (Railway, containers): sign in with a token set in the environment, on first run only.
+    const bootstrap = process.env.FREIGHTER_BOOTSTRAP_TOKEN?.trim();
+    if (bootstrap && registry.tokens.bootstrap(bootstrap)) console.log('[freighter] created the admin token "bootstrap" from FREIGHTER_BOOTSTRAP_TOKEN; revoke it once you have your own');
     // Whether this control server also runs apps through an agent of its own (the server "local").
     if (!registry.servers.setLocal(config.api.localAgent)) console.warn('[freighter] api.localAgent is false but apps still point at the server "local"; keeping it until they are gone');
     const pki = new PkiStore(config.pki.dir);

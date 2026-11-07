@@ -160,4 +160,6 @@ Control server only.
 | `NITRO_HOST`, `NITRO_PORT` | API | Listen address and port. The service file sets `127.0.0.1` and `3000`. |
 | `FREIGHTER_URL`, `FREIGHTER_TOKEN` | CLI (`push`, `git`, `ssh-key`) | API URL and token, instead of `--url` and `--token`. |
 | `FREIGHTER_KEY_PASSPHRASE` | CLI (`ssh-key import`) | Passphrase for an encrypted key. |
+| `PORT` | API | Used when `NITRO_PORT` is not set. Container hosts such as Railway set it. |
+| `FREIGHTER_BOOTSTRAP_TOKEN` | API | First run only: creates an admin token named `bootstrap` with this value, when no token has ever existed. For hosts without a shell. See [Run it on Railway](/install/railway). |
 | `FREIGHTER_PREFIX` | API | Development only: relocate every path under a directory. |
