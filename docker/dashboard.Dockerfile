@@ -15,7 +15,7 @@ RUN pnpm install --frozen-lockfile \
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production NITRO_HOST=::
 # State lives here: the registry database, the private CA and the encryption key. Mount a volume on it.
-VOLUME /var/lib/freighter
+# VOLUME /var/lib/freighter
 WORKDIR /app
 COPY --from=build /app/apps/dashboard/.output ./
 EXPOSE 3000
