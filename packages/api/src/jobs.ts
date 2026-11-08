@@ -123,7 +123,7 @@ export function createJobs(ctx: ApiContext): Jobs {
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
-          const r = await ctx.agents.forServer(server).call("domains.set", { app, domains }, { timeoutMs: 5 * 60_000 });
+          const r = await ctx.agents.forServer(server).call("domains.set", { app, domains, logId: id }, { timeoutMs: 5 * 60_000 });
           const note = r.deploy
             ? []
             : r.mode === "routing"
@@ -142,6 +142,12 @@ export function createJobs(ctx: ApiContext): Jobs {
           ctx.registry.deployments.update(id, failure(e));
           done?.(e instanceof Error ? e.message.split("\n")[0]! : String(e));
         }
+        // Keep the log with the deployment, as Git deployments do, so it can be read after the agent's copy is pruned.
+        await ctx.agents
+          .forServer(server)
+          .call("build.log", { id, from: 0 })
+          .then((l) => ctx.registry.deployments.setLog(id, l.text))
+          .catch(() => {});
       });
     },
 

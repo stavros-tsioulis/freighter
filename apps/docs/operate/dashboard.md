@@ -18,7 +18,7 @@ The header shows the app's server, how many services are running, the current an
 | --- | --- | --- |
 | **Services** | state, address, restarts, memory and CPU with charts over 15 min, an hour or 6 hours; start, stop, restart | viewer (actions: deployer) |
 | **Domains** | hostnames, DNS records to create, verify, remove (removal is routing-only: no redeploy) | viewer (changes: admin) |
-| **Deployments** | history with trigger, commit and duration; open a row for its build log, warnings and errors; **Roll back**, **Upload archive** | viewer (actions: deployer) |
+| **Deployments** | history with trigger, commit and duration; open a row for its log (the build output for Git deploys, then each step of the deploy: certificates, new instances, health check, HAProxy switch; domain changes have one too), warnings and errors; **Roll back**, **Upload archive** | viewer (actions: deployer) |
 | **Source** | the linked repository, branch, key, auto-deploy, last webhook, settings for repositories without `app.yaml`; **Deploy latest**, **Test connection**, rotate secret or key, unlink | viewer (changes: admin) |
 | **Logs** | the journal of a service, 10–1000 lines, *Live* mode refreshing every 3 seconds, copy and download | deployer |
 | **Secrets** | secret names, warnings for declared ones that aren't set, set a value | viewer (set: admin) |

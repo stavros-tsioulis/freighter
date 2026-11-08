@@ -24,3 +24,4 @@ export * from "./challenge.ts";
 export * from "./version.ts";
 export * from "./upgrade.ts";
 export * from "./delete.ts";
+export * from "./deploylog.ts";

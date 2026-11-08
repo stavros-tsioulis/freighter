@@ -188,7 +188,11 @@ describe("operations", () => {
       expect(t.calls.filter((c) => c.op === "domains.set").at(-1)?.args).toEqual({
         app: "shop",
         domains: [{ hostname: "shop.example.com", service: "web", tls: "auto" }, { hostname: "blog.example.com", service: "web", tls: "auto" }],
+        logId: v.json.id, // the agent writes this deployment's log under its id
       });
+      // the log is fetched from the agent and kept with the deployment, so it outlives the agent's copy
+      expect(t.calls.some((c) => c.op === "build.log" && (c.args as { id: string }).id === v.json.id)).toBe(true);
+      expect(t.registry.deployments.getLog(v.json.id)).toContain("built ok");
       expect(t.registry.deployments.get(v.json.id)).toMatchObject({ status: "success", releaseId: "r8" });
       expect(t.registry.pendingDomains.get("blog.example.com")).toBeUndefined();
       expect(t.registry.audit.list()[0]).toMatchObject({ action: "domain.verify", app: "shop" });
@@ -223,7 +227,7 @@ describe("operations", () => {
       const live = await t.request("/v1/apps/shop/domains/shop.example.com", { method: "DELETE", token: t.tokens.admin });
       expect(live.status).toBe(202);
       await t.api.jobs.idle();
-      expect(t.calls.filter((c) => c.op === "domains.set").at(-1)?.args).toEqual({ app: "shop", domains: [] });
+      expect(t.calls.filter((c) => c.op === "domains.set").at(-1)?.args).toEqual({ app: "shop", domains: [], logId: live.json.id });
       expect((await t.request("/v1/apps/shop/domains/nope.example.com", { method: "DELETE", token: t.tokens.admin })).status).toBe(404);
     });
 

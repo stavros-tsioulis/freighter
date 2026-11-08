@@ -135,11 +135,7 @@ const upgrade = defineCommand({
           const line = `${u.state}: ${u.message ?? ""}`;
           if (line !== last) console.log(line);
           last = line;
-          if (u.state === "done") {
-            console.log(`${args.name} now runs ${v!.commit}`);
-            if (v!.haproxy?.instructions) console.log(`\n${args.name} uses an HAProxy that was already there, so Freighter did not change it.\n\n${v!.haproxy.instructions}`);
-            return;
-          }
+          if (u.state === "done") return void console.log(`${args.name} now runs ${v!.commit}`);
           if (u.state === "rolled-back" || u.state === "failed") {
             console.error(`\n${v!.log.split("\n").slice(-15).join("\n")}`);
             process.exitCode = 1;

@@ -3,11 +3,12 @@ import { ensureChallengeToken, renderHostnameMap, renderHttpsMap, renderBackends
 import { parseManifest, routedServices, type Domain, type Manifest } from "@freighter/manifest";
 import { renderUnit, unitName } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
+import { noLog, type DeployLog } from "./deploylog.ts";
 import { assertHostnamesFree, readDomains } from "./domains.ts";
 import { allocatePort } from "./ports.ts";
 import { activate, releaseDir } from "./releases.ts";
 import { allStates, readState, routesFrom, writeState, type AppState, type RoutedService } from "./state.ts";
-import { defaultTargets, verifyRelease, type Target, type VerifyFailure } from "./verify.ts";
+import { defaultTargets, describeFailures, verifyRelease, type Target, type VerifyFailure } from "./verify.ts";
 
 /** Units on disk that carry this app's ownership marker (see renderUnit). */
 export async function ownedUnits(d: Deps, app: string): Promise<string[]> {
@@ -120,15 +121,19 @@ export async function goLive(
   d: Deps,
   app: string,
   id: string,
-  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[] },
+  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[]; log?: DeployLog },
 ): Promise<GoLiveResult> {
+  const log = opts.log ?? noLog;
   const manifest = await loadReleaseManifest(d, app, id);
   const domains = await readDomains(d, app);
   const plan = plannedUnits(app, manifest, id, domains);
   await assertHostnamesFree(d, app, domains);
 
   if (!d.dev) {
-    for (const hostname of domains.filter((x) => x.tls === "auto").map((x) => x.hostname)) await d.issueCert(hostname);
+    for (const hostname of domains.filter((x) => x.tls === "auto").map((x) => x.hostname)) {
+      await log(`==> certificate for ${hostname} (issued if missing or due, otherwise kept)`);
+      await d.issueCert(hostname);
+    }
   }
 
   const oldState = await readState(d, app);
@@ -140,6 +145,7 @@ export async function goLive(
 
   const created: string[] = [];
   const failWith = async (failures: VerifyFailure[]): Promise<GoLiveResult> => {
+    await log(`==> the new release did not come up; stopping its instances and keeping ${opts.previous ?? "nothing"} running`);
     for (const unit of created) {
       await d.systemd.stop(unit);
       await d.systemd.disable(unit);
@@ -156,16 +162,25 @@ export async function goLive(
   }
   for (const p of plan) {
     if (p.routed) {
+      await log(`==> starting ${p.service} as a new instance (${p.unit}) on port ${targets[p.service]!.port}`);
       await d.systemd.start(p.unit);
       created.push(p.unit);
     } else {
+      await log(`==> restarting ${p.service} in place (${p.unit})`);
       await d.systemd.restart(p.unit);
     }
   }
 
   if (!opts.skipVerify) {
+    await log(`==> waiting for ${plan.length === 1 ? "the service" : `${plan.length} services`} to be healthy`);
     const check = await verifyRelease(d, app, manifest, targets);
-    if (!check.ok) return failWith(check.failures);
+    if (!check.ok) {
+      await log(describeFailures(check.failures));
+      return failWith(check.failures);
+    }
+    await log("    healthy");
+  } else {
+    await log("==> skipping the health check");
   }
 
   const routed: Record<string, RoutedService> = {};
@@ -180,16 +195,26 @@ export async function goLive(
   }
   const touchesProxy = Object.keys(routed).length > 0 || Object.keys(oldState.routed).length > 0;
   try {
-    if (touchesProxy) await writeRoutes(d, app, routed);
+    if (touchesProxy) {
+      const names = Object.values(routed).flatMap((r) => r.hostnames.map((h) => h.hostname));
+      await log(`==> switching HAProxy${names.length ? ` to ${names.join(", ")}` : ""} (checked, then reloaded)`);
+      await writeRoutes(d, app, routed);
+    }
   } catch (e) {
-    return failWith([{ service: "haproxy", reason: e instanceof Error ? e.message : String(e), logs: "" }]);
+    const reason = e instanceof Error ? e.message : String(e);
+    await log(`    HAProxy refused the change: ${reason}`);
+    return failWith([{ service: "haproxy", reason, logs: "" }]);
   }
   const state: AppState = { routed };
   await writeState(d, app, state);
   await activate(d, app, id);
 
   const oldInstances = Object.values(oldState.routed).filter((r) => !(r.unit in Object.fromEntries(plan.map((p) => [p.unit, 1]))));
-  if (oldInstances.length > 0) await d.sleep(d.config.drainSeconds * 1000); // let in-flight requests finish
+  if (oldInstances.length > 0) {
+    await log(`==> letting requests in flight finish on the old instance${oldInstances.length === 1 ? "" : "s"} (${d.config.drainSeconds}s)`);
+    await d.sleep(d.config.drainSeconds * 1000);
+  }
   const retired = await retire(d, app, new Set(plan.map((p) => p.unit)));
+  if (retired.length > 0) await log(`==> stopped and removed ${retired.join(", ")}`);
   return { ok: true, manifest, units: plan.map((p) => p.unit), retired };
 }

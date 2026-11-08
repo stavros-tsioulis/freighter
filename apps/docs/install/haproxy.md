@@ -213,21 +213,16 @@ Copy the full `acl` line from the command's output, because the list of ranges i
 
 ### After an upgrade
 
-Upgrading Freighter on a server never changes your `haproxy.cfg`, so rules that a newer version needs are yours to add. The upgrade tells you when this applies: the dialog on the Servers page and `freighter server upgrade` both print the lines at the end, for that server's ports. You can print the same lines at any time:
+Upgrading Freighter on a server never changes your `haproxy.cfg`, so rules that a newer version needs are yours to add. Compare your frontends with what `freighter haproxy setup` prints for that server's ports, and add whatever is missing:
 
 ```sh
 freighter haproxy setup
-```
-
-Compare them with your frontends and add whatever is missing, then:
-
-```sh
 haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg && systemctl reload haproxy
 ```
 
-Until you do, only domains behind a proxy such as Cloudflare are affected (they can't be verified); everything else keeps working. Freighter itself still updates `backends.cfg` during the upgrade, so the backends your lines refer to are always there.
+You only find out you need to when something depends on a rule you don't have yet. Today that is a domain behind a proxy such as Cloudflare, which can't be verified without the challenge rule, and the verify error says so. Everything else keeps working. Freighter itself still updates `backends.cfg` during the upgrade, so the backends your lines refer to are always there.
 
-The installer records which kind of HAProxy a server has in `/etc/haproxy/freighter/mode`: `existing` for yours, `dedicated` for one it set up. That is how an upgrade knows whether to rewrite the config or hand you instructions. If it's wrong, correct the file (`echo existing > /etc/haproxy/freighter/mode`). A server installed before this record existed is treated as `dedicated` only if `haproxy.mainConfig` is under `/etc/freighter/haproxy/`.
+The installer records which kind of HAProxy a server has in `/etc/haproxy/freighter/mode`: `existing` for yours, `dedicated` for one it set up. That is how an upgrade knows whether to rewrite the config (dedicated) or leave it alone (existing). If it's wrong, correct the file (`echo existing > /etc/haproxy/freighter/mode`). A server installed before this record existed is treated as `dedicated` only if `haproxy.mainConfig` is under `/etc/freighter/haproxy/`.
 
 ### Publish the dashboard
 

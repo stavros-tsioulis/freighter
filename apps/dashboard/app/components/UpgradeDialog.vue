@@ -32,16 +32,6 @@ watch(finished, (f) => {
   if (f) void qc.invalidateQueries({ queryKey: ["servers"] });
 });
 
-const notify = useNotify();
-async function copyInstructions() {
-  try {
-    await navigator.clipboard.writeText(view.value?.haproxy?.instructions ?? "");
-    notify.ok("Copied");
-  } catch (e) {
-    notify.fail("Copy failed", e);
-  }
-}
-
 async function go() {
   await start.mutateAsync({ server: props.server, ref: custom.value && ref_.value.trim() ? ref_.value.trim() : undefined }).catch(() => null);
 }
@@ -57,14 +47,6 @@ async function go() {
       <template v-else-if="view">
         <template v-if="!u || !active">
           <Message v-if="finished === 'done'" severity="success" size="small">{{ u?.message }}</Message>
-          <Message v-if="finished === 'done' && view.haproxy?.instructions" severity="warn" size="small">
-            <div class="flex flex-col gap-2">
-              <b>One more step: {{ server }} uses an HAProxy that was already there.</b>
-              <span>Freighter never edits that config, so the new rules are yours to add. Until you do, domains behind Cloudflare's proxy can't be verified. Domains pointing straight at the server are not affected.</span>
-              <pre class="terminal max-h-56" tabindex="0" aria-label="HAProxy instructions">{{ view.haproxy.instructions }}</pre>
-              <Button label="Copy" icon="pi pi-copy" size="small" severity="secondary" class="self-start" @click="copyInstructions" />
-            </div>
-          </Message>
           <Message v-else-if="finished === 'rolled-back'" severity="warn" size="small">
             The upgrade didn't work out, and {{ server }} is back on {{ short(u?.from) }}. {{ u?.message }}
           </Message>

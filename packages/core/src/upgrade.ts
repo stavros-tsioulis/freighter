@@ -1,5 +1,4 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { renderUpgradeNotes } from "@freighter/haproxy";
 import type { Deps } from "./deps.ts";
 
 /** What a ref may look like: a branch, tag or commit. Never an option for git or the installer. */
@@ -30,8 +29,8 @@ export interface UpgradeStatus {
   upgrade: UpgradeInfo | null;
   /** Tail of the upgrade log. */
   log: string;
-  /** Whose HAProxy this server uses, and, when it is the operator's own, what they still have to add to it. */
-  haproxy: { mode: HaproxyMode; instructions: string | null };
+  /** Whose HAProxy this server uses. */
+  haproxy: { mode: HaproxyMode };
 }
 
 export type HaproxyMode = "dedicated" | "existing";
@@ -207,9 +206,7 @@ export async function upgradeStatus(d: Deps, commit: string | null): Promise<Upg
   }
   const log = (await readFile(`${dir}/log`, "utf8").catch(() => "")).split("\n").slice(-80).join("\n").slice(-16_000);
   const reason = unsupported(d);
-  const mode = await haproxyMode(d);
-  const instructions = mode === "existing" ? renderUpgradeNotes({ ...d.config.haproxy }) : null;
-  return { supported: reason === null, reason, commit, upgrade, log, haproxy: { mode, instructions } };
+  return { supported: reason === null, reason, commit, upgrade, log, haproxy: { mode: await haproxyMode(d) } };
 }
 
 /** Start upgrading to `ref`. Returns as soon as the upgrade is running on its own. */

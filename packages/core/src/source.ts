@@ -134,7 +134,7 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
 
     await log("==> deploying");
     const meta: SourceMeta = { type: "git", sha, ref: `refs/heads/${branch}`, subject: commit.subject, author: commit.author };
-    const result = await deploy(d, { manifestText, source: src, meta, moveSource: true, skipVerify: o.skipVerify });
+    const result = await deploy(d, { manifestText, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log });
     await log(`==> deployed ${result.releaseId}`);
     return { skipped: false, commit, deploy: result, buildSeconds };
   } catch (e) {

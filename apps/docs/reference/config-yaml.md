@@ -172,5 +172,6 @@ Every `api` key except `localAgent` can also be saved from the dashboard (**Sett
 | `FREIGHTER_KEY_PASSPHRASE` | CLI (`ssh-key import`) | Passphrase for an encrypted key. |
 | `PORT` | API | Used when `NITRO_PORT` is not set. Container hosts such as Railway set it. |
 | `FREIGHTER_BOOTSTRAP_TOKEN` | API | First run only: creates an admin token named `bootstrap` with this value, when no token has ever existed. For hosts without a shell. See [Run it on Railway](/install/railway). |
+| `PRIMEUI_LICENSE` | API | The dashboard's UI library (PrimeVue 5) wants a license key and shows a red “Invalid PrimeUI License” badge in the corner without one. Set this to your key. Read each time the dashboard loads, so no rebuild. See [The PrimeUI license](/install/control-server#the-primeui-license). |
 | `FREIGHTER_API_*` | API | One per `api` setting (`FREIGHTER_API_PUBLIC_URL`, `FREIGHTER_API_DNS_SERVERS`, `FREIGHTER_API_MAX_UPLOAD_MB`, …). Override the dashboard and `config.yaml`. |
 | `FREIGHTER_PREFIX` | API | Development only: relocate every path under a directory. |

@@ -107,6 +107,27 @@ systemctl status freighter-api
 curl -s http://127.0.0.1:3000/api/health
 ```
 
+## The PrimeUI license
+
+The dashboard's UI library, PrimeVue 5, is licensed by PrimeTek, not MIT. It is free under their Community License if you qualify (under $1M revenue, fewer than 5 developers and 10 employees, under $3M in outside funding; individuals, students, non-profits and non-commercial open source also qualify; renewed yearly by confirming that you still do), and paid otherwise. Either way it needs a license key, which you get from [primeui.dev](https://primeui.dev/licenses). Without one, the dashboard works but shows a red “Invalid PrimeUI License” badge in the bottom-right corner.
+
+Give the key to the service in its environment. With systemd:
+
+```sh
+systemctl edit freighter-api
+```
+
+```ini
+[Service]
+Environment=PRIMEUI_LICENSE=<your key>
+```
+
+```sh
+systemctl restart freighter-api
+```
+
+The dashboard reads `PRIMEUI_LICENSE` each time it loads, so no rebuild is needed. The key is checked in the browser, offline, so it is sent to every page that loads, and it isn't a secret from your users. On Railway, add it as a variable ([Run it on Railway](/install/railway)).
+
 ## 6. Publish the dashboard
 
 The dashboard listens on `127.0.0.1:3000`. Put your own reverse proxy in front of it, with HTTPS. For example, with Caddy (certificates are automatic):

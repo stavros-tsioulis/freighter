@@ -1,6 +1,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import { parseManifest, routedServices, routingProblems, routingWarnings, type Domain, type DomainInput } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
+import { noLog, type DeployLog } from "./deploylog.ts";
 import { ensureApp } from "./app.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
 import { goLive, liveTargets, ownedUnits, plannedUnits } from "./apply.ts";
@@ -27,6 +28,8 @@ export interface DeployOptions {
    * fails, the previous domains are restored along with the previous release.
    */
   domains?: DomainInput[];
+  /** Where to write what the deploy is doing (the dashboard shows it as the deployment's log). */
+  log?: DeployLog;
 }
 
 export interface DeployResult {
@@ -100,10 +103,12 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     return { ...base, releaseId, units, removed };
   }
 
+  const log = opts.log ?? noLog;
   await ensureApp(d, app);
   return withLock(d, app, async () => {
     const previous = await currentRelease(d, app);
     const releaseId = await allocateReleaseId(d, app);
+    await log(`==> staging release ${releaseId}${previous ? ` (current is ${previous})` : " (the first one)"}`);
     await stageRelease(d, app, opts.source, releaseId, { move: opts.moveSource });
     await writeFile(`${releaseDir(d, app, releaseId)}/app.yaml`, opts.manifestText);
     if (opts.meta) await writeFile(`${releaseDir(d, app, releaseId)}/.freighter-source.json`, JSON.stringify(opts.meta));
@@ -112,7 +117,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     if (changesDomains) await writeDomains(d, app, domains);
     let live;
     try {
-      live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains });
+      live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains, log });
     } catch (e) {
       if (changesDomains) await writeDomains(d, app, previousDomains);
       await rm(releaseDir(d, app, releaseId), { recursive: true, force: true });
@@ -121,6 +126,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     const result: DeployResult = { ...base, releaseId, previous };
 
     if (live.ok) {
+      await log(`==> release ${releaseId} is live`);
       const entry = await recordHistory(d, app, { action: "deploy", release: releaseId, previous, result: "success", source: opts.meta });
       result.historyAt = entry.at;
       result.units = live.units;
@@ -131,6 +137,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     }
 
     if (changesDomains) await writeDomains(d, app, previousDomains);
+    await log(`==> release ${releaseId} failed${previous ? `; going back to ${previous}` : ""}`);
     const reason = live.failures.map((f) => `${f.service}: ${f.reason}`).join("; ");
     const failed = await recordHistory(d, app, { action: "deploy", release: releaseId, previous, result: "failed", reason, source: opts.meta });
     let tail: string;
@@ -145,6 +152,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
         result: back.ok ? "success" : "failed",
         reason: back.ok ? "automatic rollback after failed deploy" : back.failures.map((f) => `${f.service}: ${f.reason}`).join("; "),
       });
+      await log(back.ok ? `    ${previous} is running again and healthy` : `    ${previous} is running again, but is NOT healthy either:\n${describeFailures(back.failures)}`);
       tail = back.ok
         ? `rolled back to ${previous}`
         : `rolled back to ${previous}, but it is NOT healthy either:\n${describeFailures(back.failures)}`;

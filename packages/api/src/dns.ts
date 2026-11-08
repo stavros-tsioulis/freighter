@@ -98,7 +98,7 @@ export async function probeChallenge(c: ChallengeProbe, hostname: string): Promi
     const r = await c.fetch(`http://${hostname}/.well-known/freighter-challenge`);
     if (r.status === 200 && r.text.trim() === token) return { ok: true, reason: null };
     if (r.status >= 520 && r.status <= 526) return { ok: false, reason: `Cloudflare answered HTTP ${r.status}: it couldn't get a good answer from this server (is port 80/443 open to Cloudflare, and the SSL/TLS mode Full rather than Full (strict) until the certificate exists?)` };
-    if (r.status === 200 || r.status === 404) return { ok: false, reason: `it answered, but not from this server (or this server's HAProxy lacks the Freighter challenge rule: re-run \`freighter haproxy config\`)` };
+    if (r.status === 200 || r.status === 404) return { ok: false, reason: `it answered, but not from this server (or this server's HAProxy lacks the Freighter challenge rule: on Freighter's own HAProxy run \`freighter haproxy config\`, with your own add the rule \`freighter haproxy setup\` prints to both frontends)` };
     return { ok: false, reason: `it answered with HTTP ${r.status}` };
   } catch (e) {
     return { ok: false, reason: `no HTTP answer (${e instanceof Error ? e.message : String(e)})` };

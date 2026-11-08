@@ -19,6 +19,7 @@
     "@freighter/pki": "workspace:*",
     "@freighter/protocol": "workspace:*",
     "@freighter/registry": "workspace:*",
+    "@primeui/license-manager": "1.1.0",
     "@primeuix/themes": "3.1.0",
     "@primevue/nuxt-module": "5.0.4",
     "@tailwindcss/vite": "4.3.4",

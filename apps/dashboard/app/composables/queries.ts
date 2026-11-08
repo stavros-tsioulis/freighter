@@ -196,8 +196,8 @@ export interface UpgradeView {
   commit: string | null;
   upgrade: UpgradeInfo | null;
   log: string;
-  /** Whose HAProxy the server uses; `instructions` is what's left to do by hand when it is the operator's own. Absent on old agents. */
-  haproxy?: { mode: "dedicated" | "existing"; instructions: string | null };
+  /** Whose HAProxy the server uses. Absent on old agents. */
+  haproxy?: { mode: "dedicated" | "existing" };
   target: string | null;
   outdated: boolean;
 }

@@ -4,6 +4,7 @@ import { routedServices, type Domain, type DomainInput } from "@freighter/manife
 import { ensureApp } from "./app.ts";
 import { loadReleaseManifest, writeRoutes } from "./apply.ts";
 import type { Deps } from "./deps.ts";
+import { noLog, type DeployLog } from "./deploylog.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
 import { withLock } from "./lock.ts";
@@ -36,18 +37,25 @@ const same = (a: Domain[], b: Domain[]) => JSON.stringify(a) === JSON.stringify(
  * A service that loses its last domain keeps running where it is, unreachable from outside, until the next deploy.
  * If the app isn't deployed yet, the domains are just saved for its first deploy.
  */
-export async function setDomains(d: Deps, app: string, input: DomainInput[], opts: { skipVerify?: boolean } = {}): Promise<SetDomainsResult> {
+export async function setDomains(d: Deps, app: string, input: DomainInput[], opts: { skipVerify?: boolean; log?: DeployLog } = {}): Promise<SetDomainsResult> {
+  const log = opts.log ?? noLog;
   const domains = parseDomains(input);
   const current = await readDomains(d, app);
   await assertHostnamesFree(d, app, domains);
   const release = await currentRelease(d, app);
 
+  const listing = domains.length ? domains.map((x) => `${x.hostname} -> ${x.service}${x.tls === "auto" ? "" : " (HTTP only)"}`).join(", ") : "none";
+  await log(`==> domains for ${app}: ${listing}`);
   if (!release) {
     await ensureApp(d, app);
     await writeDomains(d, app, domains);
+    await log("    the app isn't deployed yet, so the domains are saved and take effect with its first deploy");
     return { domains, deploy: null, mode: "saved" };
   }
-  if (same(current, domains)) return { domains, deploy: null, mode: "unchanged" };
+  if (same(current, domains)) {
+    await log("    nothing changed");
+    return { domains, deploy: null, mode: "unchanged" };
+  }
 
   const manifest = await loadReleaseManifest(d, app, release);
   const problems = routingProblems(manifest, domains);
@@ -55,9 +63,14 @@ export async function setDomains(d: Deps, app: string, input: DomainInput[], opt
 
   const running = (await readState(d, app)).routed;
   if ([...routedServices(domains)].every((service) => service in running)) {
-    await updateRouting(d, app, current, domains);
+    await log("==> routing only: every service that has a domain is already running as a routed instance, so nothing is rebuilt, redeployed or restarted");
+    await updateRouting(d, app, current, domains, log);
+    await log("==> done");
     return { domains, deploy: null, mode: "routing" };
   }
+  const first = [...routedServices(domains)].filter((service) => !(service in running));
+  await log(`==> ${first.join(", ")} gets ${first.length === 1 ? "its" : "their"} first domain, so ${first.length === 1 ? "it" : "they"} must start listening on an allocated $PORT`);
+  await log(`    redeploying the current release (${release}) unchanged: the same files, no build`);
 
   const dir = releaseDir(d, app, release);
   const result = await deploy(d, {
@@ -66,16 +79,25 @@ export async function setDomains(d: Deps, app: string, input: DomainInput[], opt
     meta: (await currentSource(d, app)) ?? undefined,
     domains,
     skipVerify: opts.skipVerify,
+    log,
   });
   return { domains, deploy: result, mode: "deploy" };
 }
 
 /** Point HAProxy at a new set of hostnames for services that are already running. Restores the old set if HAProxy refuses. */
-async function updateRouting(d: Deps, app: string, before: Domain[], next: Domain[]): Promise<void> {
+async function updateRouting(d: Deps, app: string, before: Domain[], next: Domain[], log: DeployLog): Promise<void> {
   await withLock(d, app, async () => {
     const state = await readState(d, app);
     const hadCert = (hostname: string) => before.some((b) => b.hostname === hostname && b.tls === "auto");
-    if (!d.dev) for (const x of next.filter((x) => x.tls === "auto" && !hadCert(x.hostname))) await d.issueCert(x.hostname);
+    if (!d.dev) {
+      for (const x of next.filter((x) => x.tls === "auto" && !hadCert(x.hostname))) {
+        await log(`==> certificate for ${x.hostname}`);
+        await d.issueCert(x.hostname);
+      }
+    }
+    const added = next.filter((n) => !before.some((b) => b.hostname === n.hostname)).map((x) => x.hostname);
+    const removed = before.filter((b) => !next.some((n) => n.hostname === b.hostname)).map((x) => x.hostname);
+    await log(`==> updating HAProxy${added.length ? `: routing ${added.join(", ")}` : ""}${removed.length ? `${added.length ? ";" : ":"} no longer routing ${removed.join(", ")}` : ""} (checked, then reloaded)`);
 
     const routed = Object.fromEntries(
       Object.entries(state.routed).map(([service, r]) => [service, { ...r, hostnames: next.filter((x) => x.service === service).map((x) => ({ hostname: x.hostname, tls: x.tls })) }]),
@@ -84,6 +106,7 @@ async function updateRouting(d: Deps, app: string, before: Domain[], next: Domai
     try {
       await writeRoutes(d, app, routed);
     } catch (e) {
+      await log(`    HAProxy refused the change, so the previous domains are back: ${e instanceof Error ? e.message : String(e)}`);
       await writeDomains(d, app, before);
       throw e;
     }

@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { currentRelease, deploy, domainsPath, listReleaseIds, readDomains, readState, setDomains } from "../src/index.ts";
+import { buildLogChunk, currentRelease, deploy, domainsPath, openDeployLog, listReleaseIds, readDomains, readState, setDomains } from "../src/index.ts";
 import { artifact, makeDeps, routed, routedManifest } from "./helpers.ts";
 
 const dom = (hostname: string, service = "web", tls: "auto" | "off" = "off") => ({ hostname, service, tls });
@@ -147,5 +147,70 @@ describe("domains belong to the app, not to app.yaml", () => {
     await deploy(h.deps, { ...routed("shop", "shop.example.com", "off"), source: await artifact({ v: "1" }) });
     const b = await deploy(h.deps, { manifestText: routedManifest(), source: await artifact({ v: "2" }) }); // no domains given: keep them
     expect(b.hostnames).toEqual(["shop.example.com"]);
+  });
+
+  describe("the deployment log", () => {
+    const collect = () => {
+      const lines: string[] = [];
+      return { lines, log: (l: string) => void lines.push(l), text: () => lines.join("\n") };
+    };
+
+    it("says what a redeploy for a first domain is doing, step by step", async () => {
+      const h = await makeDeps();
+      await deploy(h.deps, { manifestText: routedManifest(), source: await artifact() });
+      const c = collect();
+      await setDomains(h.deps, "shop", [dom("shop.example.com", "web", "auto")], { log: c.log });
+      const t = c.text();
+      expect(t).toContain("domains for shop: shop.example.com -> web");
+      expect(t).toContain("web gets its first domain");
+      expect(t).toContain("the same files, no build");
+      expect(t).toContain("certificate for shop.example.com");
+      expect(t).toMatch(/starting web as a new instance \(freighter-shop--web--r[\d-]+\.service\) on port 2000\d/);
+      expect(t).toContain("restarting worker in place");
+      expect(t).toContain("waiting for 2 services to be healthy");
+      expect(t).toContain("switching HAProxy to shop.example.com");
+      expect(t).toMatch(/release r[\d-]+ is live/);
+    });
+
+    it("says that a routing-only change touched nothing but HAProxy", async () => {
+      const h = await makeDeps();
+      await deploy(h.deps, { ...routed("shop", "shop.example.com", "off"), source: await artifact() });
+      const c = collect();
+      await setDomains(h.deps, "shop", [], { log: c.log });
+      const t = c.text();
+      expect(t).toContain("routing only");
+      expect(t).toContain("nothing is rebuilt, redeployed or restarted");
+      expect(t).toContain("no longer routing shop.example.com");
+      expect(t).not.toContain("starting");
+      expect(t).not.toContain("staging release");
+
+      const same = collect();
+      await setDomains(h.deps, "shop", [], { log: same.log });
+      expect(same.text()).toContain("nothing changed");
+    });
+
+    it("shows why a redeploy failed, with the service's own output, and that the old release is back", async () => {
+      const h = await makeDeps();
+      await deploy(h.deps, { manifestText: routedManifest(), source: await artifact() });
+      const bad = await artifact({ BAD: "" });
+      await deploy(h.deps, { manifestText: routedManifest(), source: bad }).catch(() => undefined); // an unhealthy release can't be the one we redeploy
+      const c = collect();
+      await deploy(h.deps, { manifestText: routedManifest(), source: bad, domains: [dom("shop.example.com")], log: c.log }).catch(() => undefined);
+      const t = c.text();
+      expect(t).toContain("waiting for");
+      expect(t).toMatch(/web: no healthy response/);
+      expect(t).toContain("boom: something broke"); // the journal tail, as `describeFailures` prints it
+      expect(t).toContain("the new release did not come up");
+      expect(t).toMatch(/release r[\d-]+ failed; going back to r[\d-]+/);
+    });
+
+    it("is written where `build.log` reads it", async () => {
+      const h = await makeDeps();
+      const log = await openDeployLog(h.deps, "0a1b2c3d-1111-2222-3333-444455556666");
+      await log("==> one");
+      await log("    two");
+      expect((await buildLogChunk(h.deps, "0a1b2c3d-1111-2222-3333-444455556666")).text).toBe("==> one\n    two\n");
+      expect((await buildLogChunk(h.deps, "0a1b2c3d-1111-2222-3333-444455556666", 8)).text).toBe("    two\n");
+    });
   });
 });

@@ -106,28 +106,6 @@ function httpsRules(dir: string, o: ListenOptions): string {
     ${routeLine(dir)}`;
 }
 
-/**
- * What someone running their own HAProxy has to add after an upgrade: Freighter never edits that file, and newer
- * versions answer the domain check (and, behind Cloudflare, read the visitor's address) through rules in the frontends.
- * Adding a rule that is already there is harmless to read but HAProxy rejects a duplicate `acl`, so say what to look for.
- */
-export function renderUpgradeNotes(o: { dir: string; mainConfig?: string } & ListenOptions): string {
-  const { httpPort, httpsPort } = resolve(o);
-  const cf = o.trustCloudflare ? cloudflareRules(o) : "";
-  return `# Freighter does not edit your haproxy.cfg, so these lines are yours to add (skip any you already have):
-#
-# In the frontend listening on :${httpPort} and in the one listening on :${httpsPort}, before your other rules:
-${cf}    ${challengeRule}
-#
-# The rule sends /.well-known/freighter-challenge to the freighter_challenge backend, which Freighter keeps in
-# ${o.dir}/backends.cfg (HAProxy already loads that file). It lets the dashboard verify domains that sit behind
-# Cloudflare's proxy, where DNS records can't show where they point.
-#
-# Then check and reload:
-#     haproxy -c -f ${o.mainConfig ?? "/etc/haproxy/haproxy.cfg"} -f ${o.dir}/backends.cfg && systemctl reload haproxy
-`;
-}
-
 /** The one-time lines the user adds to their existing HAProxy configuration. */
 export function renderSnippet(o: { dir: string; mainConfig?: string } & ListenOptions): string {
   const { httpPort, httpsPort, proxy, redirect } = resolve(o);

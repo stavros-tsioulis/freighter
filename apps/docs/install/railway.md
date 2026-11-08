@@ -21,6 +21,8 @@ Everything below is done in Railway's web dashboard.
 
    The Dockerfile pins Node.js 24, builds the dashboard and starts it. Railway sets `PORT` itself and the dashboard listens on it.
 
+   Add `PRIMEUI_LICENSE` too, with your PrimeUI license key, to remove the “Invalid PrimeUI License” badge from the dashboard ([why](/install/control-server#the-primeui-license)). It's read at start-up, so no rebuild is needed.
+
 3. Make the secret on your own machine. It has to start with `fr_` and be at least 32 characters:
    ```sh
    echo "fr_$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"

@@ -144,7 +144,12 @@ export const ops = {
   },
   "domains.get": { args: z.object({ app }), result: z.object({ domains: z.array(domain) }) },
   "domains.set": {
-    args: z.object({ app, domains: z.array(domain).max(200) }),
+    args: z.object({
+      app,
+      domains: z.array(domain).max(200),
+      /** Write what happens to this deployment's log, so `build.log` can show it. */
+      logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
+    }),
     result: z.object({
       domains: z.array(domain),
       deploy: deployResult.nullable(),
@@ -168,7 +173,7 @@ export const ops = {
       upgrade: upgradeInfo.nullable(),
       log: z.string(),
       /** Optional: agents from before this field don't send it. */
-      haproxy: z.object({ mode: z.enum(["dedicated", "existing"]), instructions: z.string().nullable() }).optional(),
+      haproxy: z.object({ mode: z.enum(["dedicated", "existing"]) }).optional(),
     }),
   },
   /** Ask the repository this agent was installed from (with the agent's own git) what is new on `ref` (default `main`). Changes nothing on the server. */

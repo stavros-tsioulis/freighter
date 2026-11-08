@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderUpgradeNotes, renderBackends, renderHostnameMap, renderHttpsMap, renderMainConfig, renderSnippet, type Route } from "../src/index.ts";
+import { renderBackends, renderHostnameMap, renderHttpsMap, renderMainConfig, renderSnippet, type Route } from "../src/index.ts";
 
 const routes: Route[] = [
   { app: "shop", service: "web", hostname: "shop.example.com", tls: "auto", port: 20001, healthPath: "/health" },
@@ -90,14 +90,5 @@ backend freighter_challenge
     expect(c.match(/set-src req\.hdr\(CF-Connecting-IP\) if freighter_cloudflare/g)).toHaveLength(2);
     expect(c).toContain("acl freighter_cloudflare src 173.245.48.0/20");
     expect(c).toContain("2c0f:f248::/32");
-  });
-
-  it("tells someone with their own HAProxy exactly what to add after an upgrade, on their ports", () => {
-    const n = renderUpgradeNotes({ dir: "/etc/haproxy/freighter", httpPort: 8080, httpsPort: 8443 });
-    expect(n).toContain("listening on :8080 and in the one listening on :8443");
-    expect(n).toContain("use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }");
-    expect(n).toContain("haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg");
-    expect(n).not.toContain("CF-Connecting-IP");
-    expect(renderUpgradeNotes({ dir: "/d", trustCloudflare: true })).toContain("set-src req.hdr(CF-Connecting-IP) if freighter_cloudflare");
   });
 });

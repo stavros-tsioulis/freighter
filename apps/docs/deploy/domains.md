@@ -145,6 +145,8 @@ One change needs a redeploy: **giving a service its first domain**. The service 
 
 The deployment record for a routing-only change says so: *routing updated; the app was not redeployed*.
 
+Either way the deployment has a log, shown while the change is applied and kept with the deployment afterwards (Deployments tab, open the row). It lists each step: the certificate, the new instance and its port, the health check, the HAProxy switch, the old instance being stopped. When a redeploy fails, it includes what the service itself printed, and says the previous release is running again.
+
 ## Services behind a domain
 
 Once a domain points at a service, the service runs one instance per release on a port from `ports.min`–`ports.max` (20000–29999), passed as `$PORT`. The `port` in `app.yaml` is ignored for it, and the deploy warns you about that. If the service has a `healthcheck`, HAProxy also checks it every 5 seconds and takes it out of rotation after 3 failures.

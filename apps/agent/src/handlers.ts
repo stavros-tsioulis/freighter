@@ -27,6 +27,7 @@ import {
   gitDeploy,
   collectMetrics,
   deleteApp,
+  openDeployLog,
   controlApp,
   deploy,
   listApps,
@@ -145,8 +146,12 @@ export function createHandlers(d: Deps): Handlers {
     async "domains.get"({ app }) {
       return { domains: await readDomains(d, app) };
     },
-    async "domains.set"({ app, domains }) {
-      const r = await setDomains(d, app, domains, { skipVerify: d.dev });
+    async "domains.set"({ app, domains, logId }) {
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      const r = await setDomains(d, app, domains, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      });
       return { domains: r.domains, deploy: r.deploy ? toDeployResult(r.deploy) : null, mode: r.mode };
     },
     async "git.keygen"({ app, rotate }) {

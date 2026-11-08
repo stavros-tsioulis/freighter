@@ -118,6 +118,9 @@ importers:
       '@freighter/registry':
         specifier: workspace:*
         version: link:../../packages/registry
+      '@primeui/license-manager':
+        specifier: 1.1.0
+        version: 1.1.0
       '@primeuix/themes':
         specifier: 3.1.0
         version: 3.1.0

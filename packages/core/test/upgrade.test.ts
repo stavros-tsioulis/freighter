@@ -214,22 +214,17 @@ describe("agent side of an upgrade", () => {
     expect(await haproxyMode(t.deps)).toBe("dedicated");
   });
 
-  it("hands the operator their instructions only when the HAProxy is theirs, and tells the installer which it is", async () => {
+  it("tells the installer which HAProxy it is, so it never switches a server from one kind to the other", async () => {
     const upgradeDir = (await mkdtemp(join(tmpdir(), "freighter-us-"))) + "/up";
-    const t = await makeDeps({ config: { agent: { upgradeDir }, haproxy: { dir: `${upgradeDir}/hap`, httpPort: 8080, httpsPort: 8443, trustCloudflare: true } } });
+    const t = await makeDeps({ config: { agent: { upgradeDir }, haproxy: { dir: `${upgradeDir}/hap` } } });
     t.deps.installDir = t.root;
     mkdirSync(`${upgradeDir}/hap`, { recursive: true });
     writeFileSync(`${upgradeDir}/hap/mode`, "existing\n");
-    const mine = await upgradeStatus(t.deps, "abc");
-    expect(mine.haproxy.mode).toBe("existing");
-    expect(mine.haproxy.instructions).toMatch(/:8080 and in the one listening on :8443/);
-    expect(mine.haproxy.instructions).toContain("CF-Connecting-IP");
+    expect((await upgradeStatus(t.deps, "abc")).haproxy).toEqual({ mode: "existing" });
     await startUpgrade(t.deps, "main", "abc");
     expect(readFileSync(`${upgradeDir}/upgrade.sh`, "utf8")).toContain("MODE='existing'");
-
     writeFileSync(`${upgradeDir}/hap/mode`, "dedicated\n");
-    const ours = await upgradeStatus(t.deps, "abc");
-    expect(ours.haproxy).toEqual({ mode: "dedicated", instructions: null });
+    expect((await upgradeStatus(t.deps, "abc")).haproxy).toEqual({ mode: "dedicated" });
   });
 
   it("treats a missing git binary as 'not a checkout' instead of failing (a container image has none)", async () => {
