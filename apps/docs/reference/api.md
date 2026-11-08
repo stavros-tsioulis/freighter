@@ -57,7 +57,8 @@ Deploying to an app pinned to another server returns `409 pinned_to_other_server
 | `GET /apps/:app/domains` | domains (`status: active` or `pending`) and the DNS records to create (`dns.records`) | viewer |
 | `POST /apps/:app/domains` | `{"hostname", "service", "tls": "auto"\|"off"}`. Adds a pending domain, returns `201`. | admin |
 | `POST /apps/:app/domains/:hostname/verify` | checks DNS. Returns `202 {verified: true, id}` when it goes live, or `200 {verified: false, reason, found, expected}`. | admin |
-| `DELETE /apps/:app/domains/:hostname` | removes it. A live domain is removed through a deployment and returns `202 {id}`. | admin |
+| `DELETE /apps/:app/domains/:hostname` | removes it. A live domain stops routing without a redeploy or restart; the call returns `202 {id}` for the deployment record that tracks it. | admin |
+| `DELETE /apps/:app` | `{"confirm": "<app name>", "forget"?: true}`. Deletes the app from its server (services, routing, certificates, releases, shared data, secrets) and from the registry. `confirm` must equal the name. `409` while a deployment is queued or running. `forget` skips the server and removes only the registry's records; an app the server reports as `missing` is handled that way automatically. Irreversible. | admin |
 
 ## Secrets
 

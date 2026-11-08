@@ -50,7 +50,7 @@ export async function retire(d: Deps, app: string, keep: Set<string>): Promise<s
   return doomed;
 }
 
-async function writeRoutes(d: Deps, app: string, routed: Record<string, RoutedService>): Promise<void> {
+export async function writeRoutes(d: Deps, app: string, routed: Record<string, RoutedService>): Promise<void> {
   const states = await allStates(d);
   states[app] = { routed };
   const routes = routesFrom(states);

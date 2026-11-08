@@ -215,6 +215,8 @@ export interface Registry {
     upsert(a: { name: string; server?: string; manifestText: string | null; currentRelease: string | null; previousRelease: string | null; status: AppRow["status"] }): void;
     get(name: string): AppRow | undefined;
     list(): AppRow[];
+    /** Forget an app and everything recorded about it (services, deployments and their logs, metrics, pending domains, Git link). The audit log keeps its entries. */
+    remove(name: string): boolean;
     /** Mark apps pinned to `server` that are no longer reported by it. */
     markMissing(present: string[], server?: string): void;
   };
@@ -443,6 +445,13 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         return r && appFrom(r);
       },
       list: () => all("SELECT * FROM apps ORDER BY name").map(appFrom),
+      remove(name) {
+        run("DELETE FROM pending_domains WHERE app = ?", name);
+        run("DELETE FROM git_links WHERE app = ?", name);
+        run("DELETE FROM deployments WHERE app = ?", name);
+        run("DELETE FROM metrics_samples WHERE app = ?", name);
+        return Number(run("DELETE FROM apps WHERE name = ?", name).changes) > 0; // services go with it (ON DELETE CASCADE)
+      },
       markMissing(present, server = "local") {
         const keep = new Set(present);
         for (const a of all("SELECT name FROM apps WHERE status <> 'missing' AND server = ?", server)) {

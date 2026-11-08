@@ -62,7 +62,7 @@ async function runVerify(d: DomainRow) {
 function askRemove(d: DomainRow) {
   confirm.require({
     header: `Remove ${d.hostname}?`,
-    message: d.status === "active" ? "The app stops being served on this hostname." : "The domain is deleted from this app.",
+    message: d.status === "active" ? "The app stops being served on this hostname. Nothing is redeployed or rebuilt, and the services keep running." : "The domain is deleted from this app.",
     icon: "pi pi-exclamation-triangle",
     acceptLabel: "Remove",
     acceptProps: { severity: "danger" },

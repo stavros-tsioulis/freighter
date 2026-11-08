@@ -80,7 +80,19 @@ freighter domain add <app> <hostname>=<service>[:auto|:off]
 freighter domain remove <app> <hostname>
 ```
 
-Changes routing directly, without the DNS check the dashboard does, and redeploys a deployed app with the new routing. `tls` defaults to `auto`.
+Changes routing directly, without the DNS check the dashboard does. `tls` defaults to `auto`. Most changes (removing a domain, adding one to a service that is already routed) only update HAProxy and print *routing updated; the app was not redeployed*. Giving a service its first domain redeploys the current release unchanged, because the service must start listening on its allocated port. See [When a change of domains redeploys](/deploy/domains#when-a-change-of-domains-redeploys).
+
+### app
+
+```sh
+freighter app delete <app> [--yes] [--local] [--forget] [--url URL] [--token TOKEN]
+```
+
+Deletes an app for good: its services are stopped and removed, its hostnames stop routing, and its certificates, every release, the shared directory (databases, uploads), its secrets and its Git deploy key are deleted, along with its records in the dashboard. Its Git repository is not touched. There is no undo.
+
+By default it goes through the API (an admin token), removes the app from its server and from the dashboard, and works from anywhere. With `--local` it deletes from the server you are logged in to, as root, and leaves the dashboard to notice at its next sync, which shows the app as *missing* until you delete that too. `--forget` drops only the dashboard's records without contacting the server, for a server that is gone for good.
+
+It asks you to type the app's name. In scripts, pass `--yes`. Without a terminal and without `--yes` it refuses. The system user is removed only if the installer created it.
 
 ### haproxy, certs
 

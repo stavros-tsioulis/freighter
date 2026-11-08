@@ -185,22 +185,31 @@ frontend https
     use_backend %[req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map)] if { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map) -m found }
 ```
 
-### If your domains are behind Cloudflare
+### If your domains are behind a proxy or CDN
 
-Nothing more is needed for verification: the challenge rule above covers it. If you also want logs and `X-Forwarded-For` to carry the visitor's address instead of Cloudflare's, turn on **Behind Cloudflare's proxy** in the server's settings (or `haproxy.trustCloudflare: true` in `config.yaml`), then print the lines again:
+A proxy such as Cloudflare, Fastly or CloudFront in front of your domains needs **nothing more for verification** than the challenge rule in [The lines to add](#the-lines-to-add). That rule is what lets the dashboard confirm a proxied hostname reaches this server. The proxy's TLS mode, certificates and ports are covered in [Behind a proxy or CDN](/deploy/domains#behind-a-proxy-or-cdn).
+
+What is left for HAProxy is the **visitor's address**: without it, logs and `X-Forwarded-For` show the proxy's. Add a rule that reads the real address from the proxy's header, at the top of both frontends, and only for connections that come from the proxy's published ranges (anyone else could forge the header):
+
+```txt
+    acl from_proxy src 203.0.113.0/24 198.51.100.0/24      # the proxy's published ranges
+    http-request set-src req.hdr(X-Real-IP) if from_proxy { req.hdr(X-Real-IP) -m found }
+```
+
+Use the header your proxy documents. Behind **Cloudflare** this is built in: turn on **Behind Cloudflare's proxy** in the server's settings (or `haproxy.trustCloudflare: true` in `config.yaml`), then print the lines again:
 
 ```sh
 freighter haproxy setup
 ```
 
-It now includes two more lines for each frontend, at the top of its rules. The first lists Cloudflare's published address ranges, and the second reads the visitor's address from `CF-Connecting-IP` only for connections from those ranges, so nobody else can spoof it:
+It now includes the two lines below at the top of each frontend, with Cloudflare's current ranges and the `CF-Connecting-IP` header:
 
 ```txt
     acl freighter_cloudflare src 173.245.48.0/20 103.21.244.0/22 …
     http-request set-src req.hdr(CF-Connecting-IP) if freighter_cloudflare { req.hdr(CF-Connecting-IP) -m found }
 ```
 
-Copy the full `acl` line from the command's output, because the list of ranges is long and is occasionally updated by Cloudflare. HAProxy rejects an `acl` name defined twice in the same frontend, so add each pair once. To make the server reachable only through Cloudflare, also restrict ports 80 and 443 to [Cloudflare's ranges](https://www.cloudflare.com/ips/) in your firewall.
+Copy the full `acl` line from the command's output, because the list of ranges is long and Cloudflare occasionally updates it. HAProxy rejects an `acl` name defined twice in the same frontend, so add each pair once. Both rules change the connection's source address, so `option forwardfor` and your logs then carry the visitor's address.
 
 ### After an upgrade
 

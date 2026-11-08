@@ -14,7 +14,15 @@ function parseSpec(spec: string, fallbackService?: string) {
 const apply = async (args: Parameters<typeof depsFrom>[0] & { app: string }, change: (cur: Awaited<ReturnType<typeof readDomains>>) => { hostname: string; service: string; tls: "auto" | "off" }[]) => {
   const d = await depsFrom(args);
   const r = await setDomains(d, args.app, change(await readDomains(d, args.app)), { skipVerify: Boolean(args.prefix) });
-  console.log(r.deploy ? `applied to ${args.app} as ${r.deploy.releaseId}` : "saved (nothing to redeploy)");
+  console.log(
+    r.deploy
+      ? `applied to ${args.app} as ${r.deploy.releaseId} (a service got its first domain, so the release was redeployed)`
+      : r.mode === "routing"
+        ? "routing updated; the app was not redeployed. A service that lost its last domain keeps running until the next deploy"
+        : r.mode === "unchanged"
+          ? "nothing changed"
+          : "saved (nothing to redeploy)",
+  );
   for (const x of r.domains) console.log(`  ${x.hostname} -> ${x.service}  tls ${x.tls}`);
 };
 

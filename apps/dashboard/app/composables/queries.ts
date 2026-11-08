@@ -573,6 +573,31 @@ export function useRemoveDomain(app: MaybeRef<string>) {
   });
 }
 
+export interface DeletedApp {
+  ok: boolean;
+  app: string;
+  server: string;
+  units: string[];
+  hostnames: string[];
+  /** Only the dashboard's records were removed; the server wasn't asked. */
+  forgotten: boolean;
+}
+
+/** Delete an app for good (units, routing, certificates, releases, shared data, secrets). The name is the confirmation. */
+export function useDeleteApp() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { app: string; forget?: boolean }) => api<DeletedApp>(`/apps/${v.app}`, { method: "DELETE", body: { confirm: v.app, ...(v.forget ? { forget: true } : {}) } }),
+    onSuccess: (r, v) => {
+      qc.removeQueries({ queryKey: ["app", v.app] });
+      for (const key of ["apps", "deployments", "servers", "domains", "certs"]) void qc.invalidateQueries({ queryKey: [key] });
+      notify.ok(`Deleted ${r.app}`, r.forgotten ? `Only the dashboard's records were removed; nothing was removed from ${r.server}.` : undefined);
+    },
+    onError: (e) => notify.fail("Could not delete the app", e),
+  });
+}
+
 // ---- server settings (config.yaml) ----
 /** The pseudo-server that stands for the control plane's own settings (saved in the registry, no agent involved). */
 export const CONTROL = "@control";

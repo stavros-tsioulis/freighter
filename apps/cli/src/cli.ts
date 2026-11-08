@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { defineCommand, runMain } from "citty";
+import { app } from "./commands/app.ts";
 import { deploy } from "./commands/deploy.ts";
 import { domain } from "./commands/domain.ts";
 import { git } from "./commands/git.ts";
@@ -13,7 +14,7 @@ import { env, logs, releases, restart, rollback, start, status, stop } from "./c
 
 const main = defineCommand({
   meta: { name: "freighter", description: "Containerless app deployment on systemd" },
-  subCommands: { validate, unit, deploy, rollback, releases, status, logs, start, stop, restart, env, domain, haproxy, certs, token, push, server, git, "ssh-key": sshKey },
+  subCommands: { app, validate, unit, deploy, rollback, releases, status, logs, start, stop, restart, env, domain, haproxy, certs, token, push, server, git, "ssh-key": sshKey },
 });
 
 await runMain(main);

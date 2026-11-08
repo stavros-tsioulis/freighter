@@ -26,6 +26,7 @@ import {
   ensureDeployKey,
   gitDeploy,
   collectMetrics,
+  deleteApp,
   controlApp,
   deploy,
   listApps,
@@ -138,12 +139,15 @@ export function createHandlers(d: Deps): Handlers {
     async "challenge.get"() {
       return { token: await challengeToken(d) };
     },
+    async "app.delete"({ app }) {
+      return deleteApp(d, app);
+    },
     async "domains.get"({ app }) {
       return { domains: await readDomains(d, app) };
     },
     async "domains.set"({ app, domains }) {
       const r = await setDomains(d, app, domains, { skipVerify: d.dev });
-      return { domains: r.domains, deploy: r.deploy ? toDeployResult(r.deploy) : null };
+      return { domains: r.domains, deploy: r.deploy ? toDeployResult(r.deploy) : null, mode: r.mode };
     },
     async "git.keygen"({ app, rotate }) {
       return ensureDeployKey(d, app, { rotate });
@@ -237,7 +241,7 @@ export function classify(e: unknown): WireError {
   const message = e instanceof Error ? e.message : String(e);
   if (/branch ".*" does not exist/.test(message)) return { code: "not_found", message };
   if (/unsupported repository URL|invalid (branch|subpath|build id)|git (fetch|ls-remote|archive) failed|app\.yaml (not found|is for)|repository URL/.test(message)) return { code: "bad_request", message };
-  if (/not deployed|unknown release|unknown service|no release to roll back|has no releases/.test(message)) return { code: "not_found", message };
+  if (/not deployed|unknown app|unknown release|unknown service|no release to roll back|has no releases/.test(message)) return { code: "not_found", message };
   if (/in progress|already current/.test(message)) return { code: "conflict", message };
   if (/missing secrets|must run as root|invalid /.test(message)) return { code: "bad_request", message };
   return { code: "internal", message };

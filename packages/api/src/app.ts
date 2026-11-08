@@ -7,7 +7,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
 import { IDENT_RE, domainSchema, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
-import { ops } from "@freighter/protocol";
+import { AgentError, ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
 import { isRole, type GitLinkRow, type PendingDomainRow, type Role } from "@freighter/registry";
 import {
@@ -226,6 +226,31 @@ export function createApi(ctx: ApiContext): Api {
     const a = ctx.registry.apps.get(name);
     if (!a) throw new ApiError(404, "not_found", `unknown app "${name}"`);
     return { ...a, services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
+  }));
+
+  // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
+  // Typing the name is required of API clients too, so a stray DELETE can't do it.
+  router.delete("/v1/apps/:app", route("admin", async (event, who) => {
+    const name = appParam(event);
+    const { confirm, forget } = await body(event, z.object({ confirm: z.string(), forget: z.boolean().optional() }));
+    const row = ctx.registry.apps.get(name);
+    if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
+    if (confirm !== name) throw new ApiError(400, "bad_request", `to delete ${name}, send its name as "confirm"`);
+    if (ctx.registry.deployments.list({ app: name, limit: 20 }).some((x) => x.status === "queued" || x.status === "running")) {
+      throw new ApiError(409, "conflict", `${name} has a deployment in progress; wait for it to finish`);
+    }
+    let removed: { units: string[]; hostnames: string[] } | null = null;
+    // An app its server no longer reports (`missing`), or one the caller asks to just forget, has nothing left to remove there.
+    if (row.status !== "missing" && !forget) {
+      try {
+        removed = await ctx.agents.forServer(row.server).call("app.delete", { app: name }, { timeoutMs: 5 * 60_000 });
+      } catch (e) {
+        if (!(e instanceof AgentError && e.code === "not_found")) throw e; // already gone from the server: carry on and tidy up here
+      }
+    }
+    ctx.registry.apps.remove(name);
+    audit(who, "app.delete", name, { server: row.server, units: removed?.units.length ?? 0, hostnames: removed?.hostnames ?? [], forgotten: !removed });
+    return { ok: true, app: name, server: row.server, units: removed?.units ?? [], hostnames: removed?.hostnames ?? [], forgotten: !removed };
   }));
 
   router.get("/v1/apps/:app/releases", route("viewer", async (event) => {

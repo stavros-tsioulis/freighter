@@ -137,10 +137,20 @@ export const ops = {
     }),
     result: deployResult,
   },
+  /** Remove an app from this server completely: units, routing, certificates, releases, shared data, secrets. Irreversible. */
+  "app.delete": {
+    args: z.object({ app }),
+    result: z.object({ app: z.string(), units: z.array(z.string()), hostnames: z.array(z.string()) }),
+  },
   "domains.get": { args: z.object({ app }), result: z.object({ domains: z.array(domain) }) },
   "domains.set": {
     args: z.object({ app, domains: z.array(domain).max(200) }),
-    result: z.object({ domains: z.array(domain), deploy: deployResult.nullable() }),
+    result: z.object({
+      domains: z.array(domain),
+      deploy: deployResult.nullable(),
+      /** How it took effect (older agents don't say): `routing` means HAProxy was updated and nothing was redeployed. */
+      mode: z.enum(["unchanged", "saved", "routing", "deploy"]).optional(),
+    }),
   },
   /** The string this server's HAProxy serves at /.well-known/freighter-challenge: proof, for domain checks, that a hostname reaches this server. */
   "challenge.get": { args: z.object({}), result: z.object({ token: z.string() }) },

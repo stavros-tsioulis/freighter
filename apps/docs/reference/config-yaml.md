@@ -18,10 +18,12 @@ haproxy:
   httpsPort: 443
   publicHttpsPort: 443            # default: the value of httpsPort
   acceptProxy: false
+  trustCloudflare: false
 
 acme:
   email: ops@example.com          # no default
   staging: false
+  challenge: http                 # or cloudflare-dns
   challengePort: 8888
   letsencryptDir: /etc/letsencrypt
   renewBeforeDays: 30
@@ -36,6 +38,7 @@ agent:
   socket: /run/freighter/agent.sock
   group: freighter
   artifactsDir: /var/lib/freighter/artifacts
+  upgradeDir: /var/lib/freighter/upgrade
   maxArtifactMb: 200
   remote:
     enabled: false
@@ -82,6 +85,7 @@ Used by every server that routes domains.
 | `httpsPort` | `443` | The port HAProxy listens on for HTTPS. |
 | `publicHttpsPort` | `httpsPort` | The HTTPS port clients are redirected to. Set `443` when your own proxy maps 443 to a different `httpsPort`. |
 | `acceptProxy` | `false` | Expect the PROXY protocol on both ports, for a TCP proxy in front that sends it. |
+| `trustCloudflare` | `false` | Cloudflare's proxy is in front: use `CF-Connecting-IP` as the visitor's address, but only for connections from Cloudflare's published ranges. See [Behind a proxy or CDN](/deploy/domains#behind-a-proxy-or-cdn). |
 
 For a server without HAProxy, a dedicated one and a different `mainConfig` is set up for you. See [Connect HAProxy](/install/haproxy#run-a-dedicated-haproxy) and [Behind your own reverse proxy](/install/haproxy#behind-your-own-reverse-proxy).
 
@@ -93,6 +97,9 @@ Let's Encrypt certificates for `tls: auto` domains.
 | --- | --- | --- |
 | `email` | none | Your Let's Encrypt account email. Required for `tls: auto`. |
 | `staging` | `false` | Use Let's Encrypt's staging environment (untrusted certificates, generous limits) while testing. |
+| `challenge` | `http` | How Let's Encrypt is convinced. `http`: HTTP-01 through port 80. `cloudflare-dns`: DNS-01 through the Cloudflare API, which works behind a proxy and before DNS points here. See [Certificates](/deploy/domains#certificates). |
+| `cloudflareCredentials` | `/etc/freighter/cloudflare.ini` | certbot's credentials file with `dns_cloudflare_api_token = …` (mode 600). Read only when `challenge` is `cloudflare-dns`. |
+| `dnsPropagationSeconds` | `30` | For `cloudflare-dns`: how long certbot waits after creating the TXT record (10–600). |
 | `challengePort` | `8888` | Local port certbot listens on during HTTP-01 challenges. HAProxy forwards to it. |
 | `letsencryptDir` | `/etc/letsencrypt` | certbot's directory. |
 | `renewBeforeDays` | `30` | `freighter certs renew` renews certificates expiring within this many days. |
@@ -111,6 +118,7 @@ Let's Encrypt certificates for `tls: auto` domains.
 | `socket` | `/run/freighter/agent.sock` | The unix socket the local API talks to. |
 | `group` | `freighter` | The group given access to the socket and the artifacts directory. |
 | `artifactsDir` | `/var/lib/freighter/artifacts` | Where uploads wait until they're deployed. They're deleted afterwards. |
+| `upgradeDir` | `/var/lib/freighter/upgrade` | State, backup and log of the last [remote upgrade](/install/remote-server#upgrading-a-server). |
 | `maxArtifactMb` | `200` | The largest artifact this agent accepts from a remote control server. |
 | `remote.enabled` | `false` | Serve the agent over mutual TLS. `freighter-agent enroll` turns this on. |
 | `remote.listen` | `0.0.0.0` | Address to listen on. |

@@ -334,3 +334,40 @@ describe("pending domains", () => {
     expect(r.pendingDomains.get("a.example.com")).toBeUndefined();
   });
 });
+
+describe("forgetting an app", () => {
+  it("removes the app and everything recorded about it, and nothing about other apps", () => {
+    const r = openRegistry(":memory:");
+    const seed = (name: string) => {
+      r.apps.upsert({ name, server: "local", manifestText: "name: x\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+      r.services.replace(name, [{ name: "web", unit: `${name}-web`, port: 1, hostnames: [], activeState: "active", subState: "running", restarts: 0, memoryBytes: 1 }]);
+      const d = r.deployments.create({ app: name, action: "deploy" });
+      r.deployments.setLog(d.id, "log");
+      r.pendingDomains.create({ hostname: `${name}.example.com`, app: name, service: "web", tls: "auto" });
+      r.gitLinks.upsert({ app: name, provider: "other", repository: "git@example.com:a/b.git", branch: "main", subpath: "", autoDeploy: true, webhookSecret: "s", publicKey: "", keyFingerprint: "" });
+      r.metrics.add([{ app: name, service: "web", unit: `${name}-web`, active: "active", memoryBytes: 1, cpuNanos: 1, restarts: 0 }]);
+      return d.id;
+    };
+    const gone = seed("shop");
+    const kept = seed("blog");
+    r.audit.add({ tokenId: null, action: "deploy", app: "shop" });
+
+    expect(r.apps.remove("shop")).toBe(true);
+    expect(r.apps.remove("shop")).toBe(false);
+    expect(r.apps.get("shop")).toBeUndefined();
+    expect(r.services.list("shop")).toEqual([]);
+    expect(r.deployments.get(gone)).toBeUndefined();
+    expect(r.deployments.getLog(gone)).toBeNull();
+    expect(r.pendingDomains.list("shop")).toEqual([]);
+    expect(r.gitLinks.get("shop")).toBeUndefined();
+    expect(r.audit.list().some((a) => a.app === "shop")).toBe(true); // history of who did what stays
+    expect(r.metrics.series("shop", "1970-01-01T00:00:00.000Z")).toEqual([]);
+    expect(r.metrics.series("blog", "1970-01-01T00:00:00.000Z")).toHaveLength(1);
+
+    expect(r.apps.get("blog")).toBeDefined();
+    expect(r.services.list("blog")).toHaveLength(1);
+    expect(r.deployments.get(kept)).toBeDefined();
+    expect(r.pendingDomains.list("blog")).toHaveLength(1);
+    expect(r.gitLinks.get("blog")).toBeDefined();
+  });
+});

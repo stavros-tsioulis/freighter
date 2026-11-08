@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server } from "node:http";
@@ -74,8 +74,31 @@ describe("freighter cli", () => {
     expect(readFileSync(`${prefix}/etc/haproxy/freighter/hostnames.map`, "utf8")).toContain("hello.example.com be_hello_web");
     expect(run("domain", "add", "hello", "x.example.com", "--prefix", prefix).stderr).toContain("say which service");
     expect(run("domain", "add", "hello", "x.example.com=nope", "--prefix", prefix).stderr).toContain('service "nope"');
-    expect(run("domain", "remove", "hello", "hello.example.com", "--prefix", prefix).status).toBe(0);
+    const releases = run("releases", "hello", "--prefix", prefix).stdout.trim().split("\n").length;
+    const removed = run("domain", "remove", "hello", "hello.example.com", "--prefix", prefix);
+    expect(removed.status).toBe(0);
+    expect(removed.stdout).toContain("routing updated; the app was not redeployed");
+    expect(run("releases", "hello", "--prefix", prefix).stdout.trim().split("\n")).toHaveLength(releases); // no new release
     expect(run("domain", "list", "hello", "--prefix", prefix).stdout).toContain("no domains");
+    expect(readFileSync(`${prefix}/etc/haproxy/freighter/hostnames.map`, "utf8")).not.toContain("hello.example.com");
+  });
+  it("deletes an app from this server, and won't without --yes when there is nobody to ask", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
+    expect(run("deploy", hello, "-f", `${hello}/app.yaml`, "--prefix", prefix).status).toBe(0);
+    expect(run("domain", "add", "hello", "hello.example.com=web:off", "--prefix", prefix).status).toBe(0);
+    const refused = run("app", "delete", "hello", "--local", "--prefix", prefix); // no terminal to ask on
+    expect(refused.status).toBe(1);
+    expect(refused.stderr).toContain("pass --yes");
+    expect(existsSync(`${prefix}/srv/apps/hello`)).toBe(true);
+
+    const gone = run("app", "delete", "hello", "--local", "--yes", "--prefix", prefix);
+    expect(gone.status).toBe(0);
+    expect(gone.stdout).toContain("deleted hello");
+    expect(gone.stdout).toContain("hello.example.com");
+    expect(existsSync(`${prefix}/srv/apps/hello`)).toBe(false);
+    expect(readFileSync(`${prefix}/etc/haproxy/freighter/hostnames.map`, "utf8")).not.toContain("hello.example.com");
+    expect(run("app", "delete", "hello", "--local", "--yes", "--prefix", prefix).stderr).toContain('unknown app "hello"');
+    expect(run("app", "delete", "Bad Name", "--local", "--yes", "--prefix", prefix).stderr).toContain("invalid app name");
   });
   it("prints the haproxy setup snippet", () => {
     const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
@@ -121,6 +144,7 @@ describe("freighter push", () => {
         if (op === "app.deploy") return deploy();
         if (op === "app.info") return { app: "hello", release: "r1", previous: null, manifestText: "", services: {}, releases: [] };
         if (op === "app.history") return { entries: [] };
+        if (op === "app.delete") return { app: "hello", units: ["freighter-hello--web.service"], hostnames: ["hello.example.com"] };
         if (op === "git.keygen") return { publicKey: "ssh-ed25519 AAAAcli freighter:hello", fingerprint: "SHA256:cli" };
         if (op === "git.check") return { sha: "a".repeat(40) };
         if (op === "build.log") return { text: "==> building\nbuilt ok\n", next: 22, done: true };
@@ -149,6 +173,23 @@ describe("freighter push", () => {
     expect(registry.deployments.list({ app: "hello" })[0]).toMatchObject({ status: "success", source: "api" });
   });
 
+  it("deletes an app through the API, and only for an admin who types --yes", async () => {
+    const { url, token, registry } = await startApi(() => ({}), "admin");
+    registry.apps.upsert({ name: "hello", server: "local", manifestText: "name: hello\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const noTty = await runAsync(["app", "delete", "hello", "--url", url, "--token", token]);
+    expect(noTty.status).toBe(1);
+    expect(noTty.stderr).toContain("pass --yes");
+    expect(registry.apps.get("hello")).toBeDefined();
+
+    const ok = await runAsync(["app", "delete", "hello", "--yes", "--url", url, "--token", token]);
+    expect(ok.status).toBe(0);
+    expect(ok.stdout).toContain("deleted hello from local: 1 unit(s) removed, no longer routing hello.example.com");
+    expect(registry.apps.get("hello")).toBeUndefined();
+
+    const again = await runAsync(["app", "delete", "hello", "--yes", "--url", url, "--token", token]);
+    expect(again.status).toBe(1);
+    expect(again.stderr).toContain("404");
+  });
   it("exits 1 with the failure reason when the deployment fails", async () => {
     const { url, token } = await startApi(() => {
       throw new Error("boom");

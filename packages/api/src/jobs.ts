@@ -124,7 +124,11 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
           const r = await ctx.agents.forServer(server).call("domains.set", { app, domains }, { timeoutMs: 5 * 60_000 });
-          const note = r.deploy ? [] : ["domains saved; they take effect with the app's first deploy (or nothing changed)"];
+          const note = r.deploy
+            ? []
+            : r.mode === "routing"
+              ? ["routing updated; the app was not redeployed. A service that lost its last domain keeps running until the next deploy"]
+              : ["domains saved; they take effect with the app's first deploy (or nothing changed)"];
           ctx.registry.deployments.update(id, {
             status: "success",
             releaseId: r.deploy?.releaseId,

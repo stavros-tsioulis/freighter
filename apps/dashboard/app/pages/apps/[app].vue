@@ -2,6 +2,8 @@
 import { shortRelease, timeAgo } from "~/utils/format";
 
 const route = useRoute();
+const { can } = useSession();
+const showDelete = ref(false);
 const router = useRouter();
 const name = computed(() => String(route.params.app));
 const { data: app, isLoading, error } = useApp(name);
@@ -30,10 +32,15 @@ const servicesLabel = computed(() => {
           <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps
         </NuxtLink>
       </template>
+      <template v-if="app && can('admin')" #actions>
+        <Button label="Delete app" icon="pi pi-trash" text size="small" severity="danger" @click="showDelete = true" />
+      </template>
       <template v-if="app" #beside>
         <StatusTag :state="failed && app.status === 'deployed' ? 'failed' : app.status" :label="failed && app.status === 'deployed' ? 'Service failed' : undefined" />
       </template>
     </PageHeader>
+
+    <DeleteAppDialog v-if="app" v-model="showDelete" :app="app" />
 
     <Skeleton v-if="isLoading" height="12rem" />
     <Message v-else-if="error" severity="error">{{ error.message }}</Message>
