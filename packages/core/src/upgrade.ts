@@ -229,6 +229,77 @@ export async function startUpgrade(d: Deps, ref: string, commit: string | null):
   }
 }
 
+export interface RepoCommit {
+  commit: string;
+  subject: string;
+  committedAt: string;
+}
+export interface UpdateCheck {
+  /** The branch, tag or commit that was asked about. */
+  ref: string;
+  installed: RepoCommit | null;
+  /** What `ref` points at on the repository right now. */
+  latest: RepoCommit;
+  /**
+   * `up-to-date`: installed is `latest`. `behind`: `latest` has newer commits. `ahead`: installed is newer than `ref`.
+   * `different`: the two aren't in a line (another branch, a rewritten history, or more than 50 commits apart).
+   */
+  state: "up-to-date" | "behind" | "ahead" | "different";
+  /** How many commits `latest` is ahead, when that is known. */
+  behind: number | null;
+  /** The newest of those commits, newest first (at most 20). */
+  commits: { sha: string; subject: string }[];
+  checkedAt: string;
+}
+
+const FIELDS = "%H%x09%cI%x09%s";
+const parseCommit = (line: string): RepoCommit | null => {
+  const [commit, committedAt, ...subject] = line.trim().split("\t");
+  return commit && committedAt ? { commit, committedAt, subject: subject.join("\t") } : null;
+};
+
+/**
+ * Ask the repository this server was installed from what's new, using the server's own git (so its network, its
+ * credentials and its `origin` decide the answer, not the control plane's). Fetches the last 50 commits of `ref` into
+ * the checkout's object store and compares; nothing in the working tree changes.
+ */
+export async function checkForUpdates(d: Deps, ref: string): Promise<UpdateCheck> {
+  const reason = unsupported(d);
+  if (reason) throw new UpgradeError(reason);
+  if (!validRef(ref)) throw new UpgradeError(`invalid ref "${ref}"`);
+  const status = await upgradeStatus(d, null);
+  if (status.upgrade && ACTIVE.includes(status.upgrade.state)) throw new UpgradeError("an upgrade is in progress");
+
+  const dir = d.installDir!;
+  const git = (args: string[], timeoutMs = 20_000) => d.exec("git", ["-C", dir, ...args], { timeoutMs, env: { GIT_TERMINAL_PROMPT: "0" } });
+  const fetched = await git(["fetch", "--quiet", "--depth", "50", "origin", ref], 90_000).catch((e: unknown) => ({ code: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) }));
+  if (fetched.code !== 0) {
+    const why = (fetched.stderr ?? "").trim().split("\n").slice(-2).join(" | ");
+    throw new UpgradeError(`could not fetch ${ref} from origin: ${why || `git exited ${fetched.code}`}`);
+  }
+  const latest = parseCommit((await git(["log", "-1", `--format=${FIELDS}`, "FETCH_HEAD"])).stdout);
+  if (!latest) throw new UpgradeError(`origin has no ${ref}`);
+  const installed = parseCommit((await git(["log", "-1", `--format=${FIELDS}`, "HEAD"])).stdout);
+
+  let state: UpdateCheck["state"] = "different";
+  let behind: number | null = null;
+  let commits: UpdateCheck["commits"] = [];
+  if (installed?.commit === latest.commit) {
+    state = "up-to-date";
+    behind = 0;
+  } else if ((await git(["merge-base", "--is-ancestor", "HEAD", "FETCH_HEAD"])).code === 0) {
+    state = "behind";
+    behind = Number((await git(["rev-list", "--count", "HEAD..FETCH_HEAD"])).stdout.trim()) || null;
+    commits = (await git(["log", "-n", "20", "--format=%h%x09%s", "HEAD..FETCH_HEAD"])).stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => ({ sha: l.split("\t")[0]!, subject: l.split("\t").slice(1).join("\t") }));
+  } else if ((await git(["merge-base", "--is-ancestor", "FETCH_HEAD", "HEAD"])).code === 0) {
+    state = "ahead";
+  }
+  return { ref, installed, latest, state, behind, commits, checkedAt: d.now().toISOString() };
+}
+
 /** The control plane saw the new agent answer: let the waiting upgrade finish instead of rolling back. */
 export async function confirmUpgrade(d: Deps): Promise<boolean> {
   const dir = dirOf(d);

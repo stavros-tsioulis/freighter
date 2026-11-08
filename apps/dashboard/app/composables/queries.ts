@@ -214,6 +214,32 @@ export function useServerUpgrade(name: MaybeRef<string>, open: MaybeRef<boolean>
   });
 }
 
+export interface RepoCommit {
+  commit: string;
+  subject: string;
+  committedAt: string;
+}
+export interface UpdateCheck {
+  ref: string;
+  installed: RepoCommit | null;
+  latest: RepoCommit;
+  state: "up-to-date" | "behind" | "ahead" | "different";
+  behind: number | null;
+  commits: { sha: string; subject: string }[];
+  checkedAt: string;
+  /** The commit the control plane runs. */
+  target: string | null;
+}
+
+/** Ask the server's own git what's new in the repository it was installed from. */
+export function useCheckUpdates() {
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { server: string; ref?: string }) => api<UpdateCheck>(`/servers/${v.server}/updates/check`, { method: "POST", body: v.ref ? { ref: v.ref } : {} }),
+    onError: (e) => notify.fail("Could not check for updates", e),
+  });
+}
+
 export function useStartUpgrade() {
   const qc = useQueryClient();
   const notify = useNotify();

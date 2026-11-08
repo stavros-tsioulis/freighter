@@ -86,3 +86,23 @@ export function watchUpgrade(ctx: UpgradeCtx, name: string, opts: { everyMs?: nu
   };
   setTimeout(() => void tick(), every).unref();
 }
+
+export type UpdateCheckView = OpResult<"upgrade.check"> & {
+  /** The commit the control plane runs, to compare with what `latest` and `installed` are. */
+  target: string | null;
+};
+
+/** Have the server's agent ask its repository what is new on `ref`, with the agent's own git. Changes nothing. */
+export async function checkServerUpdates(ctx: UpgradeCtx, name: string, ref?: string): Promise<UpdateCheckView> {
+  const server = ctx.registry.servers.get(name);
+  if (!server) throw new UpgradeRefused(400, `unknown server "${name}"`);
+  if (server.status === "pending") throw new UpgradeRefused(409, `${name} is not enrolled yet`);
+  try {
+    const r = await ctx.agents.forServer(name).call("upgrade.check", { ref }, { timeoutMs: 120_000 });
+    return { ...r, target: await controlVersion(ctx) };
+  } catch (e) {
+    if (e instanceof AgentError && e.code === "bad_request" && /unknown operation/.test(e.message)) throw new UpgradeRefused(409, OLD_AGENT);
+    if (e instanceof AgentError && (e.code === "bad_request" || e.code === "conflict")) throw new UpgradeRefused(e.code === "conflict" ? 409 : 400, e.message);
+    throw e;
+  }
+}

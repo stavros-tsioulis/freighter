@@ -362,3 +362,53 @@ describe("upgrading a remote server", () => {
     expect(confirmed).toBe(1); // only while it is waiting
   });
 });
+
+describe("checking a server for updates", () => {
+  const result = {
+    ref: "main",
+    installed: { commit: "a".repeat(40), subject: "old", committedAt: "2026-11-01T10:00:00+00:00" },
+    latest: { commit: "b".repeat(40), subject: "new", committedAt: "2026-11-05T10:00:00+00:00" },
+    state: "behind",
+    behind: 3,
+    commits: [{ sha: "bbbbbbb", subject: "new" }],
+    checkedAt: "2026-11-06T10:00:00.000Z",
+  };
+  async function online(t: Api) {
+    await addServer(t);
+    t.registry.servers.setCert("vps-1", "SHA256:AA", "2027-01-01T00:00:00.000Z");
+    t.ctx.version = "cccccccccccc";
+    await t.request("/v1/servers/vps-1/check", { method: "POST", token: t.tokens.admin, json: {} });
+    return t.remote("vps-1");
+  }
+  const check = (t: Api, json: unknown = {}, name = "vps-1") => t.request(`/v1/servers/${name}/updates/check`, { method: "POST", token: t.tokens.admin, json });
+
+  it("has the agent ask its own git, and returns the answer next to the control plane's version", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.check"] = () => result;
+    const r = await check(t, { ref: "release" });
+    expect(r.status).toBe(200);
+    expect(r.json).toMatchObject({ state: "behind", behind: 3, target: "cccccccccccc" });
+    expect(agent.calls.find((c) => c.op === "upgrade.check")?.args).toEqual({ ref: "release" });
+    expect((await t.request("/v1/servers/vps-1/updates/check", { method: "POST", token: t.tokens.deployer, json: {} })).status).toBe(403);
+  });
+
+  it("explains why it can't: not enrolled, an old agent, a bad ref, no network on the server", async () => {
+    const t = await makeApi();
+    await addServer(t);
+    expect((await check(t)).status).toBe(409); // pending
+    expect((await check(t, {}, "ghost")).status).toBe(404);
+    const agent = await online(t);
+    expect((await check(t, { ref: "--x" })).status).toBe(400);
+    agent.handlers["upgrade.check"] = () => {
+      throw new AgentError("bad_request", 'unknown operation "upgrade.check"');
+    };
+    expect((await check(t)).json.error.message).toMatch(/predates remote upgrades/);
+    agent.handlers["upgrade.check"] = () => {
+      throw new AgentError("bad_request", "could not fetch main from origin: Could not resolve host: github.com");
+    };
+    const r = await check(t);
+    expect(r.status).toBe(400);
+    expect(r.json.error.message).toMatch(/Could not resolve host/);
+  });
+});

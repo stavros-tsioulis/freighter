@@ -90,10 +90,15 @@ const summary = computed(() => {
     <ul v-else class="flex flex-col gap-5">
       <li v-for="s in servers" :key="s.name" class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h2 class="font-display font-semibold text-[1.5rem] leading-tight">{{ s.name }}</h2>
+          <h2 class="font-display font-semibold text-[1.5rem] leading-tight">
+            <NuxtLink :to="`/servers/${s.name}`" class="hover:underline" :aria-label="`${s.name}: details and controls`">{{ s.name }}</NuxtLink>
+          </h2>
           <StatusTag :state="s.status" />
           <span class="text-sm text-muted-color truncate">{{ s.address ?? "This machine" }}</span>
-          <div v-if="can('admin')" class="ml-auto flex gap-1">
+          <div class="ml-auto flex gap-1">
+            <Button as="router-link" :to="`/servers/${s.name}`" label="Details" icon="pi pi-angle-right" icon-pos="right" text size="small" severity="secondary" />
+          </div>
+          <div v-if="can('admin')" class="flex gap-1">
             <Button label="Check now" icon="pi pi-refresh" text size="small" severity="secondary" :loading="check.isPending.value && check.variables.value === s.name" @click="check.mutate(s.name)" />
             <template v-if="s.kind === 'remote'">
               <Button v-if="s.status === 'online'" :label="behind(s) ? 'Upgrade' : 'Upgrade…'" icon="pi pi-arrow-up" :text="!behind(s)" size="small" :severity="behind(s) ? undefined : 'secondary'" title="Upgrade this server's agent" @click="upgrading = s.name" />

@@ -73,7 +73,8 @@ async function go() {
           <div class="flex flex-col gap-2 text-sm">
             <p>
               <b>{{ server }}</b> runs <code>{{ short(view.commit) }}</code>.
-              <template v-if="view.target && !custom">This dashboard runs <code>{{ short(view.target) }}</code><span v-if="!view.outdated">, so it's up to date</span>.</template>
+              <template v-if="!view.target && !custom">This dashboard can't tell which version it runs (it isn't running from a git checkout), so choose the version to upgrade to below.</template>
+              <template v-else-if="view.target && !custom">This dashboard runs <code>{{ short(view.target) }}</code><span v-if="!view.outdated">, so it's up to date</span>.</template>
             </p>
             <ul class="list-disc pl-5 text-muted-color flex flex-col gap-1">
               <li>The server fetches the new version and builds it itself, which takes a few minutes. It needs internet access.</li>
@@ -112,7 +113,7 @@ async function go() {
         v-if="view?.supported && !active"
         :label="finished ? 'Try again' : 'Upgrade'"
         icon="pi pi-arrow-up"
-        :disabled="!validRef || (!custom && !!view && !view.outdated && !finished)"
+        :disabled="!validRef || (!custom && !view.target) || (!custom && !!view && !view.outdated && !finished)"
         :loading="start.isPending.value"
         @click="go"
       />

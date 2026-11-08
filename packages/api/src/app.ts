@@ -39,7 +39,7 @@ import { parseHostConfig } from "@freighter/core/config";
 import { SettingsError } from "@freighter/core/fields";
 import { checkDomainDns, type ChallengeProbe, isLocalName, isPrivateOrLoopback, resolveAll, systemDns, type DnsResolver } from "./dns.ts";
 import { checkServer, reachableServers } from "./servers.ts";
-import { controlVersion, startServerUpgrade, UpgradeRefused, upgradeView } from "./upgrade.ts";
+import { checkServerUpdates, controlVersion, startServerUpgrade, UpgradeRefused, upgradeView } from "./upgrade.ts";
 import { syncAll, type SyncResult } from "./sync.ts";
 
 const execFileP = promisify(execFile);
@@ -933,6 +933,17 @@ export function createApi(ctx: ApiContext): Api {
     audit(who, "server.upgrade", undefined, { server: name, ref: ref ?? view.target, from: view.commit });
     setResponseStatus(event, 202);
     return view;
+  }));
+  router.post("/v1/servers/:name/updates/check", route("admin", async (event) => {
+    const name = sName(event);
+    needServer(name);
+    const { ref } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional() }));
+    try {
+      return await checkServerUpdates(ctx, name, ref);
+    } catch (e) {
+      if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
+      throw e;
+    }
   }));
   router.post("/v1/servers/:name/restart", route("admin", async (event, who) => {
     const name = sName(event);

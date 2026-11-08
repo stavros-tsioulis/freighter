@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkoutCommit, confirmUpgrade, haproxyMode, renderUpgradeScript, startUpgrade, upgradeStatus, validRef } from "../src/index.ts";
+import { checkForUpdates, checkoutCommit, commitFromEnv, confirmUpgrade, findInstallDir, haproxyMode, renderUpgradeScript, startUpgrade, upgradeStatus, validRef } from "../src/index.ts";
 import { makeDeps } from "./helpers.ts";
 
 const git = (cwd: string, ...args: string[]) =>
@@ -205,5 +205,73 @@ describe("agent side of an upgrade", () => {
     writeFileSync(`${upgradeDir}/hap/mode`, "dedicated\n");
     const ours = await upgradeStatus(t.deps, "abc");
     expect(ours.haproxy).toEqual({ mode: "dedicated", instructions: null });
+  });
+
+  it("treats a missing git binary as 'not a checkout' instead of failing (a container image has none)", async () => {
+    const noGit = Object.assign(new Error("spawn git ENOENT"), { code: "ENOENT" });
+    const exec = async () => {
+      throw noGit;
+    };
+    expect(await findInstallDir(process.argv[1], exec)).toBeNull();
+    expect(await checkoutCommit("/app", exec)).toBeNull();
+  });
+
+  it("takes the control plane's commit from the environment when there is no checkout", () => {
+    expect(commitFromEnv({ FREIGHTER_COMMIT: "0123456789abcdef0123456789abcdef01234567" })).toBe("0123456789ab");
+    expect(commitFromEnv({ RAILWAY_GIT_COMMIT_SHA: "ABCDEF0123456789" })).toBe("abcdef012345");
+    expect(commitFromEnv({ FREIGHTER_COMMIT: "main", RAILWAY_GIT_COMMIT_SHA: "0123456789abcdef" })).toBe("0123456789ab");
+    expect(commitFromEnv({ FREIGHTER_COMMIT: "not a sha" })).toBeNull();
+    expect(commitFromEnv({})).toBeNull();
+  });
+
+  describe("checking for updates with the server's own git", () => {
+    it("reports up to date, behind (with what's new), and ahead", async () => {
+      const s = await server({ good: installs("NEW"), bad: installs("NEW") });
+      const same = await checkForUpdates(s.deps, "main");
+      expect(same).toMatchObject({ ref: "main", state: "up-to-date", behind: 0, commits: [] });
+      expect(same.installed?.commit).toBe(s.old);
+
+      // two new commits land on origin's main
+      const origin = `${s.root}/origin`;
+      for (const n of ["one", "two"]) {
+        writeFileSync(`${origin}/${n}.txt`, n);
+        git(origin, "add", ".");
+        git(origin, "commit", "-qm", `feature ${n}`);
+      }
+      const behind = await checkForUpdates(s.deps, "main");
+      expect(behind).toMatchObject({ state: "behind", behind: 2 });
+      expect(behind.commits.map((c) => c.subject)).toEqual(["feature two", "feature one"]);
+      expect(behind.latest.subject).toBe("feature two");
+      expect(behind.installed?.commit).toBe(s.old); // the checkout itself is untouched
+      expect(git(s.dir, "rev-parse", "HEAD")).toBe(s.old);
+
+      // a branch that's a sibling of what's installed
+      expect((await checkForUpdates(s.deps, "good")).state).toBe("behind");
+      git(origin, "checkout", "-q", "-b", "side", s.old);
+      writeFileSync(`${origin}/side.txt`, "x");
+      git(origin, "add", ".");
+      git(origin, "commit", "-qm", "side");
+      expect((await checkForUpdates(s.deps, "side")).state).toBe("behind");
+      git(origin, "checkout", "-q", "main");
+
+      // after installing main's newest commit: up to date with main, ahead of an older branch, unrelated to a sibling
+      git(origin, "branch", "stale", s.old);
+      git(s.dir, "fetch", "-q", "--depth", "1", "origin", "main");
+      git(s.dir, "checkout", "-q", "--force", "FETCH_HEAD");
+      expect((await checkForUpdates(s.deps, "main")).state).toBe("up-to-date");
+      expect((await checkForUpdates(s.deps, "stale")).state).toBe("ahead");
+      expect((await checkForUpdates(s.deps, "side")).state).toBe("different");
+    });
+
+    it("says why it can't, without changing anything", async () => {
+      const s = await server({ good: installs("NEW"), bad: installs("NEW") });
+      await expect(checkForUpdates(s.deps, "nope")).rejects.toThrow(/could not fetch nope from origin/);
+      await expect(checkForUpdates(s.deps, "--evil")).rejects.toThrow(/invalid ref/);
+      const t = await makeDeps();
+      await expect(checkForUpdates(t.deps, "main")).rejects.toThrow(/not installed by the installer/);
+      mkdirSync(`${s.root}/state`, { recursive: true });
+      writeFileSync(`${s.root}/state/state`, "running\n");
+      await expect(checkForUpdates(s.deps, "main")).rejects.toThrow(/upgrade is in progress/);
+    });
   });
 });

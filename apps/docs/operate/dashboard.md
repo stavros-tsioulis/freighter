@@ -29,6 +29,8 @@ The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link
 
 Every server with its status (*Online*, *Offline*, *Waiting to enroll*, *Error*), the last error if any, and a strip of facts: hostname, uptime, load, memory used, free disk, number of apps, last contact, agent version and, for remote servers, how long their certificate has left. Admins can add servers, **Check now**, **Re-enroll**, **Upgrade** a remote server's agent to the version the dashboard runs (with progress, log and automatic rollback), and remove servers that have no apps.
 
+Select a server's name to open its page. It shows the machine (hostname, uptime, load, memory, disk), the apps pinned to it, and, for admins, the agent and software: the version the agent runs next to the one the dashboard runs, whether HAProxy is Freighter's own or yours, the outcome of the last upgrade, and the agent certificate. The controls are **Check now**, **Check for updates**, **Upgrade**, **Restart agent**, **Re-enroll** and **Remove server**. **Check for updates** has the server itself ask the repository it was installed from, with its own git and network, whether `main` (or a branch, tag or commit you type) has newer commits than it runs, and lists them. It changes nothing on the server.
+
 ## Certificates
 
 Every `tls: auto` hostname across all servers, soonest expiry first, with the date and the days left. Under 14 days shows amber and under 7 days red. Renewal is automatic, and admins can trigger it with **Renew due certificates**.

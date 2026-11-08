@@ -161,6 +161,19 @@ export const ops = {
       haproxy: z.object({ mode: z.enum(["dedicated", "existing"]), instructions: z.string().nullable() }).optional(),
     }),
   },
+  /** Ask the repository this agent was installed from (with the agent's own git) what is new on `ref` (default `main`). Changes nothing on the server. */
+  "upgrade.check": {
+    args: z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional() }),
+    result: z.object({
+      ref: z.string(),
+      installed: z.object({ commit: z.string(), subject: z.string(), committedAt: iso }).nullable(),
+      latest: z.object({ commit: z.string(), subject: z.string(), committedAt: iso }),
+      state: z.enum(["up-to-date", "behind", "ahead", "different"]),
+      behind: z.number().nullable(),
+      commits: z.array(z.object({ sha: z.string(), subject: z.string() })),
+      checkedAt: iso,
+    }),
+  },
   "upgrade.confirm": { args: z.object({}), result: z.object({ confirmed: z.boolean() }) },
   "app.rollback": {
     args: z.object({ app, release: ident.optional() }),

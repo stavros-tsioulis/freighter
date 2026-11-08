@@ -13,6 +13,7 @@ import {
   certStatus,
   challengeToken,
   UpgradeError,
+  checkForUpdates,
   checkoutCommit,
   confirmUpgrade,
   startUpgrade,
@@ -100,6 +101,9 @@ export function createHandlers(d: Deps): Handlers {
     async "upgrade.start"({ ref }) {
       await startUpgrade(d, ref ?? "main", await currentCommit());
       return { started: true as const };
+    },
+    async "upgrade.check"({ ref }) {
+      return checkForUpdates(d, ref ?? "main");
     },
     async "upgrade.confirm"() {
       return { confirmed: await confirmUpgrade(d) };
