@@ -5,12 +5,15 @@ import { resolve } from "node:path";
 import { createHaproxy, ensureCert, type Haproxy } from "@freighter/haproxy";
 import { createSystemd, defaultLayout, defaultRun, type Layout, type Run, type Systemd } from "@freighter/systemd";
 import { HOST_CONFIG_PATH, loadConfig, type HostConfig } from "./config.ts";
+import { findInstallDir } from "./version.ts";
 
 export interface Deps {
   layout: Layout;
   systemd: Systemd;
   haproxy: Haproxy;
   config: HostConfig;
+  /** The git checkout Freighter runs from (set by the installer); null/unset in dev mode and tests. Remote upgrades work on it. */
+  installDir?: string | null;
   /** Where `config` was read from (and where the settings UI writes it back). Default: /etc/freighter/config.yaml. */
   configPath?: string;
   /** Runs host commands that change the machine (id, useradd, chown, systemctl, certbot, haproxy). A no-op under --prefix. */
@@ -102,6 +105,7 @@ export async function defaultDeps(opts: { prefix?: string } = {}): Promise<Deps>
     layout,
     config,
     configPath: prefix + HOST_CONFIG_PATH,
+    installDir: prefix ? null : await findInstallDir(),
     run,
     exec: defaultRun,
     runLogged,

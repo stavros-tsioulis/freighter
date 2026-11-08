@@ -121,12 +121,20 @@ preflight() {
 
 # Decide between the HAProxy the operator already runs and a Freighter-only one.
 detect_haproxy_mode() {
+	# An earlier install recorded whose HAProxy this is (see setup_haproxy). Re-running the installer, and upgrades,
+	# must not flip that because of what happens to be installed or running now.
+	if [ "$HAPROXY_MODE" = auto ] && [ -r /etc/haproxy/freighter/mode ]; then
+		case $(cat /etc/haproxy/freighter/mode) in
+			dedicated) HAPROXY_MODE=dedicated; HAPROXY_RECORDED=1 ;;
+			existing) HAPROXY_MODE=existing; HAPROXY_RECORDED=1 ;;
+		esac
+	fi
 	if [ "$HAPROXY_MODE" = none ]; then ok "No agent on this machine: it runs no apps, so no HAProxy or certbot either"; return; fi
 	if [ "$HAPROXY_MODE" = auto ]; then
 		if dpkg -s haproxy >/dev/null 2>&1 && systemctl is-enabled haproxy >/dev/null 2>&1; then HAPROXY_MODE=existing; else HAPROXY_MODE=dedicated; fi
 		ok "HAProxy: $HAPROXY_MODE ($([ "$HAPROXY_MODE" = existing ] && echo "found one on this server; --haproxy dedicated to use a separate one" || echo "none running here; Freighter gets its own"))"
 	else
-		ok "HAProxy: $HAPROXY_MODE (as requested)"
+		ok "HAProxy: $HAPROXY_MODE ($([ "${HAPROXY_RECORDED:-0}" = 1 ] && echo "as recorded by the earlier install" || echo "as requested"))"
 	fi
 	# A dedicated HAProxy needs its ports free (unless it is ours from an earlier run).
 	if [ "$HAPROXY_MODE" = dedicated ] && ! systemctl is-active freighter-haproxy >/dev/null 2>&1; then
@@ -285,11 +293,13 @@ setup_haproxy() {
 			"$([ "$HAPROXY_MODE" = dedicated ] && echo "/etc/freighter/haproxy/haproxy.cfg (ports $HTTP_PORT/$HTTPS_PORT)" || echo "EXTRAOPTS in /etc/default/haproxy")" "$RST"; return
 	fi
 	install -d /etc/haproxy/freighter /etc/haproxy/freighter/certs
+	# Remember whose HAProxy this is: upgrades use it to know whether Freighter owns the config or the operator does.
+	printf '%s\n' "$HAPROXY_MODE" >/etc/haproxy/freighter/mode
 	for f in hostnames.map https.map; do [ -e "/etc/haproxy/freighter/$f" ] || : >"/etc/haproxy/freighter/$f"; done
 	# The :80 rules refer to the freighter_acme backend, which HAProxy requires to exist; Freighter rewrites this file
 	# (keeping that backend) on every deploy.
 	if [ ! -s /etc/haproxy/freighter/backends.cfg ]; then
-		printf '# Managed by freighter. Do not edit; regenerated on every deploy.\n\nbackend freighter_acme\n    server certbot 127.0.0.1:8888\n' >/etc/haproxy/freighter/backends.cfg
+		printf '# Managed by freighter. Do not edit; regenerated on every deploy.\n\nbackend freighter_acme\n    server certbot 127.0.0.1:8888\n\nbackend freighter_challenge\n    http-request return status 200 content-type text/plain string "unset"\n' >/etc/haproxy/freighter/backends.cfg
 	fi
 
 	# HAProxy refuses to start with an empty `crt` directory.
@@ -300,6 +310,14 @@ setup_haproxy() {
 		cat "$t/c" "$t/k" >"$pem"; chmod 600 "$pem"; rm -rf "$t"
 		ok "placeholder certificate"
 	else skip "certificate directory is not empty"; fi
+
+	# A newer version's HAProxy rules can refer to backends an older backends.cfg doesn't have yet, and HAProxy refuses to
+	# start on a config like that. So bring the generated backends up to date first (old rules never use the new
+	# backends, so this is safe for the HAProxy that is running now), then write rules that need them.
+	if [ "$HAPROXY_MODE" = dedicated ]; then hap_unit=freighter-haproxy; else hap_unit=haproxy; fi
+	if systemctl is-active --quiet "$hap_unit" 2>/dev/null; then
+		/usr/local/bin/freighter haproxy sync >>"$LOG" 2>&1 || warn "could not refresh HAProxy's generated backends (see $LOG)"
+	fi
 
 	if [ "$HAPROXY_MODE" = dedicated ]; then
 		# The config comes from Freighter itself, so the ports and redirects match /etc/freighter/config.yaml.

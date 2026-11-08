@@ -52,10 +52,11 @@ async function runVerify(d: DomainRow) {
   const r = await verify.mutateAsync(d.hostname).catch(() => null);
   if (!r) return;
   if (r.verified && r.id) {
+    if (r.method === "http") notify.ok("Reached through Cloudflare's proxy", `${d.hostname} answers from this server.`);
     deployedId.value = r.id;
     showDeployment.value = true;
   } else {
-    notify.fail("DNS isn't set up yet", new Error(r.reason ?? "The records don't match."));
+    notify.fail(r.cloudflare ? "Couldn't reach the server through Cloudflare" : "DNS isn't set up yet", new Error(r.reason ?? "The records don't match."));
   }
 }
 function askRemove(d: DomainRow) {
@@ -129,6 +130,7 @@ const url = (d: DomainRow) => `${d.tls === "auto" ? "https" : "http"}://${d.host
               </table>
             </div>
             <p class="text-muted-color">Your provider may ask for the name as <code>{{ d.hostname.split(".").slice(0, -2).join(".") || "@" }}</code> instead of the full hostname. Changes can take a few minutes to spread.</p>
+            <p class="text-muted-color">Using Cloudflare? Either mode works: leave the record as <b>DNS only</b> (grey cloud) or <b>Proxied</b> (orange cloud). A proxied name can't show where it points, so Freighter checks that a request for it reaches this server instead.</p>
           </template>
           <p v-else>Freighter doesn't know this server's public IP address. Set <code>api.publicIps</code> in <code>/etc/freighter/config.yaml</code>, restart the dashboard, and the records to add will appear here.</p>
           <Message v-if="d.lastError" severity="warn" size="small">

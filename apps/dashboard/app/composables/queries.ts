@@ -177,6 +177,56 @@ export function useCheckServer() {
   });
 }
 
+/** The version (git commit) the control plane runs: where "Upgrade" takes a server. */
+export const useControlVersion = () =>
+  useQuery({ queryKey: ["control-version"], queryFn: () => api<{ commit: string | null }>("/version").then((r) => r.commit), staleTime: 5 * 60_000 });
+
+export interface UpgradeInfo {
+  state: "running" | "verifying" | "rolling-back" | "done" | "rolled-back" | "failed";
+  from: string | null;
+  to: string | null;
+  ref: string | null;
+  startedAt: string | null;
+  updatedAt: string | null;
+  message: string | null;
+}
+export interface UpgradeView {
+  supported: boolean;
+  reason: string | null;
+  commit: string | null;
+  upgrade: UpgradeInfo | null;
+  log: string;
+  /** Whose HAProxy the server uses; `instructions` is what's left to do by hand when it is the operator's own. Absent on old agents. */
+  haproxy?: { mode: "dedicated" | "existing"; instructions: string | null };
+  target: string | null;
+  outdated: boolean;
+}
+export const upgradeActive = (u: UpgradeInfo | null | undefined) => !!u && ["running", "verifying", "rolling-back"].includes(u.state);
+
+/** A server's upgrade state and log. Polls while `open`, quickly while an upgrade runs (the agent restarts partway, so errors are expected). */
+export function useServerUpgrade(name: MaybeRef<string>, open: MaybeRef<boolean>) {
+  return useQuery({
+    queryKey: ["server-upgrade", name],
+    queryFn: () => api<UpgradeView>(`/servers/${toValue(name)}/upgrade`),
+    enabled: () => toValue(open),
+    refetchInterval: 3_000,
+    retry: false,
+  });
+}
+
+export function useStartUpgrade() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { server: string; ref?: string }) => api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.ref ? { ref: v.ref } : {} }),
+    onSuccess: (_r, v) => {
+      void qc.invalidateQueries({ queryKey: ["server-upgrade", v.server] });
+      void qc.invalidateQueries({ queryKey: ["servers"] });
+    },
+    onError: (e) => notify.fail("Could not start the upgrade", e),
+  });
+}
+
 export function useRemoveServer() {
   const qc = useQueryClient();
   const notify = useNotify();
@@ -475,7 +525,7 @@ export function useVerifyDomain(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (hostname: string) => api<{ verified: boolean; id?: string; reason?: string | null; found: string[]; expected: string[] }>(`/apps/${toValue(app)}/domains/${hostname}/verify`, { method: "POST", body: {} }),
+    mutationFn: (hostname: string) => api<{ verified: boolean; id?: string; reason?: string | null; found: string[]; expected: string[]; method: "local" | "dns" | "http" | null; cloudflare: boolean }>(`/apps/${toValue(app)}/domains/${hostname}/verify`, { method: "POST", body: {} }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["domains"] });
       void qc.invalidateQueries({ queryKey: ["app"] });

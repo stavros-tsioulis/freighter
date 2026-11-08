@@ -134,6 +134,30 @@ Builds from Git run on the app's server, so install the build toolchain there.
 
 Agent certificates last one year. The Servers page shows the days left and warns under 30. To renew, press **Re-enroll** on the server (or run `freighter server token vps-fra-1`), run the new `freighter-agent enroll …` command on the server, and restart the agent.
 
+## Upgrading a server
+
+A remote server runs the agent and CLI from a git checkout the installer made (`/opt/freighter`). To bring it to the version the control server runs, press **Upgrade** on the Servers page (it is highlighted, with *update available* next to the agent version, when the server is behind), or run this on the control server:
+
+```sh
+sudo -u freighter freighter server upgrade vps-fra-1            # to the version this control server runs
+sudo -u freighter freighter server upgrade vps-fra-1 --ref v1.4.0   # a branch, tag or commit instead
+```
+
+The control server upgrades first, then its servers: an agent is meant to be at the same version as the control plane it answers to.
+
+What happens, all on the server:
+
+1. The agent backs up what an upgrade replaces: the built agent and CLI, the `freighter-*` systemd units, and a Freighter-managed `haproxy.cfg`.
+2. It fetches the version and runs *that version's* installer (`install.sh --role agent`), the same code as a fresh install. It installs, builds and restarts the agent, so the server needs internet access and takes a few minutes. Your `config.yaml`, certificates and apps are left alone, and apps keep running.
+3. The new agent waits for the control server to reach it over mutual TLS and confirm. The Servers page and the CLI do this automatically while they watch the upgrade, and the periodic sync does it otherwise.
+4. If the installer fails, or no confirmation arrives within 3 minutes of the install finishing, the server puts the backup back (nothing is rebuilt) and restarts the old agent. The Servers page then says *Rolled back* with the reason and the log.
+
+The upgrade runs as its own systemd unit (`freighter-upgrade`), so it carries on while the agent restarts, and survives the control server or your browser going away. Its state and log are in `/var/lib/freighter/upgrade/` (`state`, `message`, `log`). HAProxy is restarted once near the end, which is a brief blip for traffic. Don't deploy to the server while it upgrades, because a restart of the agent interrupts a deployment that is running.
+
+**Whose HAProxy it is.** The installer records whether it set up a HAProxy of its own for Freighter (*dedicated*) or wired into one you already ran (*existing*), in `/etc/haproxy/freighter/mode`. It sticks across upgrades and re-runs of the installer. With a dedicated HAProxy, Freighter owns `haproxy.cfg` and an upgrade rewrites it. With your own, Freighter never edits it, so when an upgrade finishes the Servers page and `freighter server upgrade` show the lines to add to your frontends (they are the same ones `freighter haproxy setup` lists, with your ports). Until you add them, domains behind Cloudflare's proxy can't be verified, and nothing else is affected. Servers installed before the record existed are told apart by where their `haproxy.cfg` lives.
+
+**Servers installed before this feature** can't upgrade themselves, because their agent doesn't know how. Run the installer on them once, as in step 1 (`curl … | sudo sh -s -- --role agent`). From then on **Upgrade** works. The same goes for a server that wasn't installed with the script, since it has no checkout to upgrade.
+
 ## Removing a server
 
 A server can be removed once no apps are pinned to it: **Servers**, the trash icon, or `freighter server remove vps-fra-1`. The control server forgets it, and its certificate becomes useless without the control server's client key. The agent keeps running until you stop it, so stop and disable `freighter-agent` and close port 7443.

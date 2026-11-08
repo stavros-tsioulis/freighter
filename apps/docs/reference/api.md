@@ -100,6 +100,9 @@ Deploying to an app pinned to another server returns `409 pinned_to_other_server
 | `POST /servers` | `{name, address}`. Returns the one-time enrollment command. | admin |
 | `POST /servers/:name/enrollment` | a new enrollment token, for re-enrolling or renewing | admin |
 | `POST /servers/:name/check` | contact the server now | admin |
+| `GET /version` | the commit the control plane runs | viewer |
+| `GET /servers/:name/upgrade` | whether the agent can upgrade itself, its version against the control plane's, and the state and log of the last upgrade | admin |
+| `POST /servers/:name/upgrade` | `{ref?}`. Starts an upgrade of a remote server (default ref: the control plane's own commit). `202` with the same body as above. | admin |
 | `DELETE /servers/:name` | not `local`, and not while apps are pinned | admin |
 | `POST /enroll` | **public**: `{token, csr}`. An agent redeems its token for a certificate. | token |
 

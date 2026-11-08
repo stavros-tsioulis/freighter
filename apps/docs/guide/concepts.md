@@ -26,7 +26,7 @@ A hostname routed to one of an app's services, such as `shop.example.com` to `we
 
 ### Routed and in-place services
 
-A service that a domain points at is **routed**. It listens on `$PORT` (Freighter allocates one from `ports.min`–`ports.max`), and deploys switch to it with no downtime. A service without a domain is **in place**. It is restarted during deploys and keeps the `port` from `app.yaml`, if it has one.
+A service that a domain points at is **routed**. It listens on `$PORT` (Freighter allocates one from `ports.min`–`ports.max`) and receives `HOST=127.0.0.1`, because HAProxy connects to `127.0.0.1:$PORT`. An app that binds to `localhost` may get only the IPv6 loopback, which HAProxy can't reach: bind to `$HOST`, or set `HOST` yourself in `environment` to override it. Deploys switch to it with no downtime. A service without a domain is **in place**. It is restarted during deploys and keeps the `port` from `app.yaml`, if it has one.
 
 ### Secret
 

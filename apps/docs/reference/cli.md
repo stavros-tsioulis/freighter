@@ -113,8 +113,11 @@ freighter server add <name> --address <host[:port]> [--control https://freighter
 freighter server token <name> [--control …]
 freighter server list
 freighter server check <name>
+freighter server upgrade <name> [--ref <branch|tag|commit>] [--no-wait]
 freighter server remove <name>
 ```
+
+`upgrade` has the server's agent re-run the installer for a version (default: the one this control server runs) and rolls it back by itself if this control server can't reach the new agent afterwards. It follows the upgrade until it ends and exits non-zero if it was rolled back; `--no-wait` starts it and returns. `list` shows each agent's version and marks the ones that are behind. See [Upgrading a server](../install/remote-server.md#upgrading-a-server).
 
 `add` and `token` print a one-time enrollment command. `--control` (or `$FREIGHTER_URL`) is the URL the new server uses to reach this one. `remove` is refused while apps are pinned to the server.
 

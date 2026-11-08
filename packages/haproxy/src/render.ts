@@ -1,3 +1,5 @@
+import { CLOUDFLARE_RANGES } from "./cloudflare.ts";
+
 export interface Route {
   app: string;
   service: string;
@@ -23,7 +25,7 @@ export function renderHttpsMap(routes: Route[]): string {
   return HEADER + [...routes].filter((r) => r.tls === "auto").sort(byHost).map((r) => `${r.hostname} 1\n`).join("");
 }
 
-export function renderBackends(routes: Route[], opts: { acmePort: number }): string {
+export function renderBackends(routes: Route[], opts: { acmePort: number; challengeToken: string }): string {
   const groups = new Map<string, Route>();
   for (const r of routes) {
     const name = backendName(r);
@@ -47,6 +49,7 @@ export function renderBackends(routes: Route[], opts: { acmePort: number }): str
     }
   }
   out += `\nbackend freighter_acme\n    server certbot 127.0.0.1:${opts.acmePort}\n`;
+  out += `\nbackend freighter_challenge\n    http-request return status 200 content-type text/plain string "${opts.challengeToken}"\n`;
   return out;
 }
 
@@ -58,6 +61,8 @@ export interface ListenOptions {
   publicHttpsPort?: number;
   /** Expect the PROXY protocol on both listeners (nginx `stream` with `proxy_protocol on`, another HAProxy with `send-proxy`). */
   acceptProxy?: boolean;
+  /** Cloudflare's proxy is in front: take the visitor's address from `CF-Connecting-IP`, but only on connections from Cloudflare's ranges. */
+  trustCloudflare?: boolean;
 }
 
 const hostExpr = "req.hdr(host),field(1,:),lower";
@@ -77,11 +82,50 @@ function resolve(o: ListenOptions) {
   return { httpPort, httpsPort, proxy, redirect };
 }
 
-function httpRules(dir: string, redirect: string): string {
-  return `    acl freighter_acme path_beg /.well-known/acme-challenge/
+/** Real client address behind Cloudflare. Only connections from Cloudflare's ranges may set it, so it can't be spoofed. */
+function cloudflareRules(o: ListenOptions): string {
+  if (!o.trustCloudflare) return "";
+  return `    acl freighter_cloudflare src ${CLOUDFLARE_RANGES.join(" ")}
+    http-request set-src req.hdr(CF-Connecting-IP) if freighter_cloudflare { req.hdr(CF-Connecting-IP) -m found }
+`;
+}
+
+/** Answers the control plane's domain check (see ensureChallengeToken). Needed on both listeners: Cloudflare may reach us over either. */
+const challengeRule = "use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }";
+
+function httpRules(dir: string, redirect: string, o: ListenOptions): string {
+  return `${cloudflareRules(o)}    acl freighter_acme path_beg /.well-known/acme-challenge/
     ${redirect} if !{ ssl_fc } !freighter_acme { ${hostExpr},map(${dir}/https.map) -m found }
     use_backend freighter_acme if freighter_acme
+    ${challengeRule}
     ${routeLine(dir)}`;
+}
+
+function httpsRules(dir: string, o: ListenOptions): string {
+  return `${cloudflareRules(o)}    ${challengeRule}
+    ${routeLine(dir)}`;
+}
+
+/**
+ * What someone running their own HAProxy has to add after an upgrade: Freighter never edits that file, and newer
+ * versions answer the domain check (and, behind Cloudflare, read the visitor's address) through rules in the frontends.
+ * Adding a rule that is already there is harmless to read but HAProxy rejects a duplicate `acl`, so say what to look for.
+ */
+export function renderUpgradeNotes(o: { dir: string; mainConfig?: string } & ListenOptions): string {
+  const { httpPort, httpsPort } = resolve(o);
+  const cf = o.trustCloudflare ? cloudflareRules(o) : "";
+  return `# Freighter does not edit your haproxy.cfg, so these lines are yours to add (skip any you already have):
+#
+# In the frontend listening on :${httpPort} and in the one listening on :${httpsPort}, before your other rules:
+${cf}    ${challengeRule}
+#
+# The rule sends /.well-known/freighter-challenge to the freighter_challenge backend, which Freighter keeps in
+# ${o.dir}/backends.cfg (HAProxy already loads that file). It lets the dashboard verify domains that sit behind
+# Cloudflare's proxy, where DNS records can't show where they point.
+#
+# Then check and reload:
+#     haproxy -c -f ${o.mainConfig ?? "/etc/haproxy/haproxy.cfg"} -f ${o.dir}/backends.cfg && systemctl reload haproxy
+`;
 }
 
 /** The one-time lines the user adds to their existing HAProxy configuration. */
@@ -102,12 +146,12 @@ export function renderSnippet(o: { dir: string; mainConfig?: string } & ListenOp
 #        haproxy -c -f ${o.mainConfig ?? "/etc/haproxy/haproxy.cfg"} -f ${o.dir}/backends.cfg
 #
 # 2. In the frontend listening on :${httpPort}, before your other rules:
-${httpRules(o.dir, redirect)}
+${httpRules(o.dir, redirect, o)}
 #
 # 3. In the frontend listening on :${httpsPort} (the certs directory must contain at least one PEM,
 #    e.g. a self-signed placeholder, or HAProxy will refuse to start):
     bind :${httpsPort} ssl crt ${o.dir}/certs/${proxy}
-    ${routeLine(o.dir)}
+${httpsRules(o.dir, o)}
 `;
 }
 
@@ -135,10 +179,10 @@ defaults
 
 frontend freighter_http
     bind :${httpPort}${proxy}
-${httpRules(o.dir, redirect)}
+${httpRules(o.dir, redirect, o)}
 
 frontend freighter_https
     bind :${httpsPort} ssl crt ${o.dir}/certs/${proxy}
-    ${routeLine(o.dir)}
+${httpsRules(o.dir, o)}
 `;
 }

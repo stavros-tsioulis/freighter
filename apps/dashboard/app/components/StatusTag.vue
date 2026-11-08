@@ -27,6 +27,11 @@ const STATES: Record<string, [Tone, string]> = {
   offline: ["bad", "Offline"],
   pending: ["busy", "Waiting to enroll"],
   error: ["bad", "Error"],
+  // agent upgrades
+  verifying: ["busy", "Checking the new version"],
+  "rolling-back": ["warn", "Rolling back"],
+  "rolled-back": ["warn", "Rolled back"],
+  done: ["ok", "Upgraded"],
   // certificates
   expiring: ["warn", "Expiring soon"],
 };

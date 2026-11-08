@@ -10,6 +10,10 @@ const reenroll = useServerEnrollment();
 const check = useCheckServer();
 const remove = useRemoveServer();
 const confirm = useConfirm();
+const { data: controlCommit } = useControlVersion();
+const upgrading = ref<string | null>(null);
+const showUpgrade = computed({ get: () => upgrading.value !== null, set: (v) => { if (!v) upgrading.value = null; } });
+const behind = (s: ServerRow) => s.kind === "remote" && s.status === "online" && !!s.agentVersion && !!controlCommit.value && s.agentVersion !== controlCommit.value;
 
 const showAdd = ref(false);
 const name = ref("");
@@ -92,6 +96,7 @@ const summary = computed(() => {
           <div v-if="can('admin')" class="ml-auto flex gap-1">
             <Button label="Check now" icon="pi pi-refresh" text size="small" severity="secondary" :loading="check.isPending.value && check.variables.value === s.name" @click="check.mutate(s.name)" />
             <template v-if="s.kind === 'remote'">
+              <Button v-if="s.status === 'online'" :label="behind(s) ? 'Upgrade' : 'Upgrade…'" icon="pi pi-arrow-up" :text="!behind(s)" size="small" :severity="behind(s) ? undefined : 'secondary'" title="Upgrade this server's agent" @click="upgrading = s.name" />
               <Button label="Re-enroll" icon="pi pi-key" text size="small" severity="secondary" title="Create a new enrollment command" @click="newToken(s)" />
               <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Remove server" :title="s.appCount > 0 ? 'Move or delete its apps first' : 'Remove server'" :disabled="s.appCount > 0" @click="askRemove(s)" />
             </template>
@@ -116,7 +121,10 @@ const summary = computed(() => {
           </template>
           <Fact label="Apps">{{ s.appCount }}</Fact>
           <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
-          <Fact label="Agent">{{ s.agentVersion ?? "–" }}</Fact>
+          <Fact label="Agent" :title="behind(s) ? `This dashboard runs ${controlCommit}` : ''">
+            {{ s.agentVersion ?? "–" }}
+            <span v-if="behind(s) && can('admin')" class="text-amber-600 dark:text-amber-400 font-normal text-sm"> · update available</span>
+          </Fact>
           <Fact v-if="s.kind === 'remote'" label="Agent certificate"><span :class="certTone(s)">{{ certText(s) }}</span></Fact>
         </Facts>
       </li>
@@ -142,6 +150,8 @@ const summary = computed(() => {
         <Button label="Add server" :disabled="!validAdd" :loading="add.isPending.value" @click="submitAdd" />
       </template>
     </Dialog>
+
+    <UpgradeDialog v-if="upgrading" v-model="showUpgrade" :server="upgrading" />
 
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />

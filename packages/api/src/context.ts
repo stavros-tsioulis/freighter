@@ -23,6 +23,10 @@ export interface ApiContext {
   publicUrl?: string;
   /** This control plane's own public IP address(es): where a domain's DNS record should point for apps on the local server. */
   publicIps?: string[];
+  /** The commit this control plane runs (looked up from its checkout when unset; tests set it). */
+  version?: string | null;
+  /** HTTP used for the domain reachability check (default: global fetch; replaceable in tests). */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   /** DNS used to verify domains (default: the system's). */
   dns?: DnsResolver;
   /** Trust X-Forwarded-For/-Proto/-Host (API sits behind HAProxy). */

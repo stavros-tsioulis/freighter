@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { Run } from "@freighter/systemd";
 
@@ -67,4 +68,19 @@ export function createHaproxy({ run, config }: { run: Run; config: HaproxyConfig
       return { changed: true };
     },
   };
+}
+
+/**
+ * The secret-less per-server string HAProxy answers with at `/.well-known/freighter-challenge`. A control plane that
+ * fetches a hostname and gets it back knows the hostname reaches this server's HAProxy, whatever sits in between
+ * (Cloudflare's proxy, another CDN). Created once, kept in `<dir>/challenge-token`.
+ */
+export async function ensureChallengeToken(dir: string): Promise<string> {
+  const path = `${dir}/challenge-token`;
+  const existing = (await readOrNull(path))?.trim();
+  if (existing && /^[0-9a-f]{32}$/.test(existing)) return existing;
+  const token = randomBytes(16).toString("hex");
+  await mkdir(dir, { recursive: true });
+  await writeAtomic(path, token + "\n");
+  return token;
 }

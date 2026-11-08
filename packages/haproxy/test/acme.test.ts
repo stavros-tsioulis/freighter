@@ -75,4 +75,20 @@ describe("ensureCert", () => {
     await expect(ensureCert({ hostname: "../x", dir: h.dir, acme: acme(), run: h.run })).rejects.toThrow(/invalid hostname/);
     await expect(ensureCert({ hostname: "a.example.com", dir: h.dir, acme: acme(), run: h.run })).rejects.toThrow(/certbot failed.*Challenge failed.*tls: off/s);
   });
+
+  it("uses the Cloudflare DNS challenge when asked to, and refuses without a token", async (ctx) => {
+    if (!haveOpenssl) return ctx.skip();
+    const h = await host();
+    const cred = `${h.root}/cloudflare.ini`;
+    const over = { letsencryptDir: `${h.root}/le`, challenge: "cloudflare-dns" as const, cloudflareCredentials: cred, dnsPropagationSeconds: 45 };
+    await expect(ensureCert({ hostname: "a.example.com", dir: h.dir, acme: acme(over), run: h.run })).rejects.toThrow(/dns_cloudflare_api_token/);
+    expect(h.calls).toHaveLength(0);
+    await writeFile(cred, "dns_cloudflare_api_token = abc123\n");
+    const r = await ensureCert({ hostname: "a.example.com", dir: h.dir, acme: acme(over), run: h.run });
+    expect(r.issued).toBe(true);
+    expect(h.calls[0]).toEqual([
+      "certbot", "certonly", "--dns-cloudflare", "--dns-cloudflare-credentials", cred, "--dns-cloudflare-propagation-seconds", "45",
+      "--non-interactive", "--agree-tos", "--keep-until-expiring", "-m", "me@example.com", "--cert-name", "a.example.com", "-d", "a.example.com",
+    ]);
+  });
 });

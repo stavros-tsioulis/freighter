@@ -17,6 +17,12 @@ export interface RenderInput {
   release?: string;
   /** Static, non-secret environment from the manifest. */
   environment?: Record<string, string>;
+  /**
+   * The service is reached by HAProxy at 127.0.0.1:PORT. Sets `HOST=127.0.0.1` (below the manifest's own environment and
+   * the secrets file, so either can override it), so apps that bind to `$HOST` don't end up on `localhost`, which can mean
+   * only the IPv6 loopback that HAProxy never connects to.
+   */
+  loopback?: boolean;
 }
 
 function line(key: string, value: string | number): string {
@@ -48,7 +54,8 @@ export function renderUnit(input: RenderInput): string {
     line("WorkingDirectory", input.release ? releasePath(layout, app, input.release) : workingDir(layout, app)),
     line("ExecStart", toExecStart(splitCommand(def.command))),
   ];
-  // Static env first, then the secrets file so it can override, then PORT which always wins.
+  // The loopback default first, then static env, then the secrets file so it can override, then PORT which always wins.
+  if (input.loopback && port !== undefined) svc.push(line("Environment", "HOST=127.0.0.1"));
   for (const [k, v] of Object.entries(input.environment ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) throw new Error(`invalid environment key "${k}"`);
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));

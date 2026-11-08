@@ -4,7 +4,7 @@ Freighter doesn't take over HAProxy. If you already run one, your `haproxy.cfg` 
 
 | Your server | Setup | Where |
 | --- | --- | --- |
-| Already runs HAProxy (for other sites, say) | **Shared**: add a few lines to your config | [1. Print the lines to add](#_1-print-the-lines-to-add) onwards |
+| Already runs HAProxy (for other sites, say) | **Shared**: add a few lines to your config | [Shared](#shared-add-freighter-to-your-haproxy): [installed with the script](#installed-with-the-script) or [fully manual](#fully-manual) |
 | Runs no HAProxy, or you want Freighter's separate | **Dedicated**: a Freighter-only HAProxy on ports you choose | [Run a dedicated HAProxy](#run-a-dedicated-haproxy) |
 | Runs nginx, Caddy, Traefik or a cloud load balancer on 80/443 | **Dedicated**, on other ports, behind your proxy | [Behind your own reverse proxy](#behind-your-own-reverse-proxy) |
 
@@ -16,61 +16,119 @@ In every setup Freighter writes only these files, in `/etc/haproxy/freighter` (t
 | --- | --- |
 | `hostnames.map` | hostname to backend, one line per domain |
 | `https.map` | hostnames that redirect from HTTP to HTTPS (`tls: auto`) |
-| `backends.cfg` | one backend per routed service, plus `freighter_acme` for certificate challenges |
+| `backends.cfg` | one backend per routed service, plus `freighter_acme` (certificate challenges) and `freighter_challenge` (the dashboard's domain check) |
 | `certs/<hostname>.pem` | certificate and key for each `tls: auto` domain |
+| `mode` | `dedicated` or `existing`: whose HAProxy this is, written by the installer (see [After an upgrade](#after-an-upgrade)) |
 
 You connect them once, on every server that will serve domains.
 
 ## Shared: add Freighter to your HAProxy
 
-For servers that already run HAProxy.
+For servers that already run HAProxy. Freighter never edits your `haproxy.cfg`. Instead it needs five things from it, which you add once:
 
-### 1. Print the lines to add
+| # | What | Why |
+| --- | --- | --- |
+| 1 | HAProxy loads `/etc/haproxy/freighter/backends.cfg`, through an extra `-f` | Freighter keeps one backend per routed service there, and rewrites the file on every deploy. |
+| 2 | In the **:80 frontend**: the ACME rule, the HTTPS redirect, the challenge rule and the routing line | Let's Encrypt validates over port 80, `tls: auto` domains redirect to HTTPS, and plain HTTP domains are routed. |
+| 3 | In the **:443 frontend**: `bind … ssl crt /etc/haproxy/freighter/certs/`, the challenge rule and the routing line | HAProxy serves each domain's certificate and routes by hostname. |
+| 4 | A placeholder certificate in that `certs/` directory | HAProxy refuses to start with an empty `crt` directory. |
+| 5 | The files and backends Freighter's lines point at, created before HAProxy reloads | HAProxy refuses to start when a `use_backend` names a backend that doesn't exist. |
 
-```sh
-freighter haproxy setup
-```
+Which of them are already done depends on how you installed:
 
-It prints three changes for HAProxy 2.4 or later. With the default directory, they are:
+| You… | What's done | Go to |
+| --- | --- | --- |
+| used the install script on a server that already ran HAProxy | 1, 4 and 5. Your `haproxy.cfg` is unchanged, so 2 and 3 are left. | [Installed with the script](#installed-with-the-script) |
+| set Freighter up by hand | none | [Fully manual](#fully-manual) |
+
+Not sure? `ls /etc/haproxy/freighter`. If it lists `backends.cfg`, `certs`, `hostnames.map`, `https.map` and `mode`, the script ran.
+
+### The lines to add
+
+These are items 2 and 3. They're the same in both cases. With the default directory and ports (80 and 443), add this to the **frontend that listens on :80**, before your other rules:
 
 ```txt
-# 1. Make HAProxy read Freighter's generated backends, in addition to your own haproxy.cfg.
-#    Debian / Ubuntu: put this line in /etc/default/haproxy, then restart HAProxy:
-#        EXTRAOPTS="-f /etc/haproxy/freighter/backends.cfg"
-#    Elsewhere: add -f /etc/haproxy/freighter/backends.cfg to the haproxy command in its service file.
-
-# 2. In the frontend on :80, before your other rules:
     acl freighter_acme path_beg /.well-known/acme-challenge/
-    use_backend freighter_acme if freighter_acme
     http-request redirect scheme https code 301 if !{ ssl_fc } !freighter_acme { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/https.map) -m found }
+    use_backend freighter_acme if freighter_acme
+    use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }
     use_backend %[req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map)] if { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map) -m found }
+```
 
-# 3. In the frontend on :443:
+and this to the **frontend that listens on :443** (add the `bind` if it has none with that certificate directory; `crt` can be given more than once, so your own certificates can stay):
+
+```txt
     bind :443 ssl crt /etc/haproxy/freighter/certs/
+    use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }
     use_backend %[req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map)] if { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map) -m found }
 ```
 
-### 2. Load backends.cfg
+What each line does:
 
-This is step 1 of the printed lines. HAProxy normally reads one file, your `haproxy.cfg`. Freighter writes the backends for your apps to a separate file so it never edits yours, and the lines in the printed steps 2 and 3 refer to those backends, so HAProxy must read that file too. `-f` is how you give HAProxy more than one config file.
+| Line | Purpose |
+| --- | --- |
+| `acl freighter_acme …` and `use_backend freighter_acme …` | Hand Let's Encrypt's `/.well-known/acme-challenge/` requests to certbot, which listens on `acme.challengePort` (8888). |
+| `http-request redirect scheme https …` | Redirect HTTP to HTTPS, only for hostnames in `https.map` (the `tls: auto` domains). |
+| `use_backend freighter_challenge …` | Answer the dashboard's domain check, so it can tell that a hostname reaches this server. This is what lets domains behind Cloudflare's proxy verify, where DNS records say nothing about your server. Domains pointing straight at the server verify without it, but add it anyway. |
+| `use_backend %[…hostnames.map…] if {…}` | Route a request to the backend of the app whose domain it asks for. Hostnames Freighter doesn't know fall through to your own rules. |
+| `bind :443 ssl crt …/certs/` | Serve each domain's certificate from the directory Freighter writes them to. |
 
-On Debian and Ubuntu, HAProxy's unit reads extra options from `/etc/default/haproxy`:
+`freighter haproxy setup` prints the same lines for **your** ports and directory (`haproxy.httpPort`, `haproxy.httpsPort`, `haproxy.dir`), so copy from its output when they differ from the defaults. They need HAProxy 2.4 or later.
 
-```sh
-# /etc/default/haproxy
-EXTRAOPTS="-S /run/haproxy-master.sock -f /etc/haproxy/freighter/backends.cfg"
-```
+### Installed with the script
 
-Create the directory and an empty backends file so HAProxy can start before the first deploy:
+When the installer finds HAProxy on the server it wires Freighter in without touching `haproxy.cfg`. It has already:
+
+- created `/etc/haproxy/freighter/` with `hostnames.map`, `https.map` and `backends.cfg`, which already holds the `freighter_acme` and `freighter_challenge` backends the lines refer to,
+- put a self-signed placeholder in `/etc/haproxy/freighter/certs/`,
+- recorded `existing` in `/etc/haproxy/freighter/mode`,
+- added `-f /etc/haproxy/freighter/backends.cfg` to `EXTRAOPTS` in `/etc/default/haproxy`, unless that file already set `EXTRAOPTS` (the installer then says so, and item 1 below is yours).
+
+What's left is your `haproxy.cfg`:
+
+1. **Check that HAProxy loads `backends.cfg`.**
+
+   ```sh
+   grep EXTRAOPTS /etc/default/haproxy
+   ```
+
+   It should show `-f /etc/haproxy/freighter/backends.cfg`. If you already had an `EXTRAOPTS` line, add that option inside it yourself, then restart HAProxy. Where HAProxy isn't started through that file, add `-f /etc/haproxy/freighter/backends.cfg` to the `haproxy` command in its service file instead (`systemctl edit haproxy`), next to the existing `-f`.
+
+2. **Add the :80 lines** from [The lines to add](#the-lines-to-add) to your frontend on port 80, before its other rules.
+
+3. **Add the :443 lines** to your frontend on port 443.
+
+4. **Check, then reload.**
+
+   ```sh
+   haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg
+   systemctl reload haproxy
+   ```
+
+Until you do, HAProxy keeps serving exactly what it served before. Nothing is routed to Freighter's apps, and certificates can't be issued over HTTP.
+
+### Fully manual
+
+For a server where you set everything up yourself, without the script. You do all five items.
+
+**1. Create the files.** `backends.cfg` must already contain the two backends that the lines above refer to, or HAProxy refuses to start. Freighter keeps those two and rewrites the rest on every deploy.
 
 ```sh
 install -d /etc/haproxy/freighter/certs
-touch /etc/haproxy/freighter/backends.cfg /etc/haproxy/freighter/hostnames.map /etc/haproxy/freighter/https.map
+touch /etc/haproxy/freighter/hostnames.map /etc/haproxy/freighter/https.map
+echo existing > /etc/haproxy/freighter/mode      # whose HAProxy this is; upgrades use it (see "After an upgrade")
+cat > /etc/haproxy/freighter/backends.cfg <<'EOF'
+# Managed by freighter. Do not edit; regenerated on every deploy.
+
+backend freighter_acme
+    server certbot 127.0.0.1:8888
+
+backend freighter_challenge
+    http-request return status 200 content-type text/plain string "unset"
+EOF
 ```
 
-### 3. Add a placeholder certificate
-
-HAProxy refuses to start when a `crt` directory is empty. Put a self-signed placeholder in it. It's never served for a real domain, because each domain gets its own certificate.
+**2. Add a placeholder certificate.** HAProxy refuses to start when a `crt` directory is empty. The placeholder is never served for a real domain, because each domain gets its own certificate.
 
 ```sh
 openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=placeholder" \
@@ -80,9 +138,25 @@ chmod 600 /etc/haproxy/freighter/certs/placeholder.pem
 rm /tmp/p.key /tmp/p.crt
 ```
 
-### 4. A complete example
+**3. Make HAProxy load `backends.cfg`.** HAProxy normally reads one file, your `haproxy.cfg`. Freighter writes the backends for your apps to a separate file so it never edits yours, and `-f` is how you give HAProxy more than one config file. On Debian and Ubuntu, HAProxy's unit reads extra options from `/etc/default/haproxy`:
 
-A minimal `haproxy.cfg` for a server that only serves Freighter apps:
+```sh
+# /etc/default/haproxy
+EXTRAOPTS="-S /run/haproxy-master.sock -f /etc/haproxy/freighter/backends.cfg"
+```
+
+If the file already has an `EXTRAOPTS` line, add the `-f` option inside it. Elsewhere, add `-f /etc/haproxy/freighter/backends.cfg` to the `haproxy` command in its service file (`systemctl edit haproxy`), next to the existing `-f`.
+
+**4. Add the lines** from [The lines to add](#the-lines-to-add) to your :80 and :443 frontends.
+
+**5. Check, then reload.**
+
+```sh
+haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg
+systemctl reload haproxy
+```
+
+A minimal `haproxy.cfg` for a server that only serves Freighter apps, with everything above in place:
 
 ```txt
 global
@@ -100,21 +174,51 @@ defaults
 frontend http
     bind :80
     acl freighter_acme path_beg /.well-known/acme-challenge/
-    use_backend freighter_acme if freighter_acme
     http-request redirect scheme https code 301 if !{ ssl_fc } !freighter_acme { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/https.map) -m found }
+    use_backend freighter_acme if freighter_acme
+    use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }
     use_backend %[req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map)] if { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map) -m found }
 
 frontend https
     bind :443 ssl crt /etc/haproxy/freighter/certs/
+    use_backend freighter_challenge if { path_beg /.well-known/freighter-challenge }
     use_backend %[req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map)] if { req.hdr(host),field(1,:),lower,map(/etc/haproxy/freighter/hostnames.map) -m found }
 ```
 
-Check and reload:
+### If your domains are behind Cloudflare
+
+Nothing more is needed for verification: the challenge rule above covers it. If you also want logs and `X-Forwarded-For` to carry the visitor's address instead of Cloudflare's, turn on **Behind Cloudflare's proxy** in the server's settings (or `haproxy.trustCloudflare: true` in `config.yaml`), then print the lines again:
 
 ```sh
-haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg
-systemctl reload haproxy
+freighter haproxy setup
 ```
+
+It now includes two more lines for each frontend, at the top of its rules. The first lists Cloudflare's published address ranges, and the second reads the visitor's address from `CF-Connecting-IP` only for connections from those ranges, so nobody else can spoof it:
+
+```txt
+    acl freighter_cloudflare src 173.245.48.0/20 103.21.244.0/22 …
+    http-request set-src req.hdr(CF-Connecting-IP) if freighter_cloudflare { req.hdr(CF-Connecting-IP) -m found }
+```
+
+Copy the full `acl` line from the command's output, because the list of ranges is long and is occasionally updated by Cloudflare. HAProxy rejects an `acl` name defined twice in the same frontend, so add each pair once. To make the server reachable only through Cloudflare, also restrict ports 80 and 443 to [Cloudflare's ranges](https://www.cloudflare.com/ips/) in your firewall.
+
+### After an upgrade
+
+Upgrading Freighter on a server never changes your `haproxy.cfg`, so rules that a newer version needs are yours to add. The upgrade tells you when this applies: the dialog on the Servers page and `freighter server upgrade` both print the lines at the end, for that server's ports. You can print the same lines at any time:
+
+```sh
+freighter haproxy setup
+```
+
+Compare them with your frontends and add whatever is missing, then:
+
+```sh
+haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg && systemctl reload haproxy
+```
+
+Until you do, only domains behind a proxy such as Cloudflare are affected (they can't be verified); everything else keeps working. Freighter itself still updates `backends.cfg` during the upgrade, so the backends your lines refer to are always there.
+
+The installer records which kind of HAProxy a server has in `/etc/haproxy/freighter/mode`: `existing` for yours, `dedicated` for one it set up. That is how an upgrade knows whether to rewrite the config or hand you instructions. If it's wrong, correct the file (`echo existing > /etc/haproxy/freighter/mode`). A server installed before this record existed is treated as `dedicated` only if `haproxy.mainConfig` is under `/etc/freighter/haproxy/`.
 
 ### Publish the dashboard
 
@@ -177,8 +281,9 @@ Create the files, generate the config and install the unit:
 ```sh
 install -d /etc/freighter/haproxy /etc/haproxy/freighter/certs
 touch /etc/haproxy/freighter/hostnames.map /etc/haproxy/freighter/https.map
-printf 'backend freighter_acme\n    server certbot 127.0.0.1:8888\n' > /etc/haproxy/freighter/backends.cfg
-# then the placeholder certificate from step 3 above
+printf '# Managed by freighter. Do not edit; regenerated on every deploy.\n\nbackend freighter_acme\n    server certbot 127.0.0.1:8888\n\nbackend freighter_challenge\n    http-request return status 200 content-type text/plain string "unset"\n' > /etc/haproxy/freighter/backends.cfg
+echo dedicated > /etc/haproxy/freighter/mode
+# then the placeholder certificate from step 2 of "Fully manual" above
 freighter haproxy config > /etc/freighter/haproxy/haproxy.cfg
 cp /opt/freighter/infra/systemd/freighter-haproxy.service /etc/systemd/system/
 systemctl daemon-reload

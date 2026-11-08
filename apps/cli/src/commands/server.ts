@@ -1,4 +1,4 @@
-import { checkServer, createAgentDirectory, parseAddress, type ApiContext } from "@freighter/api";
+import { checkServer, controlVersion, createAgentDirectory, parseAddress, startServerUpgrade, UpgradeRefused, upgradeView, type ApiContext } from "@freighter/api";
 import { loadConfig } from "@freighter/core/config";
 import { IDENT_RE } from "@freighter/manifest";
 import { PkiStore, fingerprint } from "@freighter/pki";
@@ -54,9 +54,11 @@ const list = defineCommand({
   run: ({ args }) =>
     guard(async () => {
       const o = await open(args.prefix);
+      const mine = await controlVersion({});
       for (const s of o.registry.servers.list()) {
         const expiry = s.certExpiresAt ? `cert until ${s.certExpiresAt.slice(0, 10)}` : "";
-        console.log(`${s.name.padEnd(16)} ${s.status.padEnd(8)} ${(s.address ?? "(this host)").padEnd(28)} apps ${s.appCount}  ${expiry}${s.lastError ? `  ! ${s.lastError}` : ""}`);
+        const behind = s.kind === "remote" && mine && s.agentVersion && s.agentVersion !== mine ? " (behind: freighter server upgrade " + s.name + ")" : "";
+        console.log(`${s.name.padEnd(16)} ${s.status.padEnd(8)} ${(s.address ?? "(this host)").padEnd(28)} apps ${s.appCount}  agent ${s.agentVersion ?? "-"}${behind}  ${expiry}${s.lastError ? `  ! ${s.lastError}` : ""}`);
       }
       o.registry.close();
     }),
@@ -93,7 +95,68 @@ const check = defineCommand({
     }),
 });
 
+const upgrade = defineCommand({
+  meta: {
+    name: "upgrade",
+    description: "Upgrade a remote server's agent: it re-runs the installer for a version, and rolls back by itself unless this control plane can still reach it afterwards",
+  },
+  args: {
+    name: { type: "positional", required: true },
+    ref: { type: "string", description: "Branch, tag or commit to upgrade to (default: the version this control plane runs)" },
+    wait: { type: "boolean", default: true, description: "Follow the upgrade until it finishes (--no-wait: start it and return)" },
+    ...common,
+  },
+  run: ({ args }) =>
+    guard(async () => {
+      const o = await open(args.prefix);
+      if (!o.registry.servers.get(args.name)) throw new Error(`unknown server "${args.name}"`);
+      const agents = await createAgentDirectory({ registry: o.registry, localSocket: o.config.agent.socket, pki: o.pki, timeoutMs: 20_000 });
+      const ctx = { registry: o.registry, agents } as ApiContext;
+      try {
+        await checkServer(ctx, args.name);
+        const before = await upgradeView(ctx, args.name);
+        if (!before.supported) throw new Error(before.reason ?? "this agent can't upgrade itself");
+        const target = args.ref ?? before.target;
+        if (!args.ref && before.target && before.commit === before.target) return void console.log(`${args.name} already runs ${before.commit}`);
+        console.log(`Upgrading ${args.name} from ${before.commit ?? "an unknown version"} to ${target ?? "?"}. The server builds Freighter itself, which takes a few minutes.`);
+        await startServerUpgrade(ctx, args.name, args.ref);
+        if (!args.wait) {
+          console.log(`Started. It continues on the server. This control plane must reach the new agent within 3 minutes of the install finishing, or the server rolls back; keep the dashboard running, or check with: freighter server check ${args.name}`);
+          return;
+        }
+        let last = "";
+        const deadline = Date.now() + 30 * 60_000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 3_000));
+          await checkServer(ctx, args.name); // this is what confirms the new agent
+          const v = await upgradeView(ctx, args.name).catch(() => null);
+          const u = v?.upgrade;
+          if (!u) continue;
+          const line = `${u.state}: ${u.message ?? ""}`;
+          if (line !== last) console.log(line);
+          last = line;
+          if (u.state === "done") {
+            console.log(`${args.name} now runs ${v!.commit}`);
+            if (v!.haproxy?.instructions) console.log(`\n${args.name} uses an HAProxy that was already there, so Freighter did not change it.\n\n${v!.haproxy.instructions}`);
+            return;
+          }
+          if (u.state === "rolled-back" || u.state === "failed") {
+            console.error(`\n${v!.log.split("\n").slice(-15).join("\n")}`);
+            process.exitCode = 1;
+            return;
+          }
+        }
+        throw new Error("still not finished after 30 minutes; it keeps going on the server (freighter server check " + args.name + ")");
+      } catch (e) {
+        if (e instanceof UpgradeRefused) throw new Error(e.message);
+        throw e;
+      } finally {
+        o.registry.close();
+      }
+    }),
+});
+
 export const server = defineCommand({
   meta: { name: "server", description: "Manage remote servers (run as the user that owns the registry)" },
-  subCommands: { add, list, token, remove, check },
+  subCommands: { add, list, token, remove, check, upgrade },
 });

@@ -11,6 +11,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@freighter/haproxy": "workspace:*",
     "@freighter/manifest": "workspace:*",
     "@freighter/protocol": "workspace:*",
     "@freighter/registry": "workspace:*",

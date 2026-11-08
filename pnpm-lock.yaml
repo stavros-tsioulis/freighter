@@ -179,6 +179,9 @@ importers:
       '@freighter/core':
         specifier: workspace:*
         version: link:../core
+      '@freighter/haproxy':
+        specifier: workspace:*
+        version: link:../haproxy
       '@freighter/manifest':
         specifier: workspace:*
         version: link:../manifest

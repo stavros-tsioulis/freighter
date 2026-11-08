@@ -37,8 +37,9 @@ import { parseAddress } from "./agents.ts";
 import { createControlSettings } from "./control-settings.ts";
 import { parseHostConfig } from "@freighter/core/config";
 import { SettingsError } from "@freighter/core/fields";
-import { checkDomainDns, isLocalName, isPrivateOrLoopback, resolveAll, systemDns, type DnsResolver } from "./dns.ts";
+import { checkDomainDns, type ChallengeProbe, isLocalName, isPrivateOrLoopback, resolveAll, systemDns, type DnsResolver } from "./dns.ts";
 import { checkServer, reachableServers } from "./servers.ts";
+import { controlVersion, startServerUpgrade, UpgradeRefused, upgradeView } from "./upgrade.ts";
 import { syncAll, type SyncResult } from "./sync.ts";
 
 const execFileP = promisify(execFile);
@@ -316,7 +317,16 @@ export function createApi(ctx: ApiContext): Api {
     const p = ctx.registry.pendingDomains.get(hostParam(event));
     if (!p || p.app !== name) throw new ApiError(404, "not_found", "no such domain waiting for verification");
     const server = serverOf(event, name);
-    const check = await checkDomainDns(dnsResolver(), p.hostname, await targetAddresses(event, server));
+    const agent = ctx.agents.forServer(server);
+    const doFetch = ctx.fetch ?? fetch;
+    const challenge: ChallengeProbe = {
+      token: async () => (await agent.call("challenge.get", {})).token,
+      fetch: async (url) => {
+        const res = await doFetch(url, { signal: AbortSignal.timeout(8000), redirect: "follow" });
+        return { status: res.status, text: (await res.text()).slice(0, 200) };
+      },
+    };
+    const check = await checkDomainDns(dnsResolver(), p.hostname, await targetAddresses(event, server), challenge);
     if (!check.ok) {
       ctx.registry.pendingDomains.markChecked(p.hostname, check.reason);
       return { verified: false, ...check };
@@ -902,6 +912,27 @@ export function createApi(ctx: ApiContext): Api {
     }
     if (result.changed.length) audit(who, "settings.set", undefined, { changes });
     return { ...result, restart: [] as ("agent" | "api")[], haproxy: "none" as const };
+  }));
+  router.get("/v1/version", route("viewer", async () => ({ commit: await controlVersion(ctx) })));
+  router.get("/v1/servers/:name/upgrade", route("admin", async (event) => {
+    const name = sName(event);
+    needServer(name);
+    return upgradeView(ctx, name);
+  }));
+  router.post("/v1/servers/:name/upgrade", route("admin", async (event, who) => {
+    const name = sName(event);
+    needServer(name);
+    const { ref } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional() }));
+    let view;
+    try {
+      view = await startServerUpgrade(ctx, name, ref);
+    } catch (e) {
+      if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
+      throw e;
+    }
+    audit(who, "server.upgrade", undefined, { server: name, ref: ref ?? view.target, from: view.commit });
+    setResponseStatus(event, 202);
+    return view;
   }));
   router.post("/v1/servers/:name/restart", route("admin", async (event, who) => {
     const name = sName(event);

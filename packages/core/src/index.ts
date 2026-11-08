@@ -20,3 +20,6 @@ export * from "./metrics.ts";
 export * from "./git.ts";
 export * from "./build.ts";
 export * from "./source.ts";
+export * from "./challenge.ts";
+export * from "./version.ts";
+export * from "./upgrade.ts";

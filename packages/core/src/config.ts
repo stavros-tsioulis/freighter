@@ -17,12 +17,23 @@ export const hostConfigSchema = z.object({
       publicHttpsPort: z.number().int().min(1).max(65535).optional(),
       /** Expect the PROXY protocol on both listeners. */
       acceptProxy: z.boolean().default(false),
+      /** Cloudflare's proxy sits in front: use `CF-Connecting-IP` as the visitor's address, for connections from Cloudflare only. */
+      trustCloudflare: z.boolean().default(false),
     })
     .default({}),
   acme: z
     .object({
       email: z.string().email().optional(),
       staging: z.boolean().default(false),
+      /**
+       * `http`: HTTP-01, certbot answers on port 80 (needs the hostname to reach this server).
+       * `cloudflare-dns`: DNS-01 through the Cloudflare API: works whether or not the hostname is proxied, and before DNS points here.
+       */
+      challenge: z.enum(["http", "cloudflare-dns"]).default("http"),
+      /** certbot's Cloudflare credentials file (`dns_cloudflare_api_token = ...`, mode 600). Only read for `cloudflare-dns`. */
+      cloudflareCredentials: z.string().default("/etc/freighter/cloudflare.ini"),
+      /** How long certbot waits after creating the TXT record before asking Let's Encrypt to check. */
+      dnsPropagationSeconds: z.number().int().min(10).max(600).default(30),
       challengePort: z.number().int().positive().default(8888),
       letsencryptDir: z.string().default("/etc/letsencrypt"),
       renewBeforeDays: z.number().positive().default(30),
@@ -38,6 +49,8 @@ export const hostConfigSchema = z.object({
       socket: z.string().default("/run/freighter/agent.sock"),
       group: z.string().default("freighter"),
       artifactsDir: z.string().default("/var/lib/freighter/artifacts"),
+      /** State, backup and log of the last remote upgrade. */
+      upgradeDir: z.string().default("/var/lib/freighter/upgrade"),
       maxArtifactMb: z.number().positive().default(200),
       /** Optional mutual-TLS listener so a control plane on another host can manage this one. */
       remote: z
@@ -112,8 +125,10 @@ export function applyPrefix(config: HostConfig, prefix: string): HostConfig {
   config.haproxy.dir = prefix + config.haproxy.dir;
   config.haproxy.mainConfig = prefix + config.haproxy.mainConfig;
   config.acme.letsencryptDir = prefix + config.acme.letsencryptDir;
+  config.acme.cloudflareCredentials = prefix + config.acme.cloudflareCredentials;
   config.agent.socket = prefix + config.agent.socket;
   config.agent.artifactsDir = prefix + config.agent.artifactsDir;
+  config.agent.upgradeDir = prefix + config.agent.upgradeDir;
   config.registry.path = prefix + config.registry.path;
   config.agent.remote.certDir = prefix + config.agent.remote.certDir;
   config.pki.dir = prefix + config.pki.dir;

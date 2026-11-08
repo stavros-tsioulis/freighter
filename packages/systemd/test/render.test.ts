@@ -57,6 +57,15 @@ describe("renderUnit", () => {
     expect(out).not.toContain("CPUQuota");
     expect(out).not.toContain("Environment=PORT");
   });
+  it("binds routed services to the IPv4 loopback by default, below anything the app sets itself", () => {
+    const def = manifest.services.web!;
+    const out = renderUnit({ app: "a", service: "w", def, port: 3101, loopback: true, environment: { HOST: "0.0.0.0" } });
+    expect(out.indexOf("Environment=HOST=127.0.0.1")).toBeGreaterThan(-1);
+    expect(out.indexOf("Environment=HOST=127.0.0.1")).toBeLessThan(out.indexOf('Environment="HOST=0.0.0.0"'));
+    expect(out.indexOf("Environment=HOST=127.0.0.1")).toBeLessThan(out.indexOf("EnvironmentFile="));
+    expect(renderUnit({ app: "a", service: "w", def, port: 3101 })).not.toContain("HOST=");
+    expect(renderUnit({ app: "a", service: "w", def: manifest.services.worker!, loopback: true })).not.toContain("HOST=");
+  });
   it.each(["always", "on-failure", "no"] as const)("maps restart=%s", (restart) => {
     const def = { ...manifest.services.web!, restart };
     expect(renderUnit({ app: "a", service: "w", def })).toContain(`Restart=${restart}\n`);

@@ -8,6 +8,11 @@ export interface AcmeConfig {
   challengePort: number;
   letsencryptDir: string;
   renewBeforeDays: number;
+  /** How certbot proves control of a hostname (default `http`). */
+  challenge?: "http" | "cloudflare-dns";
+  /** certbot's Cloudflare credentials file, for `cloudflare-dns`. */
+  cloudflareCredentials?: string;
+  dnsPropagationSeconds?: number;
 }
 
 const HOST_RE = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/;
@@ -43,8 +48,18 @@ export async function ensureCert(o: EnsureCertOptions): Promise<{ issued: boolea
   }
   if (!o.acme.email) throw new Error("acme.email is not set in /etc/freighter/config.yaml (required for tls: auto)");
 
+  const dns = o.acme.challenge === "cloudflare-dns";
+  if (dns) {
+    const file = o.acme.cloudflareCredentials ?? "/etc/freighter/cloudflare.ini";
+    if (!(await readFile(file, "utf8").then((t) => /dns_cloudflare_api_token\s*=\s*\S/.test(t), () => false))) {
+      throw new Error(`acme.challenge is cloudflare-dns, but ${file} has no "dns_cloudflare_api_token = ..." line (a token with Zone:DNS:Edit, file mode 600)`);
+    }
+  }
+  const challenge = dns
+    ? ["--dns-cloudflare", "--dns-cloudflare-credentials", o.acme.cloudflareCredentials ?? "/etc/freighter/cloudflare.ini", "--dns-cloudflare-propagation-seconds", String(o.acme.dnsPropagationSeconds ?? 30)]
+    : ["--standalone", "--preferred-challenges", "http", "--http-01-port", String(o.acme.challengePort)];
   const args = [
-    "certonly", "--standalone", "--preferred-challenges", "http", "--http-01-port", String(o.acme.challengePort),
+    "certonly", ...challenge,
     "--non-interactive", "--agree-tos", "--keep-until-expiring", "-m", o.acme.email,
     "--cert-name", o.hostname, "-d", o.hostname,
     ...(o.acme.staging ? ["--test-cert"] : []),
@@ -53,7 +68,9 @@ export async function ensureCert(o: EnsureCertOptions): Promise<{ issued: boolea
   if (r.code !== 0) {
     throw new Error(
       `certbot failed for ${o.hostname} (exit ${r.code}): ${(r.stderr ?? r.stdout).trim().split("\n").slice(-3).join(" | ")}\n` +
-        "check that DNS points at this server and port 80 reaches HAProxy, or set `tls: off` for the domain",
+        (dns
+          ? "check that the Cloudflare token can edit this hostname's zone, and that certbot-dns-cloudflare is installed, or set `tls: off` for the domain"
+          : "check that DNS points at this server and port 80 reaches HAProxy (or set acme.challenge to cloudflare-dns), or set `tls: off` for the domain"),
     );
   }
   const live = `${o.acme.letsencryptDir}/live/${o.hostname}`;

@@ -66,6 +66,16 @@ const configField = z.object({
   explicit: z.boolean(),
 });
 const configValue = z.union([z.string().max(1000), z.number(), z.boolean(), z.array(z.string().max(300)).max(50), z.null()]);
+const upgradeState = z.enum(["running", "verifying", "rolling-back", "done", "rolled-back", "failed"]);
+const upgradeInfo = z.object({
+  state: upgradeState,
+  from: z.string().nullable(),
+  to: z.string().nullable(),
+  ref: z.string().nullable(),
+  startedAt: iso.nullable(),
+  updatedAt: iso.nullable(),
+  message: z.string().nullable(),
+});
 const commit = z.object({ sha: z.string(), subject: z.string(), author: z.string() });
 const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().min(1).max(100), auth: z.object({ sshKey: z.string().min(40).max(20000) }).optional() };
 
@@ -73,7 +83,15 @@ const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().mi
 export const ops = {
   ping: {
     args: z.object({}),
-    result: z.object({ version: z.string(), time: iso, hostname: z.string().optional(), capabilities: z.array(z.string()).optional() }),
+    result: z.object({
+      /** The checked-out commit (12 hex characters), or "0.0.0" when not running from a checkout. */
+      version: z.string(),
+      time: iso,
+      hostname: z.string().optional(),
+      capabilities: z.array(z.string()).optional(),
+      /** Set while an upgrade waits for the control plane to confirm the new agent (answer with `upgrade.confirm`). */
+      upgrade: upgradeState.optional(),
+    }),
   },
   "host.status": {
     args: z.object({}),
@@ -124,6 +142,26 @@ export const ops = {
     args: z.object({ app, domains: z.array(domain).max(200) }),
     result: z.object({ domains: z.array(domain), deploy: deployResult.nullable() }),
   },
+  /** The string this server's HAProxy serves at /.well-known/freighter-challenge: proof, for domain checks, that a hostname reaches this server. */
+  "challenge.get": { args: z.object({}), result: z.object({ token: z.string() }) },
+  /** Upgrade this agent in place by re-running the installer for `ref` (default `main`); rolls back unless `upgrade.confirm` arrives. */
+  "upgrade.start": {
+    args: z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional() }),
+    result: z.object({ started: z.literal(true) }),
+  },
+  "upgrade.status": {
+    args: z.object({}),
+    result: z.object({
+      supported: z.boolean(),
+      reason: z.string().nullable(),
+      commit: z.string().nullable(),
+      upgrade: upgradeInfo.nullable(),
+      log: z.string(),
+      /** Optional: agents from before this field don't send it. */
+      haproxy: z.object({ mode: z.enum(["dedicated", "existing"]), instructions: z.string().nullable() }).optional(),
+    }),
+  },
+  "upgrade.confirm": { args: z.object({}), result: z.object({ confirmed: z.boolean() }) },
   "app.rollback": {
     args: z.object({ app, release: ident.optional() }),
     result: z.object({ app: z.string(), from: z.string(), to: z.string(), verified: z.boolean(), historyAt: iso }),

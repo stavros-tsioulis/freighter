@@ -279,3 +279,86 @@ describe("sync, health and metrics across servers", () => {
     expect(APP_YAML).toBeTruthy();
   });
 });
+
+describe("upgrading a remote server", () => {
+  const status = (over: Record<string, unknown> = {}) => ({ supported: true, reason: null, commit: "aaaaaaaaaaaa", upgrade: null, log: "", ...over });
+
+  async function online(t: Api) {
+    await addServer(t);
+    t.registry.servers.setCert("vps-1", "SHA256:AA", "2027-01-01T00:00:00.000Z");
+    t.ctx.version = "bbbbbbbbbbbb";
+    expect((await t.request("/v1/servers/vps-1/check", { method: "POST", token: t.tokens.admin, json: {} })).json.status).toBe("online");
+    return t.remote("vps-1");
+  }
+  const upgrade = (t: Api, json: unknown = {}, name = "vps-1") => t.request(`/v1/servers/${name}/upgrade`, { method: "POST", token: t.tokens.admin, json });
+
+  it("tells the dashboard which version the control plane runs, and whether the server is behind", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    expect((await t.request("/v1/version", { token: t.tokens.viewer })).json).toEqual({ commit: "bbbbbbbbbbbb" });
+    const v = await t.request("/v1/servers/vps-1/upgrade", { token: t.tokens.admin });
+    expect(v.json).toMatchObject({ supported: true, commit: "aaaaaaaaaaaa", target: "bbbbbbbbbbbb", outdated: true });
+    agent.handlers["upgrade.status"] = () => status({ commit: "bbbbbbbbbbbb" });
+    expect((await t.request("/v1/servers/vps-1/upgrade", { token: t.tokens.admin })).json.outdated).toBe(false);
+    expect((await t.request("/v1/servers/vps-1/upgrade", { token: t.tokens.deployer })).status).toBe(403);
+  });
+
+  it("starts an upgrade to the control plane's own commit, and audits it", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    const r = await upgrade(t);
+    expect(r.status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ ref: "bbbbbbbbbbbb" });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.upgrade", detail: { server: "vps-1", ref: "bbbbbbbbbbbb", from: "aaaaaaaaaaaa" } });
+    await upgrade(t, { ref: "v1.2.0" });
+    expect(agent.calls.filter((c) => c.op === "upgrade.start").at(-1)?.args).toEqual({ ref: "v1.2.0" });
+  });
+
+  it("refuses what can't work, with the reason", async () => {
+    const t = await makeApi();
+    expect((await upgrade(t, {}, "local")).status).toBe(400);
+    expect((await upgrade(t, {}, "ghost")).status).toBe(404);
+    await addServer(t);
+    expect((await upgrade(t)).json.error.message).toMatch(/pending/); // not enrolled yet
+    const agent = await online(t);
+    expect((await upgrade(t, { ref: "--upload-pack=sh" })).status).toBe(400);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => {
+      throw new AgentError("conflict", "an upgrade is already in progress");
+    };
+    expect((await upgrade(t)).status).toBe(409);
+    t.ctx.version = null;
+    expect((await upgrade(t)).json.error.message).toMatch(/pass a ref/);
+  });
+
+  it("explains agents that predate remote upgrades", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => {
+      throw new AgentError("bad_request", 'unknown operation "upgrade.status"');
+    };
+    const v = await t.request("/v1/servers/vps-1/upgrade", { token: t.tokens.admin });
+    expect(v.json).toMatchObject({ supported: false, outdated: true });
+    expect(v.json.reason).toMatch(/predates remote upgrades.*installer/);
+    const r = await upgrade(t);
+    expect(r.status).toBe(409);
+    expect(agent.calls.some((c) => c.op === "upgrade.start")).toBe(false);
+  });
+
+  it("confirms an agent that answers while it waits for the control plane, so it doesn't roll back", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    let confirmed = 0;
+    agent.handlers.ping = () => ({ version: "bbbbbbbbbbbb", time: "t", upgrade: "verifying" });
+    agent.handlers["upgrade.confirm"] = () => (++confirmed, { confirmed: true });
+    const check = await t.request("/v1/servers/vps-1/check", { method: "POST", token: t.tokens.admin, json: {} });
+    expect(check.json).toMatchObject({ status: "online", agentVersion: "bbbbbbbbbbbb" });
+    expect(confirmed).toBe(1);
+    agent.handlers.ping = () => ({ version: "bbbbbbbbbbbb", time: "t" });
+    await t.request("/v1/servers/vps-1/check", { method: "POST", token: t.tokens.admin, json: {} });
+    expect(confirmed).toBe(1); // only while it is waiting
+  });
+});

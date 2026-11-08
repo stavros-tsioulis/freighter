@@ -27,7 +27,7 @@ The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link
 
 ## Servers
 
-Every server with its status (*Online*, *Offline*, *Waiting to enroll*, *Error*), the last error if any, and a strip of facts: hostname, uptime, load, memory used, free disk, number of apps, last contact, agent version and, for remote servers, how long their certificate has left. Admins can add servers, **Check now**, **Re-enroll**, and remove servers that have no apps.
+Every server with its status (*Online*, *Offline*, *Waiting to enroll*, *Error*), the last error if any, and a strip of facts: hostname, uptime, load, memory used, free disk, number of apps, last contact, agent version and, for remote servers, how long their certificate has left. Admins can add servers, **Check now**, **Re-enroll**, **Upgrade** a remote server's agent to the version the dashboard runs (with progress, log and automatic rollback), and remove servers that have no apps.
 
 ## Certificates
 

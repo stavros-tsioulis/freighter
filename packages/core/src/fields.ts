@@ -30,6 +30,7 @@ export interface FieldDef {
 export const FIELDS: FieldDef[] = [
   { key: "acme.email", section: "Certificates", label: "Let's Encrypt email", help: "Where Let's Encrypt sends expiry notices. Required before any domain can use automatic HTTPS.", type: "string", scope: "agent", restart: "agent", placeholder: "ops@example.com" },
   { key: "acme.staging", section: "Certificates", label: "Use Let's Encrypt staging", help: "Issue untrusted test certificates with generous rate limits. Turn off for real traffic.", type: "boolean", scope: "agent", restart: "agent" },
+  { key: "acme.challenge", section: "Certificates", label: "How to prove domain ownership", help: "“HTTP” answers Let's Encrypt on port 80, which needs the hostname to reach this server. “Cloudflare DNS” uses the Cloudflare API instead, so it works behind Cloudflare's proxy; it needs a token in the credentials file (see the domains guide).", type: "enum", scope: "agent", restart: "agent", options: ["http", "cloudflare-dns"] },
   { key: "acme.renewBeforeDays", section: "Certificates", label: "Renew certificates", help: "Renew when this many days or fewer remain.", type: "number", scope: "agent", restart: "agent", min: 1, max: 89, unit: "days before expiry" },
   { key: "acme.challengePort", section: "Certificates", label: "Challenge port", help: "The local port certbot listens on during the HTTP-01 challenge. HAProxy forwards to it.", type: "number", scope: "agent", restart: "agent", min: 1, max: 65535 },
 
@@ -37,6 +38,8 @@ export const FIELDS: FieldDef[] = [
   { key: "haproxy.httpsPort", section: "Web traffic", label: "HTTPS port", help: "The port HAProxy listens on for HTTPS.", type: "number", scope: "agent", restart: "none", min: 1, max: 65535, haproxy: true },
   { key: "haproxy.publicHttpsPort", section: "Web traffic", label: "Public HTTPS port", help: "The port visitors are redirected to. Set 443 when your own proxy maps 443 to the HTTPS port above. Empty: same as the HTTPS port.", type: "number", scope: "agent", restart: "none", min: 1, max: 65535, haproxy: true },
   { key: "haproxy.acceptProxy", section: "Web traffic", label: "Expect the PROXY protocol", help: "Turn on when a TCP proxy in front of HAProxy sends the PROXY protocol, to keep real client addresses.", type: "boolean", scope: "agent", restart: "none", haproxy: true },
+
+  { key: "haproxy.trustCloudflare", section: "Web traffic", label: "Behind Cloudflare's proxy", help: "Turn on when domains are proxied (orange cloud): the visitor's real address is read from Cloudflare's CF-Connecting-IP header, only for connections from Cloudflare.", type: "boolean", scope: "agent", restart: "none", haproxy: true },
 
   { key: "ports.min", section: "Deploys", label: "First service port", help: "Services that are routed to a domain get a port from this range. Keep it clear of other software.", type: "number", scope: "agent", restart: "agent", min: 1024, max: 65535 },
   { key: "ports.max", section: "Deploys", label: "Last service port", help: "The top of that range.", type: "number", scope: "agent", restart: "agent", min: 1024, max: 65535 },

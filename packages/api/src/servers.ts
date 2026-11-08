@@ -11,6 +11,8 @@ export async function checkServer(ctx: ApiContext, name: string): Promise<Server
     const ping = await agent.call("ping", {}, { timeoutMs: 8_000 });
     const host = await agent.call("host.status", {}, { timeoutMs: 8_000 }).catch(() => null);
     ctx.registry.servers.markSeen(name, { agentVersion: ping.version, hostname: ping.hostname ?? host?.hostname ?? null, host });
+    // An agent that just upgraded itself waits for exactly this: proof that we can still reach it. Otherwise it rolls back.
+    if (ping.upgrade === "verifying") await agent.call("upgrade.confirm", {}, { timeoutMs: 8_000 }).catch(() => undefined);
   } catch (e) {
     ctx.registry.servers.markError(name, message(e as AgentError));
   }

@@ -20,7 +20,7 @@ For apps on the control server, the address comes from `api.publicIps` in `confi
 
 ## Verify
 
-Press **Verify**. Freighter resolves the name through public resolvers (`api.dnsServers`, Cloudflare and Google by default, so a stale local cache doesn't get in the way). The name must resolve, and only to the app's server. If it does, the domain goes live through a recorded deployment:
+Press **Verify**. Freighter resolves the name through public resolvers (`api.dnsServers`, Cloudflare and Google by default, so a stale local cache doesn't get in the way). The name must resolve, and only to the app's server, or be [proxied by Cloudflare](#behind-cloudflare). If it does, the domain goes live through a recorded deployment:
 
 1. With `tls: auto`, a certificate is requested from Let's Encrypt before anything changes. A DNS or port 80 problem fails here, with nothing touched.
 2. The service is redeployed as a routed service on an allocated `$PORT`, health-checked, and HAProxy switches to it.
@@ -45,9 +45,38 @@ freighter domain list shop
 freighter domain remove shop shop.example.com
 ```
 
+## Behind Cloudflare
+
+Both Cloudflare modes work: **DNS only** (grey cloud) and **Proxied** (orange cloud). A proxied name resolves to Cloudflare's addresses, which say nothing about your server, so Freighter checks something else. It asks the server for its check token and requests `http://<hostname>/.well-known/freighter-challenge` the way a visitor would. The domain is verified when the answer carries that token, so the request really reached this server through the proxy. Records that point straight at the server still verify by address alone.
+
+Only Cloudflare's own addresses get this treatment. A name that resolves to a mix of your server and some other address still fails, because some visitors would be sent elsewhere.
+
+What this needs:
+
+- **HAProxy rule.** HAProxy must answer the check path on both listeners. Servers using the dedicated setup get it from `freighter haproxy config` (the dashboard's settings do the same when listener settings change). If you keep your own `haproxy.cfg`, add the `use_backend freighter_challenge …` line that `freighter haproxy setup` prints, to both frontends. Freighter writes the `freighter_challenge` backend into `backends.cfg` on the next deploy.
+- **Reachability.** Cloudflare must be able to reach the server on port 80 (SSL/TLS mode *Flexible*, or *Full* before a certificate exists) or 443. A `52x` error from Cloudflare shows up in the failure message. If you use *Full (strict)*, issue the certificate with the DNS challenge below, so it exists before traffic arrives.
+- **Visitor addresses.** Turn on **Behind Cloudflare's proxy** (`haproxy.trustCloudflare`) so logs and `X-Forwarded-For` carry the visitor's address instead of Cloudflare's. HAProxy reads `CF-Connecting-IP` only on connections from Cloudflare's published ranges, so nobody else can spoof it. For a server that should only be reachable through Cloudflare, also restrict ports 80 and 443 to [Cloudflare's ranges](https://www.cloudflare.com/ips/) in your firewall.
+
 ## Certificates
 
-`tls: auto` certificates come from Let's Encrypt with `certbot certonly --standalone`, listening on `acme.challengePort` (8888). HAProxy forwards `/.well-known/acme-challenge/` to it through the `freighter_acme` backend. Set `acme.email` in `config.yaml` first. While testing, set `acme.staging: true` to stay clear of Let's Encrypt's rate limits.
+`tls: auto` certificates come from Let's Encrypt. Set `acme.email` in `config.yaml` first. While testing, set `acme.staging: true` to stay clear of Let's Encrypt's rate limits. `acme.challenge` chooses how Let's Encrypt is convinced:
+
+| `acme.challenge` | How | Good for |
+| --- | --- | --- |
+| `http` (default) | `certbot certonly --standalone` listens on `acme.challengePort` (8888). HAProxy forwards `/.well-known/acme-challenge/` to it through the `freighter_acme` backend. | Names whose records point at the server, or Cloudflare proxied names where port 80 reaches HAProxy. |
+| `cloudflare-dns` | `certbot certonly --dns-cloudflare` creates the validation TXT record through the Cloudflare API. | Proxied names, *Full (strict)* mode, and issuing before DNS points here. Needs no open port 80. |
+
+For `cloudflare-dns`, install certbot's Cloudflare plugin (`python3-certbot-dns-cloudflare` on Debian and Ubuntu) and create a Cloudflare API token with **Zone → DNS → Edit** on the zones you use. Put it in `/etc/freighter/cloudflare.ini` (the path is `acme.cloudflareCredentials`) and keep it private:
+
+```ini
+dns_cloudflare_api_token = <your token>
+```
+
+```sh
+chmod 600 /etc/freighter/cloudflare.ini
+```
+
+`acme.dnsPropagationSeconds` (30) is how long certbot waits after creating the record. The challenge is a server-wide setting, and renewals use the same one.
 
 HTTP requests to a `tls: auto` hostname are redirected to HTTPS. HAProxy adds `X-Forwarded-For`, and `X-Forwarded-Proto: https` on TLS connections.
 

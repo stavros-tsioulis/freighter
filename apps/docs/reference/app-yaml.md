@@ -91,7 +91,7 @@ Used by Git deploys. The commands run in the checkout, one after another, inside
 | --- | --- |
 | User | a system user named after the app |
 | Working directory | the release directory, `/srv/apps/<app>/releases/<id>` |
-| Environment | `environment`, then secrets, then `PORT` |
+| Environment | `HOST=127.0.0.1` (routed services only), then `environment`, then secrets, then `PORT` |
 | Writable | `/srv/apps/<app>/shared` and a private `/tmp` |
 | Logs | stdout and stderr go to the journal |
 

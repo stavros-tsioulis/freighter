@@ -11,6 +11,12 @@ import {
   BuildFailedError,
   buildLogChunk,
   certStatus,
+  challengeToken,
+  UpgradeError,
+  checkoutCommit,
+  confirmUpgrade,
+  startUpgrade,
+  upgradeStatus,
   checkRemote,
   generateSshKey,
   importSshKey,
@@ -72,10 +78,31 @@ function toDeployResult(r: Awaited<ReturnType<typeof deploy>>): OpResult<"app.de
 const configPath = (d: Deps) => d.configPath ?? "/etc/freighter/config.yaml";
 
 export function createHandlers(d: Deps): Handlers {
+  // The checked-out commit changes only through an upgrade, which restarts this process: look it up once.
+  let commit: Promise<string | null> | undefined;
+  const currentCommit = () => (commit ??= checkoutCommit(d.installDir, d.exec));
   const iso = (x: Date | null) => (x ? x.toISOString() : null);
   return {
     async ping() {
-      return { version: "0.0.0", time: d.now().toISOString(), hostname: hostname(), capabilities: ["artifact.put", "host.status", "git", "config"] };
+      const commit = await currentCommit();
+      const upgrade = (await upgradeStatus(d, commit)).upgrade;
+      return {
+        version: commit ?? "0.0.0",
+        time: d.now().toISOString(),
+        hostname: hostname(),
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade"],
+        upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
+      };
+    },
+    async "upgrade.status"() {
+      return upgradeStatus(d, await currentCommit());
+    },
+    async "upgrade.start"({ ref }) {
+      await startUpgrade(d, ref ?? "main", await currentCommit());
+      return { started: true as const };
+    },
+    async "upgrade.confirm"() {
+      return { confirmed: await confirmUpgrade(d) };
     },
     async "host.status"() {
       let disk: { total: number | null; free: number | null } = { total: null, free: null };
@@ -103,6 +130,9 @@ export function createHandlers(d: Deps): Handlers {
     async "app.deploy"({ artifact, manifestText, skipVerify, domains }) {
       const source = await checkArtifact(d, artifact);
       return toDeployResult(await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains }));
+    },
+    async "challenge.get"() {
+      return { token: await challengeToken(d) };
     },
     async "domains.get"({ app }) {
       return { domains: await readDomains(d, app) };
@@ -195,6 +225,7 @@ export function classify(e: unknown): WireError {
     return { code: "deploy_failed", message: e.message, rolledBackTo: e.rolledBackTo, releaseId: e.releaseId, historyAt: e.historyAt };
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
+  if (e instanceof UpgradeError) return { code: /in progress/.test(e.message) ? "conflict" : "bad_request", message: e.message };
   if (e instanceof BadRequest || e instanceof SettingsError) return { code: "bad_request", message: e.message };
   if (e instanceof ZodError) {
     return { code: "bad_request", message: e.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`).join("; ") };

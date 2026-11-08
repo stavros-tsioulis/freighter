@@ -1,5 +1,5 @@
 import { readFile, readdir } from "node:fs/promises";
-import { renderHostnameMap, renderHttpsMap, renderBackends } from "@freighter/haproxy";
+import { ensureChallengeToken, renderHostnameMap, renderHttpsMap, renderBackends } from "@freighter/haproxy";
 import { parseManifest, routedServices, type Domain, type Manifest } from "@freighter/manifest";
 import { renderUnit, unitName } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
@@ -57,7 +57,7 @@ async function writeRoutes(d: Deps, app: string, routed: Record<string, RoutedSe
   await d.haproxy.apply({
     hostnameMap: renderHostnameMap(routes),
     httpsMap: renderHttpsMap(routes),
-    backends: renderBackends(routes, { acmePort: d.config.acme.challengePort }),
+    backends: renderBackends(routes, { acmePort: d.config.acme.challengePort, challengeToken: await ensureChallengeToken(d.config.haproxy.dir) }),
   });
 }
 
@@ -67,7 +67,7 @@ export async function haproxySync(d: Deps): Promise<{ changed: boolean; routes: 
   const { changed } = await d.haproxy.apply({
     hostnameMap: renderHostnameMap(routes),
     httpsMap: renderHttpsMap(routes),
-    backends: renderBackends(routes, { acmePort: d.config.acme.challengePort }),
+    backends: renderBackends(routes, { acmePort: d.config.acme.challengePort, challengeToken: await ensureChallengeToken(d.config.haproxy.dir) }),
   });
   return { changed, routes: routes.length };
 }
@@ -89,6 +89,7 @@ function render(d: Deps, app: string, manifest: Manifest, service: string, id: s
     release: id,
     instance: unit.routed ? id : undefined,
     port,
+    loopback: unit.routed,
     environment: manifest.environment,
   });
 }

@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { isMap, isScalar, parseDocument, type Document } from "yaml";
 import { renderMainConfig } from "@freighter/haproxy";
 import type { Deps } from "./deps.ts";
+import { haproxySync } from "./apply.ts";
 import { hostConfigSchema, parseHostConfig, type HostConfig } from "./config.ts";
 
 import { BY_KEY, FIELDS, SettingsError, checkType, getPath, type FieldDef, type FieldState } from "./fields.ts";
@@ -110,6 +111,7 @@ export async function applyHaproxyListeners(d: Deps, config: HostConfig): Promis
   const main = d.config.haproxy.mainConfig;
   const current = await readText(main);
   if (!current.startsWith(MANAGED_MARK)) return "manual";
+  await haproxySync(d); // the new config refers to the freighter_challenge backend, which an older backends.cfg lacks
   const next = renderMainConfig({ ...config.haproxy });
   if (next === current) return "applied";
   const staged = `${main}.new`;
