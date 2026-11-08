@@ -21,6 +21,9 @@
 #   --with-agent           control role only: also run apps on this machine, through an agent of its own (with
 #                          HAProxy and certbot). By default a control server only manages remote servers and
 #                          runs no apps itself.                                       [FREIGHTER_WITH_AGENT=1]
+#   --with-containers      agent servers: also install Podman, so apps can be deployed as container images
+#                          (`image:` in app.yaml). Off by default; apps that run a command need none.
+#                          Upgrades keep it.                                         [FREIGHTER_WITH_CONTAINERS=1]
 #   --haproxy auto|dedicated|existing
 #                          auto: use the HAProxy already on this server if there is one, else a dedicated one.
 #                          dedicated: a separate Freighter-only HAProxy (own unit, own config); the system's
@@ -158,6 +161,13 @@ install_packages() {
 	step "Installing system packages"
 	pkgs="git tar gzip curl ca-certificates openssl xz-utils"
 	[ "$HAS_AGENT" = 0 ] || pkgs="$pkgs openssh-client haproxy certbot"
+	# Rootless Podman for image services: it needs the setuid newuidmap/newgidmap helpers (uidmap), a user-level network
+	# stack, and a login manager that keeps /run/user/<uid> alive for the app's user (dbus-user-session).
+	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_CONTAINERS" = 1 ]; then
+		pkgs="$pkgs podman uidmap slirp4netns fuse-overlayfs dbus-user-session"
+		# pasta (passt) is the newer rootless network stack; not every release has it, and slirp4netns covers the others.
+		if apt-cache show passt >/dev/null 2>&1; then pkgs="$pkgs passt"; fi
+	fi
 	missing=
 	for p in $pkgs; do
 		dpkg -s "$p" >/dev/null 2>&1 || missing="$missing $p"
@@ -466,6 +476,7 @@ main() {
 	ACME_EMAIL=${FREIGHTER_ACME_EMAIL:-}; PUBLIC_URL=${FREIGHTER_PUBLIC_URL:-}; NODE_MAJOR=${FREIGHTER_NODE_MAJOR:-24}
 	HAPROXY_MODE=${FREIGHTER_HAPROXY:-auto}; HTTP_PORT=${FREIGHTER_HTTP_PORT:-80}; HTTPS_PORT=${FREIGHTER_HTTPS_PORT:-443}; PUBLIC_HTTPS_PORT=${FREIGHTER_PUBLIC_HTTPS_PORT:-}; ACCEPT_PROXY=0
 	HAS_AGENT=0; [ "${FREIGHTER_WITH_AGENT:-0}" = 1 ] && HAS_AGENT=1
+	WITH_CONTAINERS=0; [ "${FREIGHTER_WITH_CONTAINERS:-0}" = 1 ] && WITH_CONTAINERS=1
 	NO_START=0; DRY_RUN=0; HAPROXY_MANUAL=0; DL=; NODE_BIN=; NODE_ARCH=
 
 	while [ $# -gt 0 ]; do
@@ -483,6 +494,7 @@ main() {
 			--public-https-port) PUBLIC_HTTPS_PORT=${2:?--public-https-port needs a number}; shift 2 ;;
 			--accept-proxy) ACCEPT_PROXY=1; shift ;;
 			--with-agent) HAS_AGENT=1; shift ;;
+			--with-containers) WITH_CONTAINERS=1; shift ;;
 			--no-agent) HAS_AGENT=0; shift ;; # the default; kept for scripts written before it was
 			--no-start) NO_START=1; shift ;;
 			--dry-run) DRY_RUN=1; shift ;;

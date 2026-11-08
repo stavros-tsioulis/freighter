@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { IDENT_RE, domainSchema, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { IDENT_RE, domainSchema, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { AgentError, ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
 import { isRole, type GitLinkRow, type PendingDomainRow, type Role } from "@freighter/registry";
@@ -434,6 +434,47 @@ export function createApi(ctx: ApiContext): Api {
     return { id, status: "queued" };
   }));
 
+  // An app whose services are all images has nothing to upload: the server pulls them. `manifest` is the text of app.yaml.
+  const queueImageDeploy = (event: H3Event, who: Principal, name: string, manifestText: string, trigger: "manual" | "upload") => {
+    let manifest;
+    try {
+      manifest = parseManifest(manifestText);
+    } catch (e) {
+      if (e instanceof z.ZodError) throw e;
+      throw new ApiError(400, "bad_request", `app.yaml is invalid: ${e instanceof Error ? e.message.split("\n")[0] : String(e)}`);
+    }
+    if (manifest.name !== name) throw new ApiError(400, "bad_request", `app.yaml is for "${manifest.name}" but the URL is for "${name}"`);
+    if (Object.keys(imageServices(manifest)).length !== Object.keys(manifest.services).length) {
+      throw new ApiError(400, "bad_request", "every service must set `image` for a deploy without an upload; upload an artifact to deploy services that run a command");
+    }
+    const server = serverOf(event, name);
+    const wanted = requestedServer(event);
+    if (wanted && wanted !== server) throw new ApiError(409, "pinned_to_other_server", `app "${name}" is pinned to server "${server}"`);
+    const target = ctx.registry.servers.get(server);
+    if (!target) throw new ApiError(404, "not_found", `unknown server "${server}"`);
+    if (target.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${server}" has not been enrolled yet`);
+    const id = randomUUID();
+    ctx.registry.apps.ensure(name, server);
+    ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger });
+    audit(who, "deploy.queued", name, { deployment: id, server, images: Object.values(imageServices(manifest)) });
+    jobs.enqueueImageDeploy({ id, app: name, server, manifestText });
+    setResponseStatus(event, 202);
+    return { id, status: "queued" };
+  };
+
+  router.post("/v1/apps/:app/image-deployments", route("deployer", async (event, who) => {
+    const { manifest } = await body(event, z.object({ manifest: z.string().min(1).max(262_144) }));
+    return queueImageDeploy(event, who, appParam(event), manifest, "upload");
+  }));
+
+  // Pull the app's images again (a moved tag, a fixed image) and release the result, keeping the app's current app.yaml.
+  router.post("/v1/apps/:app/redeploy", route("deployer", (event, who) => {
+    const name = appParam(event);
+    const text = ctx.registry.apps.get(name)?.manifestText;
+    if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
+    return queueImageDeploy(event, who, name, text, "manual");
+  }));
+
   router.post("/v1/apps/:app/rollback", route("deployer", async (event, who) => {
     const name = appParam(event);
     const { release } = await body(event, z.object({ release: optionalIdent }));
@@ -550,6 +591,25 @@ export function createApi(ctx: ApiContext): Api {
     if (k.appCount > 0) throw new ApiError(409, "conflict", `key "${k.name}" is used by ${k.appCount} app${k.appCount === 1 ? "" : "s"}; switch them to another key first`);
     ctx.registry.sshKeys.remove(k.id);
     audit(who, "ssh-key.remove", undefined, { name: k.name, fingerprint: k.fingerprint });
+    return { ok: true };
+  }));
+
+  // ---- container registries: logins used when pulling the images of image services ----
+  const registryHost = z.string().toLowerCase().regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/, "expected a registry host such as ghcr.io");
+  router.get("/v1/registries", route("admin", () => ({ registries: ctx.registry.registryCredentials.list() })));
+
+  router.put("/v1/registries/:host", route("admin", async (event, who) => {
+    const host = registryHost.parse(getRouterParam(event, "host"));
+    const b = await body(event, z.object({ username: z.string().min(1).max(255), password: z.string().min(1).max(4096) }));
+    const row = ctx.registry.registryCredentials.set({ host, username: b.username, password: b.password, createdBy: who.id });
+    audit(who, "registry.set", undefined, { host, username: b.username });
+    return row;
+  }));
+
+  router.delete("/v1/registries/:host", route("admin", (event, who) => {
+    const host = registryHost.parse(getRouterParam(event, "host"));
+    if (!ctx.registry.registryCredentials.remove(host)) throw new ApiError(404, "not_found", `no login for "${host}"`);
+    audit(who, "registry.remove", undefined, { host });
     return { ok: true };
   }));
 

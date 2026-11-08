@@ -1,4 +1,5 @@
 import { rm } from "node:fs/promises";
+import { imageHost, imageServices, parseManifest } from "@freighter/manifest";
 import { AgentError } from "@freighter/protocol";
 import type { ApiContext } from "./context.ts";
 import { syncApp } from "./sync.ts";
@@ -20,6 +21,8 @@ export interface GitJob {
 
 export interface Jobs {
   enqueueDeploy(job: { id: string; app: string; server: string; artifactPath: string; manifestText: string }): void;
+  /** Deploy an app made only of image services: the agent pulls the images, so there is no artifact. */
+  enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string }): void;
   enqueueRollback(job: { id: string; app: string; server: string; release?: string }): void;
   enqueueGit(job: GitJob): void;
   /** Replace an app's domains; a deployed app is redeployed with the new routing (health-gated, rolled back on failure). */
@@ -99,6 +102,39 @@ export function createJobs(ctx: ApiContext): Jobs {
         },
         () => rm(artifactPath, { force: true }),
       );
+    },
+
+    enqueueImageDeploy({ id, app, server, manifestText }) {
+      enqueue(server, app, async () => {
+        ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
+        const agent = ctx.agents.forServer(server);
+        try {
+          const caps = (await agent.call("ping", {})).capabilities ?? [];
+          if (!caps.includes("images")) throw new Error("this server's agent is too old to run images; upgrade it from the Servers page");
+          // Send only the logins for the registries these images live on.
+          const hosts = new Set(Object.values(imageServices(parseManifest(manifestText))).map(imageHost));
+          const registryAuth = [...hosts].flatMap((host) => {
+            const c = ctx.registry.registryCredentials.password(host);
+            return c ? [{ host, ...c }] : [];
+          });
+          const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuth.length ? registryAuth : undefined, logId: id }, { timeoutMs: 30 * 60_000 });
+          ctx.registry.deployments.update(id, {
+            status: "success",
+            releaseId: r.releaseId,
+            previousRelease: r.previous,
+            warnings: r.warnings,
+            historyAt: r.historyAt,
+            finishedAt: now(),
+          });
+        } catch (e) {
+          ctx.registry.deployments.update(id, failure(e));
+        }
+        // Keep the log (pull progress included) with the deployment, as Git deployments do.
+        await agent
+          .call("build.log", { id, from: 0 })
+          .then((l) => ctx.registry.deployments.setLog(id, l.text))
+          .catch(() => {});
+      });
     },
 
     enqueueRollback({ id, app, server, release }) {

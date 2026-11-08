@@ -20,6 +20,7 @@ import {
   upgradeStatus,
   checkRemote,
   generateSshKey,
+  containersAvailable,
   importSshKey,
   inspectRepo,
   listBranches,
@@ -93,7 +94,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade"],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images"],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -118,7 +119,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d) };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -133,9 +134,15 @@ export function createHandlers(d: Deps): Handlers {
     async "app.history"({ app, limit }) {
       return { entries: (await readHistory(d, app)).slice(-limit) };
     },
-    async "app.deploy"({ artifact, manifestText, skipVerify, domains }) {
-      const source = await checkArtifact(d, artifact);
-      return toDeployResult(await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains }));
+    async "app.deploy"({ artifact, manifestText, skipVerify, domains, registryAuth, logId }) {
+      const source = artifact === undefined ? undefined : await checkArtifact(d, artifact);
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      return toDeployResult(
+        await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains, registryAuth, log }).catch(async (e: unknown) => {
+          await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+          throw e;
+        }),
+      );
     },
     async "challenge.get"() {
       return { token: await challengeToken(d) };

@@ -36,7 +36,7 @@ Print the systemd unit Freighter would generate for a service.
 freighter deploy <dir|artifact.tar.gz> [-f app.yaml] [--dry-run] [--no-verify]
 ```
 
-Deploy a directory or archive. `-f` defaults to `app.yaml` in the current directory. `--dry-run` shows what would happen. `--no-verify` skips health checks and automatic rollback.
+Deploy a directory or archive (leave it out when every service uses [`image:`](/deploy/images)). `-f` defaults to `app.yaml` in the current directory. `--dry-run` shows what would happen. `--no-verify` skips health checks and automatic rollback.
 
 ### rollback, releases
 
@@ -138,10 +138,31 @@ freighter server remove <name>
 ### push
 
 ```sh
-freighter push <dir|artifact.tar.gz> [--url URL] [--token TOKEN] [--server NAME] [--no-wait]
+freighter push <dir|artifact.tar.gz|app.yaml> [--url URL] [--token TOKEN] [--server NAME] [--no-wait]
+freighter push --image <ref> --name <app> [--port N] [...]
 ```
 
 Upload and deploy. A directory is packed first, and the app name comes from its `app.yaml`. `--server` only applies to new apps. Needs a deployer token.
+
+An `app.yaml` whose services all use `image:`, or `--image` with `--name`, uploads nothing: the server pulls the image. See [Deploy images](/deploy/images).
+
+### redeploy
+
+```sh
+freighter redeploy <app> [--url URL] [--token TOKEN] [--no-wait]
+```
+
+Pull an image app's images again and release the result, with the app's current `app.yaml`. Needs a deployer token.
+
+### registry
+
+```sh
+freighter registry add <host> --username U (--password-stdin | --password P)
+freighter registry list
+freighter registry remove <host>
+```
+
+Logins for private container registries, used when pulling images. Stored encrypted and never shown again. Needs an admin token.
 
 ### git
 

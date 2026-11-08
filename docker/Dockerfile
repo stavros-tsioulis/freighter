@@ -20,10 +20,11 @@ ENV container=docker DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       systemd systemd-sysv dbus haproxy openssl ca-certificates curl tar gzip procps iproute2 less nano jq sudo util-linux git openssh-client openssh-server \
+      podman uidmap slirp4netns fuse-overlayfs dbus-user-session \
  && rm -rf /var/lib/apt/lists/* \
  # Units that make no sense (or fail) inside a container.
  && systemctl mask getty.target console-getty.service systemd-udevd.service systemd-udevd-kernel.socket systemd-udevd-control.socket \
-      systemd-modules-load.service systemd-remount-fs.service sys-kernel-debug.mount sys-kernel-tracing.mount systemd-logind.service \
+      systemd-modules-load.service systemd-remount-fs.service sys-kernel-debug.mount sys-kernel-tracing.mount \
       apt-daily.timer apt-daily-upgrade.timer dpkg-db-backup.timer e2scrub_all.timer fstrim.timer
 
 # Node (same Debian base as the build stage, so the binary runs as is) and the built workspace.

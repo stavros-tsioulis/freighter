@@ -14,6 +14,7 @@ import {
   type HostStatus,
   type ServerRow,
   type PendingDomainRow,
+  type RegistryCredentialRow,
   type SshKeyRow,
   type MetricSampleRow,
   type Role,
@@ -105,6 +106,13 @@ const sshKeyFrom = (r: Row): SshKeyRow => ({
   lastUsedAt: r.last_used_at as string | null,
   appCount: Number(r.app_count ?? 0),
 });
+const registryCredentialFrom = (r: Row): RegistryCredentialRow => ({
+  host: r.host as string,
+  username: r.username as string,
+  createdBy: r.created_by as string | null,
+  createdAt: r.created_at as string,
+  updatedAt: r.updated_at as string,
+});
 const tokenFrom = (r: Row): TokenRow => ({
   id: r.id as string,
   name: r.name as string,
@@ -170,6 +178,14 @@ export interface Registry {
     privateKey(id: string): string | null;
     touch(id: string): void;
     remove(id: string): boolean;
+  };
+  /** Logins for container registries. The password is only returned by `password()`, to be handed to the agent that pulls. */
+  registryCredentials: {
+    /** Add or replace the login for a registry host. */
+    set(c: { host: string; username: string; password: string; createdBy?: string | null }): RegistryCredentialRow;
+    list(): RegistryCredentialRow[];
+    password(host: string): { username: string; password: string } | null;
+    remove(host: string): boolean;
   };
   /** Control-plane settings saved from the dashboard: key -> JSON value. */
   settings: {
@@ -325,6 +341,24 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         run("UPDATE ssh_keys SET last_used_at = ? WHERE id = ?", now(), id);
       },
       remove: (id) => Number(run("DELETE FROM ssh_keys WHERE id = ?", id).changes) > 0,
+    },
+
+    registryCredentials: {
+      set(c) {
+        const t = now();
+        run(
+          `INSERT INTO registry_credentials (host, username, secret_enc, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(host) DO UPDATE SET username = excluded.username, secret_enc = excluded.secret_enc, updated_at = excluded.updated_at`,
+          c.host, c.username, box.seal(c.password), c.createdBy ?? null, t, t,
+        );
+        return registryCredentialFrom(one("SELECT * FROM registry_credentials WHERE host = ?", c.host)!);
+      },
+      list: () => all("SELECT * FROM registry_credentials ORDER BY host").map(registryCredentialFrom),
+      password(host) {
+        const r = one("SELECT username, secret_enc FROM registry_credentials WHERE host = ?", host);
+        return r ? { username: r.username as string, password: box.open(r.secret_enc as string) } : null;
+      },
+      remove: (host) => Number(run("DELETE FROM registry_credentials WHERE host = ?", host).changes) > 0,
     },
 
     settings: {

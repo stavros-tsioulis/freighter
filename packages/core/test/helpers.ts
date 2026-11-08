@@ -23,8 +23,9 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
     ...(opts.config as object),
   });
   const calls: string[][] = [];
+  const created = new Set<string>();
   const probed: string[] = [];
-  const ctl = { haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
+  const ctl = { podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
 
   const unitFiles = () => (existsSync(layout.unitDir) ? readdirSync(layout.unitDir).filter((f) => f.endsWith(".service")) : []);
   const unitText = (unit: string) => (existsSync(`${layout.unitDir}/${unit}`) ? readFileSync(`${layout.unitDir}/${unit}`, "utf8") : "");
@@ -36,7 +37,16 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
 
   const run: Run = async (cmd, args) => {
     calls.push([cmd, ...args]);
-    if (cmd === "id") return { stdout: "", code: 1 }; // pretend the app user does not exist yet
+    if (cmd === "useradd") created.add(args.at(-1)!);
+    if (cmd === "id") return created.has(args.at(-1)!) ? { stdout: "1001\n", code: 0 } : { stdout: "", code: 1 }; // the app user exists once useradd ran
+    if (cmd === "/usr/bin/podman") return ctl.podman.installed ? { stdout: "podman version 5.0.0\n", code: 0 } : { stdout: "", code: 127 };
+    if (cmd === "runuser") {
+      const args2 = args.slice(args.indexOf("/usr/bin/podman") + 1).filter((a) => !a.startsWith("--cgroup-manager"));
+      if (args2[0] === "pull") return ctl.podman.failPull ? { stdout: "", stderr: "manifest unknown\n", code: 125 } : { stdout: "", code: 0 };
+      if (args2[0] === "image" && args2[1] === "inspect") return { stdout: `${args2.at(-1)!.replace(/[:@].*$/, "")}@sha256:${ctl.podman.digest}\n`, code: 0 };
+      if (args2[0] === "images") return { stdout: ctl.podman.images.join("\n"), code: 0 };
+      return { stdout: "", code: 0 };
+    }
     if (cmd === "systemctl" && args[0] === "show") {
       const restarts = flagged(unitText(args.at(-1)!), "CRASH") ? 1 : 0;
       return { stdout: `ActiveState=active\nSubState=running\nMainPID=1\nMemoryCurrent=1024\nNRestarts=${restarts}\nCPUUsageNSec=2000000000\n`, code: 0 };

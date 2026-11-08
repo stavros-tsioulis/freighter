@@ -103,6 +103,8 @@ export const ops = {
       memFree: z.number(),
       diskTotalBytes: z.number().nullable(),
       diskFreeBytes: z.number().nullable(),
+      /** Whether this host can run image services (Podman installed) and which version. Absent on agents without image support. */
+      containers: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
     }),
   },
   /** Header line only; `size` raw bytes follow on the same connection (see framing.ts). */
@@ -129,9 +131,14 @@ export const ops = {
   },
   "app.deploy": {
     args: z.object({
-      artifact: z.string().min(1),
+      /** The uploaded artifact. Omitted for an app whose services are all images (nothing to unpack). */
+      artifact: z.string().min(1).optional(),
       manifestText: z.string().min(1).max(262_144),
       skipVerify: z.boolean().optional(),
+      /** Logins for the registries the images come from; used for the pulls only and never stored by the agent. */
+      registryAuth: z.array(z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255), password: z.string().min(1).max(4096) })).max(16).optional(),
+      /** Write what the deploy does to this deployment's log, so `build.log` can show it. */
+      logId: z.string().optional(),
       /** Replace the app's domains with this deploy (kept only if the release goes live). Omitted: keep them. */
       domains: z.array(domain).max(200).optional(),
     }),

@@ -1,0 +1,8 @@
+name: image-hello
+services:
+  web:
+    image: docker.io/library/nginx:alpine
+    containerPort: 80
+    healthcheck:
+      path: /
+      timeout: 60s

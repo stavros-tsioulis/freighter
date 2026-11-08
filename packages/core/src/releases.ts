@@ -103,3 +103,11 @@ export async function pruneReleases(d: Deps, app: string, keep: number, protect:
   for (const id of doomed) await rm(releaseDir(d, app, id), { recursive: true, force: true });
   return doomed;
 }
+
+/** A release directory with nothing staged in it (for apps made only of image services). */
+export async function stageEmptyRelease(d: Deps, app: string, id: string): Promise<string> {
+  const dest = releaseDir(d, app, id);
+  await mkdir(releasesDir(d, app), { recursive: true });
+  await mkdir(dest); // fails if the release already exists
+  return dest;
+}

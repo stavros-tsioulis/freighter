@@ -201,4 +201,15 @@ export const migrations: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  `
+  -- Logins for the container registries that image services are pulled from; the secret is encrypted at rest.
+  CREATE TABLE registry_credentials (
+    host TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    secret_enc TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

@@ -92,3 +92,46 @@ describe("renderUnit", () => {
     expect(() => renderUnit({ app: "a\nExecStart=/bin/sh", service: "w", def: manifest.services.web! })).toThrow();
   });
 });
+
+describe("renderUnit for image services", () => {
+  const img = parseManifest(
+    "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1.2\n    port: 3000\n    containerPort: 8080\n    resources:\n      memory: 512M\n      cpu: 1\n    volumes:\n      uploads: /var/uploads\nenvironment:\n  NODE_ENV: production\nsecrets:\n  - DB_URL\n",
+  );
+  const run = (extra: Partial<Parameters<typeof renderUnit>[0]> = {}) =>
+    renderUnit({ app: "shop", service: "web", def: img.services.web!, environment: img.environment, secrets: img.secrets, port: 21000, uid: 1001, loopback: true, ...extra });
+
+  it("runs podman with the pinned digest, forwarding the environment by name", () => {
+    const digest = `ghcr.io/org/shop@sha256:${"b".repeat(64)}`;
+    const out = run({ image: digest, instance: "r1" });
+    expect(out).toContain(
+      `ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --name freighter-shop--web--r1 --pull=never --cgroups=no-conmon --log-driver=journald -p 127.0.0.1:21000:8080 -e DB_URL -e HOST -e NODE_ENV -e PORT -v /srv/apps/shop/shared/volumes/uploads:/var/uploads:Z ${digest}`,
+    );
+    expect(out).toContain("ExecStop=/usr/bin/podman --cgroup-manager=cgroupfs stop --ignore --time 10 freighter-shop--web--r1");
+    expect(out).toContain("Environment=PORT=21000");
+    expect(out).toContain("Environment=HOST=127.0.0.1");
+    expect(out).toContain("MemoryMax=512M");
+    expect(out).toContain("CPUQuota=100%");
+    expect(out).toContain("Delegate=yes");
+  });
+  it("never puts values on the command line", () => {
+    expect(run()).not.toMatch(/ExecStart=.*production/);
+  });
+  it("keeps NoNewPrivileges out (rootless Podman needs newuidmap)", () => {
+    expect(run()).not.toContain("NoNewPrivileges");
+  });
+  it("does not publish a port for a service without one", () => {
+    const out = run({ port: undefined, def: { ...img.services.web!, port: undefined }, loopback: false });
+    expect(out).not.toContain(" -p ");
+    expect(out).not.toContain("-e PORT");
+  });
+  it("refuses image references that could break out of the unit file", () => {
+    for (const image of ["a b", 'a"b', "a;b", "a$b", "a%b"]) expect(() => run({ image })).toThrow(/illegal image/);
+  });
+  it("points rootless Podman at the user's own runtime directory, and needs to know the uid", () => {
+    expect(run({ uid: 4242 })).toContain("Environment=XDG_RUNTIME_DIR=/run/user/4242");
+    expect(() => run({ uid: undefined })).toThrow(/user id/);
+  });
+  it("leaves command services untouched", () => {
+    expect(render("web")).toBe(WEB);
+  });
+});

@@ -62,7 +62,10 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 
 | Field | Type | Default | |
 | --- | --- | --- | --- |
-| `command` | string | required | What to run, from the release directory. It's split like a shell command line but not run through a shell, so use `sh -c '…'` if you need pipes or variable expansion. Relative programs are looked up on `PATH`. |
+| `command` | string | one of `command` / `image` | What to run, from the release directory. It's split like a shell command line but not run through a shell, so use `sh -c '…'` if you need pipes or variable expansion. Relative programs are looked up on `PATH`. |
+| `image` | image reference | one of `command` / `image` | Run this container image with Podman instead of a command: `nginx`, `ghcr.io/org/app:1.2`, `registry:5000/team/app@sha256:…`. See [Deploy images](/deploy/images). |
+| `containerPort` | integer | the service's port | Images only: the port the image listens on inside the container. Freighter publishes it on the service's port (`127.0.0.1` only) and also sets `$PORT`. |
+| `volumes` | map of name to absolute path | none | Images only: persistent directories, kept in `/srv/apps/<app>/shared/volumes/<name>` and mounted at that path in the container. |
 | `port` | integer | none | The port the service listens on, passed as `$PORT`. Ignored for routed services, which get an allocated port. |
 | `resources.memory` | `<n>K`, `<n>M` or `<n>G` | unlimited | Hard memory limit (`MemoryMax`). The service is killed and restarted if it goes over. |
 | `resources.cpu` | number, up to 64 | unlimited | CPU limit in cores (`CPUQuota`). `0.5` is half a core, `2` is two cores. |
@@ -71,6 +74,8 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `healthcheck.interval` | duration | `10s` | Accepted, but not used yet. Deploys poll every second and HAProxy checks every 5 seconds. |
 | `restart` | `on-failure`, `always`, `no` | `on-failure` | systemd's restart policy, with 3 seconds between restarts and at most 5 starts per minute. |
 | `replicas` | integer | `1` | Accepted, but only one instance runs for now, and values above 1 produce a warning. |
+
+Set exactly one of `command` and `image` on each service. An app can mix both kinds.
 
 Durations are a number followed by `ms`, `s`, `m` or `h`, such as `500ms`, `30s`, `15m` or `1h`.
 
@@ -94,6 +99,10 @@ Used by Git deploys. The commands run in the checkout, one after another, inside
 | Environment | `HOST=127.0.0.1` (routed services only), then `environment`, then secrets, then `PORT` |
 | Writable | `/srv/apps/<app>/shared` and a private `/tmp` |
 | Logs | stdout and stderr go to the journal |
+
+### Images
+
+A service with `image:` runs in a rootless Podman container as the app's user instead of as a host process. Its `environment`, secrets and `PORT` are passed into the container, `resources` limit the whole container, `healthcheck` and zero-downtime releases work the same way, and logs still go to the journal. The `build` block, the working directory and the release directory's files are not used by an image. See [Deploy images](/deploy/images).
 
 ## Apps without app.yaml
 

@@ -24,7 +24,7 @@ const nextHistoryAt = () => new Date(Date.parse("2026-11-06T14:00:00.000Z") + ++
 export function fakeAgent() {
   const calls: { op: string; args: unknown }[] = [];
   const handlers: Record<string, Handler> = {
-    ping: () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", hostname: "box", capabilities: ["artifact.put"] }),
+    ping: () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", hostname: "box", capabilities: ["artifact.put", "images"] }),
     "host.status": () => ({ hostname: "box", uptimeSeconds: 100, load1: 0.5, memTotal: 1000, memFree: 500, diskTotalBytes: 2000, diskFreeBytes: 1000 }),
     "artifact.delete": () => ({}),
     "git.keygen": () => ({ publicKey: "ssh-ed25519 AAAAfakekey freighter:app", fingerprint: "SHA256:fakefingerprint" }),

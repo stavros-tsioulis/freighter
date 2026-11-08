@@ -2,7 +2,7 @@
 
 Freighter deploys applications to Linux servers you control. It gives you the workflow of a hosted platform (push to deploy, rollbacks, domains with HTTPS, logs, a dashboard) while running everything with tools that are already on the server: **systemd** supervises the processes and **HAProxy** routes the traffic.
 
-There is no container runtime, no image registry and no cluster. An app is a directory with an `app.yaml` in it. A release is that directory, unpacked under `/srv/apps/<app>/releases/`. A service is a systemd unit.
+There is no cluster, and by default no container runtime or image registry. An app is a directory with an `app.yaml` in it. A release is that directory, unpacked under `/srv/apps/<app>/releases/`. A service is a systemd unit. Software that ships as a container image can run too, through [rootless Podman](/deploy/images), under the same unit.
 
 ## Who it is for
 

@@ -72,6 +72,7 @@ probe() { # probe branches|inspect <repo> -> JSON from the API, using the lab ke
 lab_domain() { # lab_domain <app> -> "<hostname> <tls>" (empty for apps without one)
   case "$1" in
     hello) echo "hello.localhost off" ;;
+    image-hello) echo "image-hello.localhost off" ;;
     secure) echo "secure.localhost auto" ;;
     remote-hello) echo "remote-hello.localhost off" ;;
     gitdemo) echo "gitdemo.localhost off" ;;
@@ -157,7 +158,9 @@ MSG
     tok=${FREIGHTER_TOKEN:-$(new_token admin)}   # admin: pushing also sets the example's domain (saved before the first deploy)
     case "$ex" in /*) dir=$ex ;; *) dir=/opt/freighter-lab/examples/$ex ;; esac
     TOK=$tok set_lab_domain "$(basename "$ex")" "$server" || exit 1
-    $DC exec -T control freighter push "$dir" --url http://localhost:3000 --token "$tok" ${server:+--server "$server"} ;;
+    # An example that only has an app.yaml with `image:` services is deployed without an upload (the server pulls the image).
+    [ -f "$dir/app.yaml" ] && [ "$($DC exec -T control ls "$dir" | tr -d '\r')" = app.yaml ] && src=$dir/app.yaml || src=$dir
+    $DC exec -T control freighter push "$src" --url http://localhost:3000 --token "$tok" ${server:+--server "$server"} ;;
   git-demo) git_demo "$@" ;;
   git-push) demo push "${1:-gitdemo}" "${2:-Update from the lab}" ;;
   smoke)
@@ -172,6 +175,12 @@ MSG
     check "dashboard answers"                          curl -fs http://localhost:3000/api/health
     check "deploy hello on control"                    "$SELF" push hello
     check "hello is served through HAProxy :8080"      serves hello.localhost 8080 "hello from the lab"
+    # ---- container images: pulled by the server, run by rootless Podman, same zero-downtime release ----
+    check "deploy an image app (the server pulls nginx)" "$SELF" push image-hello
+    check "the image is served through HAProxy :8080"   wait_for 60 serves image-hello.localhost 8080 "Welcome to nginx"
+    check "redeploy pulls the image again and swaps"    bash -c "$DC exec -T control freighter redeploy image-hello --url http://localhost:3000 --token $TOK | grep -q 'deployed image-hello'"
+    check "a bad image tag fails the deploy..."         bash -c "! printf 'name: image-hello\\nservices:\\n  web:\\n    image: nginx:no-such-tag-xyz\\n' | $DC exec -T control sh -c 'cat > /tmp/bad.yaml && freighter push /tmp/bad.yaml --url http://localhost:3000 --token $TOK'"
+    check "...and the working release keeps serving"    serves image-hello.localhost 8080 "Welcome to nginx"
     check "tls: auto app deploys (certbot shim)"       "$SELF" push secure
     check "http redirects to https"                    bash -c 'curl -s -o /dev/null -w "%{redirect_url}" http://secure.localhost:8080/ | grep -q "https://secure.localhost:8443"'
     check "https serves the app (self-signed)"         bash -c 'curl -sk -m 5 https://secure.localhost:8443/ | grep -q "hello over TLS"'

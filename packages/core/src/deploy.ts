@@ -6,16 +6,19 @@ import { ensureApp } from "./app.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
 import { goLive, liveTargets, ownedUnits, plannedUnits } from "./apply.ts";
 import { missingSecrets } from "./env.ts";
+import { containersAvailable, ensureContainerRuntime, imageServices, NO_CONTAINERS_MESSAGE, pruneImages, pullImages, writeImages, type RegistryAuth } from "./image.ts";
 import { recordHistory, type SourceMeta } from "./history.ts";
 import { withLock } from "./lock.ts";
-import { allocateReleaseId, currentRelease, newReleaseId, pruneReleases, releaseDir, stageRelease } from "./releases.ts";
+import { allocateReleaseId, currentRelease, newReleaseId, pruneReleases, releaseDir, stageEmptyRelease, stageRelease } from "./releases.ts";
 import { describeFailures, verifyRelease } from "./verify.ts";
 import { loadReleaseManifest } from "./apply.ts";
 
 export interface DeployOptions {
   manifestText: string;
-  /** Directory or .tar.gz/.tgz artifact. */
-  source: string;
+  /** Directory or .tar.gz/.tgz artifact. Optional for a manifest whose services are all images (nothing to stage). */
+  source?: string;
+  /** Credentials for the registry the images come from (only used while pulling). */
+  registryAuth?: RegistryAuth[];
   dryRun?: boolean;
   /** Skip health verification (and therefore automatic rollback). */
   skipVerify?: boolean;
@@ -64,6 +67,12 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
   const manifest = parseManifest(opts.manifestText);
   const app = manifest.name;
 
+  const hasImages = Object.keys(imageServices(manifest)).length > 0;
+  if (hasImages && !(await containersAvailable(d)).available) throw new Error(NO_CONTAINERS_MESSAGE);
+  if (opts.source === undefined && Object.values(manifest.services).some((s) => s.image === undefined)) {
+    throw new Error("an artifact is required: this app has services that run a command");
+  }
+
   const missing = await missingSecrets(d, manifest);
   if (missing.length > 0) {
     throw new Error(`missing secrets for ${app}: ${missing.join(", ")} (set with: freighter env set ${app} KEY)`);
@@ -109,14 +118,20 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     const previous = await currentRelease(d, app);
     const releaseId = await allocateReleaseId(d, app);
     await log(`==> staging release ${releaseId}${previous ? ` (current is ${previous})` : " (the first one)"}`);
-    await stageRelease(d, app, opts.source, releaseId, { move: opts.moveSource });
+    if (opts.source === undefined) await stageEmptyRelease(d, app, releaseId);
+    else await stageRelease(d, app, opts.source, releaseId, { move: opts.moveSource });
     await writeFile(`${releaseDir(d, app, releaseId)}/app.yaml`, opts.manifestText);
     if (opts.meta) await writeFile(`${releaseDir(d, app, releaseId)}/.freighter-source.json`, JSON.stringify(opts.meta));
 
     const changesDomains = opts.domains !== undefined;
-    if (changesDomains) await writeDomains(d, app, domains);
     let live;
     try {
+      if (hasImages) {
+        await ensureContainerRuntime(d, app, manifest);
+        const { images } = await pullImages(d, app, manifest, { auth: opts.registryAuth, log });
+        await writeImages(d, app, releaseId, images);
+      }
+      if (changesDomains) await writeDomains(d, app, domains);
       live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains, log });
     } catch (e) {
       if (changesDomains) await writeDomains(d, app, previousDomains);
@@ -133,6 +148,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
       result.removed = live.retired;
       result.verified = !opts.skipVerify;
       result.pruned = await pruneReleases(d, app, manifest.releases.keep, [releaseId, ...(previous ? [previous] : [])]);
+      if (hasImages && result.pruned.length > 0) await pruneImages(d, app).catch(() => undefined);
       return result;
     }
 

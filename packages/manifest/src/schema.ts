@@ -9,9 +9,25 @@ const ident = z.string().regex(IDENT_RE, "expected lowercase letters, digits and
 const envKey = z.string().regex(ENV_KEY_RE, "expected UPPER_SNAKE_CASE");
 const duration = z.string().regex(/^\d+(ms|s|m|h)$/, "expected e.g. 10s");
 
-export const serviceSchema = z.object({
-  command: z.string().min(1),
-  port: z.number().int().positive().optional(),
+/**
+ * A container image reference such as `nginx`, `ghcr.io/org/app:1.2` or `ghcr.io/org/app@sha256:<64 hex>`.
+ * Deliberately strict: it ends up in a unit file, so no whitespace, quotes or shell characters are allowed.
+ */
+export const IMAGE_RE = /^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[a-f0-9]{64})?$/;
+
+export const serviceSchema = z
+  .object({
+    /** Run this command directly on the host. Exactly one of `command` and `image` is required. */
+    command: z.string().min(1).optional(),
+    /** Run this container image (with Podman) instead of a host command. */
+    image: z.string().max(255).regex(IMAGE_RE, "expected an image reference such as ghcr.io/org/app:1.2").optional(),
+    /** The port the image listens on inside the container. Defaults to the port Freighter assigns (`$PORT`). */
+    containerPort: z.number().int().positive().max(65535).optional(),
+    /** Persistent volumes for an image: a name mapped to an absolute path inside the container. */
+    volumes: z
+      .record(ident, z.string().regex(/^\/[A-Za-z0-9_./-]*$/, "expected an absolute path inside the container"))
+      .optional(),
+    port: z.number().int().positive().optional(),
   replicas: z.number().int().positive().default(1),
   resources: z
     .object({
@@ -28,7 +44,16 @@ export const serviceSchema = z.object({
     })
     .optional(),
   restart: z.enum(["always", "on-failure", "no"]).default("on-failure"),
-});
+  })
+  .superRefine((s, ctx) => {
+    if ((s.command === undefined) === (s.image === undefined)) {
+      ctx.addIssue({ code: "custom", message: "set exactly one of `command` and `image`" });
+    }
+    if (s.image === undefined) {
+      if (s.containerPort !== undefined) ctx.addIssue({ code: "custom", path: ["containerPort"], message: "containerPort only applies to image services" });
+      if (s.volumes !== undefined) ctx.addIssue({ code: "custom", path: ["volumes"], message: "volumes only apply to image services" });
+    }
+  });
 
 const manifestBase = z.object({
     name: ident,
@@ -106,3 +131,16 @@ export function routingWarnings(m: Pick<Manifest, "services">, domains: readonly
     .filter(([name, svc]) => svc.healthcheck && svc.port === undefined && !routed.has(name))
     .map(([name]) => `service ${name}: the healthcheck is skipped until it has a port or a domain`);
 }
+
+/** Image services of a manifest: service name -> image reference as written in app.yaml. */
+export function imageServices(manifest: Pick<Manifest, "services">): Record<string, string> {
+  return Object.fromEntries(Object.entries(manifest.services).flatMap(([name, s]) => (s.image !== undefined ? [[name, s.image]] : [])));
+}
+
+/** The registry a reference lives on: its first path component when that looks like a host, else Docker Hub. */
+export function imageHost(ref: string): string {
+  const first = ref.split("/")[0]!;
+  const hasPath = ref.includes("/");
+  return hasPath && (first.includes(".") || first.includes(":") || first === "localhost") ? first : "docker.io";
+}
+

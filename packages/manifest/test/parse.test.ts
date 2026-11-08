@@ -68,3 +68,34 @@ describe("domains", () => {
     expect(() => domainsSchema.parse([{ hostname: "a.example.com", service: "web" }, { hostname: "a.example.com", service: "web" }])).toThrow(/duplicate hostname/);
   });
 });
+
+describe("image services", () => {
+  const svc = (body: string) => `name: a\nservices:\n  web:\n${body}`;
+  it("accepts an image instead of a command", () => {
+    const m = parseManifest(svc("    image: ghcr.io/org/app:1.2\n    containerPort: 8080\n    volumes:\n      data: /var/lib/data\n"));
+    expect(m.services.web?.image).toBe("ghcr.io/org/app:1.2");
+    expect(m.services.web?.command).toBeUndefined();
+    expect(m.services.web?.containerPort).toBe(8080);
+  });
+  it("accepts digests, registries with ports and bare names", () => {
+    for (const image of ["nginx", "localhost:5000/team/app:latest", `ghcr.io/o/a@sha256:${"a".repeat(64)}`]) {
+      expect(parseManifest(svc(`    image: ${image}\n`)).services.web?.image).toBe(image);
+    }
+  });
+  it("requires exactly one of command and image", () => {
+    expect(() => parseManifest(svc("    port: 1\n"))).toThrow(/exactly one/);
+    expect(() => parseManifest(svc("    command: x\n    image: nginx\n"))).toThrow(/exactly one/);
+  });
+  it("rejects image fields on command services", () => {
+    expect(() => parseManifest(svc("    command: x\n    containerPort: 80\n"))).toThrow(/image services/);
+    expect(() => parseManifest(svc("    command: x\n    volumes:\n      d: /d\n"))).toThrow(/image services/);
+  });
+  it("rejects image references that could escape a unit file", () => {
+    for (const image of ['"nginx --privileged"', '"a;b"', '"a\\nb"', "Nginx", "'-v /:/host'"]) {
+      expect(() => parseManifest(svc(`    image: ${image}\n`))).toThrow();
+    }
+  });
+  it("requires absolute volume paths", () => {
+    expect(() => parseManifest(svc("    image: nginx\n    volumes:\n      d: relative\n"))).toThrow(/absolute/);
+  });
+});

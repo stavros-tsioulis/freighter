@@ -144,6 +144,14 @@ export interface PendingDomainRow {
   lastError: string | null;
 }
 
+export interface RegistryCredentialRow {
+  host: string;
+  username: string;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SshKeyRow {
   id: string;
   name: string;

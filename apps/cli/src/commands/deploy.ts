@@ -5,7 +5,7 @@ import { common, depsFrom, fileArg, guard, readManifestText } from "../common.ts
 export const deploy = defineCommand({
   meta: { name: "deploy", description: "Deploy a directory or .tar.gz artifact (run on the VPS, as root)" },
   args: {
-    source: { type: "positional", required: true, description: "Directory or .tar.gz/.tgz artifact" },
+    source: { type: "positional", required: false, description: "Directory or .tar.gz/.tgz artifact (not needed when every service uses `image:`)" },
     "dry-run": { type: "boolean", description: "Show what would happen without changing anything" },
     verify: { type: "boolean", default: true, description: "Health-check the new release and roll back on failure (--no-verify to skip)" },
     ...fileArg,

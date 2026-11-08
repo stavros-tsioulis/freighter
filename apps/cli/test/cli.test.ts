@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readlinkSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server } from "node:http";
@@ -100,6 +100,20 @@ describe("freighter cli", () => {
     expect(run("app", "delete", "hello", "--local", "--yes", "--prefix", prefix).stderr).toContain('unknown app "hello"');
     expect(run("app", "delete", "Bad Name", "--local", "--yes", "--prefix", prefix).stderr).toContain("invalid app name");
   });
+  it("deploys an image-only app into a prefix without an artifact, and prints its unit", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
+    const dir = mkdtempSync(join(tmpdir(), "freighter-img-"));
+    const file = join(dir, "app.yaml");
+    writeFileSync(file, "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1\n    port: 3000\n    containerPort: 8080\n");
+    const unit = run("unit", "web", "-f", file).stdout;
+    expect(unit).toContain("ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --name freighter-shop--web");
+    expect(unit).toContain("-p 127.0.0.1:3000:8080");
+    const d = run("deploy", "-f", file, "--prefix", prefix);
+    expect(d.status).toBe(0);
+    expect(d.stdout).toMatch(/deployed shop as r\d{8}-\d{6}/);
+    expect(readFileSync(`${prefix}/srv/apps/shop/current/.freighter-images.json`, "utf8")).toContain("ghcr.io/org/shop:1");
+    expect(run("deploy", "-f", `${hello}/app.yaml`, "--prefix", prefix).stderr).toContain("an artifact is required");
+  });
   it("prints the haproxy setup snippet", () => {
     const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
     const out = run("haproxy", "setup", "--prefix", prefix).stdout;
@@ -141,6 +155,7 @@ describe("freighter push", () => {
     const spool = mkdtempSync(join(tmpdir(), "freighter-spool-"));
     const agent = {
       async call(op: string) {
+        if (op === "ping") return { version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] };
         if (op === "app.deploy") return deploy();
         if (op === "app.info") return { app: "hello", release: "r1", previous: null, manifestText: "", services: {}, releases: [] };
         if (op === "app.history") return { entries: [] };
@@ -171,6 +186,41 @@ describe("freighter push", () => {
     expect(r.stdout).toContain("deployed hello as r1");
     expect(r.status).toBe(0);
     expect(registry.deployments.list({ app: "hello" })[0]).toMatchObject({ status: "success", source: "api" });
+  });
+
+  it("deploys an image without uploading anything, from flags or from an app.yaml", async () => {
+    let n = 0; // every real deploy writes its own history entry
+    const { url, token, registry } = await startApi(() => ({ ...ok(), historyAt: `2026-11-06T10:00:0${++n}.000Z` }));
+    const env = { FREIGHTER_TOKEN: token };
+    const byFlag = await runAsync(["push", "--image", "ghcr.io/org/hello:1", "--name", "hello", "--port", "3000", "--url", url], env);
+    expect(byFlag.stdout).toContain("deployed hello as r1");
+    expect(byFlag.status).toBe(0);
+    expect(registry.deployments.list({ app: "hello" })[0]).toMatchObject({ status: "success" });
+
+    const dir = mkdtempSync(join(tmpdir(), "freighter-img-"));
+    const file = join(dir, "app.yaml");
+    writeFileSync(file, "name: hello\nservices:\n  web:\n    image: nginx\n");
+    const viaFile = await runAsync(["push", file, "--url", url], env);
+    expect(viaFile.stdout).toContain("deployed hello as r1");
+
+    expect((await runAsync(["push", "--image", "ghcr.io/org/hello:1", "--url", url], env)).stderr).toContain("--image needs --name");
+    expect((await runAsync(["push", "--image", "Bad Image", "--name", "hello", "--url", url], env)).status).toBe(1);
+    expect((await runAsync(["push", "--image", "nginx", "--name", "hello", "--port", "99999", "--url", url], env)).stderr).toContain("invalid --port");
+  });
+
+  it("redeploys an app and manages registry logins (admin only)", async () => {
+    const { url, token, registry } = await startApi(ok, "admin");
+    const env = { FREIGHTER_TOKEN: token };
+    registry.apps.upsert({ name: "hello", server: "local", manifestText: "name: hello\nservices:\n  web:\n    image: nginx\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await runAsync(["redeploy", "hello", "--url", url], env)).stdout).toContain("deployed hello as r1");
+
+    const add = await runAsync(["registry", "add", "ghcr.io", "--username", "me", "--password", "s3cret", "--url", url], env);
+    expect(add.stdout).toContain("saved the login for ghcr.io");
+    const list = await runAsync(["registry", "list", "--url", url], env);
+    expect(list.stdout).toContain("ghcr.io  me");
+    expect(list.stdout).not.toContain("s3cret");
+    expect(registry.registryCredentials.password("ghcr.io")?.password).toBe("s3cret");
+    expect((await runAsync(["registry", "remove", "ghcr.io", "--url", url], env)).stdout).toContain("removed the login for ghcr.io");
   });
 
   it("deletes an app through the API, and only for an admin who types --yes", async () => {

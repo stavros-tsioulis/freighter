@@ -43,6 +43,7 @@ export default defineConfig({
         items: [
           { text: "Your first app", link: "/deploy/first-app" },
           { text: "Deploy from Git", link: "/deploy/git" },
+          { text: "Deploy images", link: "/deploy/images" },
           { text: "Build in CI", link: "/deploy/ci" },
           { text: "Domains and HTTPS", link: "/deploy/domains" },
           { text: "Environment and secrets", link: "/deploy/secrets" },

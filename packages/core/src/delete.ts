@@ -6,6 +6,7 @@ import type { Deps } from "./deps.ts";
 import { readDomains } from "./domains.ts";
 import { envFilePath } from "./env.ts";
 import { appKeyDir } from "./git.ts";
+import { removeContainers } from "./image.ts";
 import { buildCacheDir } from "./build.ts";
 import { withLock } from "./lock.ts";
 import { appDir } from "./releases.ts";
@@ -40,6 +41,8 @@ export async function deleteApp(d: Deps, app: string): Promise<DeleteAppResult> 
     if (Object.keys(state.routed).length > 0) await writeRoutes(d, app, {});
     // 2. Stop and delete every unit the app owns, including instances left behind by deploys.
     const units = await retire(d, app, new Set());
+    // 2b. Containers and images (rootless Podman state lives in the app's directory, which goes below).
+    await removeContainers(d, app);
     // 3. Certificates nobody routes to anymore (the combined PEM, then the certbot lineage; neither is needed again).
     for (const x of domains.filter((x) => x.tls === "auto")) {
       await rm(certPath(d.config.haproxy.dir, x.hostname), { force: true });

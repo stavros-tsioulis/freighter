@@ -25,6 +25,8 @@ freighter haproxy setup | haproxy sync | certs renew [--force] | certs status
 freighter ssh-key import|list|remove                            # SSH keys for private repositories (docs/git-deploys.md)
 freighter git add|link|show|check|deploy|rotate-secret|unlink   # deploy from a Git repository over SSH
 freighter token create|list|revoke | push <dir|tar.gz> --url U --token T [--server S]   # control plane (phase 5)
+freighter push --image <ref> --name <app> | redeploy <app>   # deploy container images (needs Podman: install with --with-containers)
+freighter registry add|list|remove                           # logins for private image registries
 freighter server add|list|token|remove|check   # remote servers (phase 7)
 freighter-agent enroll --control URL --token T --ca-fingerprint FP   # on a remote server
 ```

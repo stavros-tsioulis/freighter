@@ -50,6 +50,20 @@ tar -czf - -C ./myapp . | curl -sf -H "Authorization: Bearer $TOKEN" -H 'Content
 
 Deploying to an app pinned to another server returns `409 pinned_to_other_server`.
 
+## Images and registries
+
+Apps whose services all use [`image:`](/deploy/images) have nothing to upload.
+
+| | | Role |
+| --- | --- | --- |
+| `POST /apps/:app/image-deployments[?server=NAME]` | `{"manifest": "<app.yaml text>"}`. The server pulls the images. Returns `202 {id}`. `400` if a service runs a command. | deployer |
+| `POST /apps/:app/redeploy` | Pull the images of the app's current `app.yaml` again. Returns `202 {id}`. `404` for an app that was never deployed. | deployer |
+| `GET /registries` | registry hosts with a saved login (never the password) | admin |
+| `PUT /registries/:host` | `{username, password}`. Saves or replaces a login, stored encrypted. | admin |
+| `DELETE /registries/:host` | | admin |
+
+The deployment fails with a reason if the server has no Podman or its agent predates images.
+
 ## Domains
 
 | | | Role |
