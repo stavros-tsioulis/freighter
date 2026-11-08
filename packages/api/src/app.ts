@@ -34,7 +34,10 @@ import type { ApiContext, Principal } from "./context.ts";
 import { ApiError, toHttpError } from "./errors.ts";
 import { createJobs, type Jobs } from "./jobs.ts";
 import { parseAddress } from "./agents.ts";
-import { checkDomainDns, isLocalName, isPrivateOrLoopback, resolveAll, systemDns } from "./dns.ts";
+import { createControlSettings } from "./control-settings.ts";
+import { parseHostConfig } from "@freighter/core/config";
+import { SettingsError } from "@freighter/core/fields";
+import { checkDomainDns, isLocalName, isPrivateOrLoopback, resolveAll, systemDns, type DnsResolver } from "./dns.ts";
 import { checkServer, reachableServers } from "./servers.ts";
 import { syncAll, type SyncResult } from "./sync.ts";
 
@@ -250,15 +253,23 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   // ---- domains: configured on the app (not in app.yaml). A new domain waits for its DNS records, then goes live ----
-  const dnsResolver = ctx.dns ?? systemDns;
+  /** Read on every use: the DNS servers are a setting that can change while the API runs. */
+  const dnsResolver = (): DnsResolver => ctx.dns ?? systemDns;
+  const lookup = async (host: string) => {
+    try {
+      return await resolveAll(dnsResolver(), host);
+    } catch (e) {
+      throw new ApiError(502, "dns_unavailable", `Could not look up ${host}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
   /** The address(es) a domain's DNS record must point to: the app's server. */
   const targetAddresses = async (event: H3Event, server: string): Promise<string[]> => {
     const row = ctx.registry.servers.get(server);
-    if (row?.kind === "remote" && row.address) return resolveAll(dnsResolver, parseAddress(row.address).host);
+    if (row?.kind === "remote" && row.address) return lookup(parseAddress(row.address).host);
     if (ctx.publicIps?.length) return ctx.publicIps;
     const host = getRequestURL(event, { xForwardedHost: ctx.trustProxy }).hostname.replace(/^\[|\]$/g, "");
     if (isLocalName(host)) return [];
-    return (await resolveAll(dnsResolver, host)).filter((ip) => !isPrivateOrLoopback(ip));
+    return (await lookup(host)).filter((ip) => !isPrivateOrLoopback(ip));
   };
   const hostParam = (event: H3Event) => (getRouterParam(event, "hostname") ?? "").toLowerCase();
   const domainBody = z.object({ hostname: z.string().transform((x) => x.trim().toLowerCase()), service: z.string(), tls: z.enum(["auto", "off"]).default("auto") });
@@ -305,7 +316,7 @@ export function createApi(ctx: ApiContext): Api {
     const p = ctx.registry.pendingDomains.get(hostParam(event));
     if (!p || p.app !== name) throw new ApiError(404, "not_found", "no such domain waiting for verification");
     const server = serverOf(event, name);
-    const check = await checkDomainDns(dnsResolver, p.hostname, await targetAddresses(event, server));
+    const check = await checkDomainDns(dnsResolver(), p.hostname, await targetAddresses(event, server));
     if (!check.ok) {
       ctx.registry.pendingDomains.markChecked(p.hostname, check.reason);
       return { verified: false, ...check };
@@ -855,12 +866,11 @@ export function createApi(ctx: ApiContext): Api {
     return (await checkServer(ctx, name)) ?? needServer(name);
   }));
 
-  // ---- host settings: /etc/freighter/config.yaml of a server, edited through its agent ----
-  /** The settings available on a server: the control-plane ones exist only on `local`, where the API runs. */
+  // ---- settings of a server: /etc/freighter/config.yaml, edited through its agent ----
   const settingsFor = async (name: string) => {
     const s = needServer(name);
     const { fields } = await ctx.agents.forServer(name).call("config.get", {});
-    return { server: s, fields: s.kind === "local" ? fields : fields.filter((f) => f.scope === "agent") };
+    return { server: s, fields: fields.filter((f) => f.scope === "agent") };
   };
   router.get("/v1/servers/:name/config", route("admin", async (event) => {
     const { fields } = await settingsFor(sName(event));
@@ -877,6 +887,21 @@ export function createApi(ctx: ApiContext): Api {
     const result = await ctx.agents.forServer(name).call("config.set", { changes });
     audit(who, "config.set", undefined, { server: name, changes });
     return result;
+  }));
+  // ---- settings of the control server itself: saved in the registry, no agent involved ----
+  const control = ctx.controlSettings ?? createControlSettings({ registry: ctx.registry, file: parseHostConfig({}).api, target: ctx, applyNow: false });
+  router.get("/v1/settings", route("admin", () => ({ fields: control.list() })));
+  router.put("/v1/settings", route("admin", async (event, who) => {
+    const { changes } = await body(event, ops["config.set"].args);
+    let result;
+    try {
+      result = control.set(changes);
+    } catch (e) {
+      if (e instanceof SettingsError) throw new ApiError(400, "bad_request", e.message);
+      throw e;
+    }
+    if (result.changed.length) audit(who, "settings.set", undefined, { changes });
+    return { ...result, restart: [] as ("agent" | "api")[], haproxy: "none" as const };
   }));
   router.post("/v1/servers/:name/restart", route("admin", async (event, who) => {
     const name = sName(event);

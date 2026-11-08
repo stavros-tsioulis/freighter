@@ -210,6 +210,10 @@ export interface ConfigField {
   default: unknown;
   /** The file sets it. */
   explicit: boolean;
+  /** Control-server settings: where the value in effect comes from. */
+  source?: "env" | "dashboard" | "file" | "default";
+  /** The environment variable that fixes the value: it can't be changed here. */
+  envVar?: string;
 }
 export interface ConfigSaved {
   changed: string[];

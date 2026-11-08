@@ -498,10 +498,14 @@ export function useRemoveDomain(app: MaybeRef<string>) {
 }
 
 // ---- server settings (config.yaml) ----
+/** The pseudo-server that stands for the control plane's own settings (saved in the registry, no agent involved). */
+export const CONTROL = "@control";
+const configUrl = (server: string) => (server === CONTROL ? "/settings" : `/servers/${server}/config`);
+
 export const useServerConfig = (server: MaybeRef<string>) =>
   useQuery({
     queryKey: ["server-config", server],
-    queryFn: () => api<{ fields: ConfigField[] }>(`/servers/${toValue(server)}/config`).then((r) => r.fields),
+    queryFn: () => api<{ fields: ConfigField[] }>(configUrl(toValue(server))).then((r) => r.fields),
     enabled: computed(() => toValue(server) !== ""),
     retry: false,
     refetchOnWindowFocus: false, // never replace what someone is in the middle of editing
@@ -511,7 +515,7 @@ export function useSaveServerConfig() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { server: string; changes: Record<string, unknown> }) => api<ConfigSaved>(`/servers/${v.server}/config`, { method: "PUT", body: { changes: v.changes } }),
+    mutationFn: (v: { server: string; changes: Record<string, unknown> }) => api<ConfigSaved>(configUrl(v.server), { method: "PUT", body: { changes: v.changes } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["server-config"] }),
     onError: (e) => notify.fail("Could not save", e),
   });

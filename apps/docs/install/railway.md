@@ -57,7 +57,8 @@ Port 7443 on each server has to accept connections from Railway. Railway's outbo
 
 ## Good to know
 
-- **No host settings file.** There's no `/etc/freighter/config.yaml` and no agent, so the control server runs with the defaults and the [Server settings](/operate/server-settings) page has nothing local to edit. Each server you enroll keeps its own settings, which you can edit there.
+- **Settings.** There's no `/etc/freighter/config.yaml` and no agent. The control server's own settings (public URL, DNS servers for domain checks, upload limit and so on) are edited under **Settings → Server → Control server**, or fixed with variables such as `FREIGHTER_API_DNS_SERVERS`. See [Server settings](/operate/server-settings#the-control-server-s-own-settings). Each server you enroll keeps its own settings, which you edit on the same page.
+- **Domain checks.** Domains are verified by looking up their DNS records from the control server. If Railway doesn't let it reach public resolvers directly, Freighter falls back to the platform's resolver by itself, and says so when a lookup can't be made.
 - **Updating.** Push to the branch Railway watches, or redeploy from the dashboard. The volume keeps your data.
 - **Backups.** Take a snapshot of the volume, or back up `/var/lib/freighter`, before upgrades. Losing `pki/` means re-enrolling every server.
 - **Other container hosts.** The same Dockerfile works anywhere that runs containers: mount `/var/lib/freighter`, set `PORT` and `FREIGHTER_BOOTSTRAP_TOKEN`.

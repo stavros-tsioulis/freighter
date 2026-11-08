@@ -176,6 +176,9 @@ importers:
 
   packages/api:
     dependencies:
+      '@freighter/core':
+        specifier: workspace:*
+        version: link:../core
       '@freighter/manifest':
         specifier: workspace:*
         version: link:../manifest
@@ -198,9 +201,6 @@ importers:
       '@freighter/agent':
         specifier: workspace:*
         version: link:../../apps/agent
-      '@freighter/core':
-        specifier: workspace:*
-        version: link:../core
       '@freighter/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig

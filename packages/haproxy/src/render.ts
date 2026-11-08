@@ -85,13 +85,21 @@ function httpRules(dir: string, redirect: string): string {
 }
 
 /** The one-time lines the user adds to their existing HAProxy configuration. */
-export function renderSnippet(o: { dir: string } & ListenOptions): string {
+export function renderSnippet(o: { dir: string; mainConfig?: string } & ListenOptions): string {
   const { httpPort, httpsPort, proxy, redirect } = resolve(o);
   return `# ---- Freighter: one-time additions to your HAProxy configuration (HAProxy >= 2.4) ----
 #
-# 1. Load the generated backends as an additional config file. Add
-#        -f ${o.dir}/backends.cfg
-#    to the haproxy command line (systemd drop-in) or put it in the config directory your service loads.
+# 1. Make HAProxy read Freighter's generated backends, in addition to your own haproxy.cfg.
+#    Freighter keeps them in ${o.dir}/backends.cfg and rewrites that file on every deploy.
+#    The lines in 2 and 3 below refer to those backends, so HAProxy fails to start without them.
+#
+#    Debian / Ubuntu: put this line in /etc/default/haproxy, then restart HAProxy:
+#        EXTRAOPTS="-f ${o.dir}/backends.cfg"
+#      (if the file already has an EXTRAOPTS line, add the -f option inside it)
+#    Elsewhere: add  -f ${o.dir}/backends.cfg  to the haproxy command in its service file
+#      (systemctl edit haproxy), next to the existing -f option.
+#    Then check the result:
+#        haproxy -c -f ${o.mainConfig ?? "/etc/haproxy/haproxy.cfg"} -f ${o.dir}/backends.cfg
 #
 # 2. In the frontend listening on :${httpPort}, before your other rules:
 ${httpRules(o.dir, redirect)}

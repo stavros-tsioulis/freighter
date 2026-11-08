@@ -46,7 +46,8 @@ backend freighter_acme
 
   it("renders the one-time snippet with the managed dir", () => {
     const s = renderSnippet({ dir: "/etc/haproxy/freighter" });
-    expect(s).toContain("-f /etc/haproxy/freighter/backends.cfg");
+    expect(s).toContain('EXTRAOPTS="-f /etc/haproxy/freighter/backends.cfg"');
+    expect(s).toContain("haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg");
     expect(s).toContain("bind :443 ssl crt /etc/haproxy/freighter/certs/");
     expect(s).toContain("map(/etc/haproxy/freighter/hostnames.map)");
     expect(s).toContain("use_backend freighter_acme if freighter_acme");

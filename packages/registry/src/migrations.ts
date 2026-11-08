@@ -193,4 +193,12 @@ export const migrations: string[] = [
     last_error TEXT
   );
   `,
+  `
+  -- Control-plane settings changed from the dashboard (they win over config.yaml, environment variables win over them).
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

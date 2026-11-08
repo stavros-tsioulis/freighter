@@ -9,3 +9,4 @@ export * from "./metrics.ts";
 export * from "./agents.ts";
 export * from "./servers.ts";
 export * from "./dns.ts";
+export * from "./control-settings.ts";

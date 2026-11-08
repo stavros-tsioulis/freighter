@@ -1,13 +1,13 @@
 import { loadConfig } from "@freighter/core/config";
-import { createAgentDirectory, createApi, createDnsResolver, type Api, type ApiContext } from "@freighter/api";
+import { createAgentDirectory, createApi, createControlSettings, type Api, type ApiContext, type ControlSettings } from "@freighter/api";
 import { PkiStore } from "@freighter/pki";
 import { openRegistry } from "@freighter/registry";
 
 export interface FreighterRuntime {
   api: Api;
   ctx: ApiContext;
-  syncSeconds: number;
-  metricsSeconds: number;
+  /** The control plane's settings; read `settings.current()` each time, they can change while running. */
+  settings: ControlSettings;
 }
 
 let runtime: Promise<FreighterRuntime> | undefined;
@@ -28,15 +28,14 @@ export function useFreighter(): Promise<FreighterRuntime> {
       pki,
       agents: await createAgentDirectory({ registry, localSocket: config.agent.socket, pki }),
       artifactsDir: config.agent.artifactsDir,
-      maxUploadBytes: config.api.maxUploadMb * 1024 * 1024,
-      trustProxy: config.api.trustProxy,
+      maxUploadBytes: 0,
+      trustProxy: true,
       gitAllowLocal: config.git.allowLocal,
-      publicUrl: config.api.publicUrl,
-      publicIps: config.api.publicIps,
-      dns: createDnsResolver(config.api.dnsServers),
-      metricsRetentionHours: config.api.metricsRetentionHours,
     };
-    return { api: createApi(ctx), ctx, syncSeconds: config.api.syncSeconds, metricsSeconds: config.api.metricsSeconds };
+    // config.yaml, then what was saved from the dashboard, then environment variables (Railway's Variables tab).
+    const settings = createControlSettings({ registry, file: config.api, target: ctx, env: process.env, warn: (m) => console.warn(`[freighter] ${m}`) });
+    ctx.controlSettings = settings;
+    return { api: createApi(ctx), ctx, settings };
   })();
   return runtime;
 }

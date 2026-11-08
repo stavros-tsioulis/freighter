@@ -3,7 +3,7 @@ import { pruneSpool, sampleOnce } from "@freighter/api";
 export default defineNitroPlugin(async (nitro) => {
   // The build renders the app shell once (prerender). It must not open the registry or start the loops.
   if (import.meta.prerender) return;
-  const { api, ctx, syncSeconds, metricsSeconds } = await useFreighter();
+  const { api, ctx, settings } = await useFreighter();
 
   // Anything still queued/running belonged to a previous process.
   const interrupted = ctx.registry.deployments.markInterrupted();
@@ -11,14 +11,22 @@ export default defineNitroPlugin(async (nitro) => {
   await pruneSpool(ctx.artifactsDir, 24 * 60 * 60 * 1000);
 
   const warn = (what: string) => (e: unknown) => console.warn(`[freighter] ${what} failed:`, e instanceof Error ? e.message : e);
-  const every = (seconds: number, fn: () => Promise<unknown>, what: string) => {
-    void fn().catch(warn(what));
-    if (seconds <= 0) return;
-    const timer = setInterval(() => void fn().catch(warn(what)), seconds * 1000);
-    timer.unref();
-    nitro.hooks.hook("close", () => clearInterval(timer));
+  // Each run re-reads its interval, so a change in the settings applies without a restart (0 means off: look again later).
+  let stopped = false;
+  const stops: (() => void)[] = [];
+  nitro.hooks.hook("close", () => { stopped = true; stops.forEach((stop) => stop()); });
+  const every = (seconds: () => number, fn: () => Promise<unknown>, what: string) => {
+    let timer: NodeJS.Timeout | undefined;
+    stops.push(() => clearTimeout(timer));
+    const tick = async (first: boolean) => {
+      if (stopped) return;
+      if (first || seconds() > 0) await fn().catch(warn(what));
+      timer = setTimeout(() => void tick(false), (seconds() > 0 ? seconds() : 30) * 1000);
+      timer.unref();
+    };
+    void tick(true);
   };
 
-  every(syncSeconds, () => api.syncAll(), "sync");
-  every(metricsSeconds, () => sampleOnce(ctx), "metrics sampling");
+  every(() => settings.current().syncSeconds, () => api.syncAll(), "sync");
+  every(() => settings.current().metricsSeconds, () => sampleOnce(ctx), "metrics sampling");
 });

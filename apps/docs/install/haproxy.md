@@ -34,7 +34,10 @@ freighter haproxy setup
 It prints three changes for HAProxy 2.4 or later. With the default directory, they are:
 
 ```txt
-# 1. Load the generated backends as an extra config file:  -f /etc/haproxy/freighter/backends.cfg
+# 1. Make HAProxy read Freighter's generated backends, in addition to your own haproxy.cfg.
+#    Debian / Ubuntu: put this line in /etc/default/haproxy, then restart HAProxy:
+#        EXTRAOPTS="-f /etc/haproxy/freighter/backends.cfg"
+#    Elsewhere: add -f /etc/haproxy/freighter/backends.cfg to the haproxy command in its service file.
 
 # 2. In the frontend on :80, before your other rules:
     acl freighter_acme path_beg /.well-known/acme-challenge/
@@ -48,6 +51,8 @@ It prints three changes for HAProxy 2.4 or later. With the default directory, th
 ```
 
 ### 2. Load backends.cfg
+
+This is step 1 of the printed lines. HAProxy normally reads one file, your `haproxy.cfg`. Freighter writes the backends for your apps to a separate file so it never edits yours, and the lines in the printed steps 2 and 3 refer to those backends, so HAProxy must read that file too. `-f` is how you give HAProxy more than one config file.
 
 On Debian and Ubuntu, HAProxy's unit reads extra options from `/etc/default/haproxy`:
 

@@ -53,10 +53,10 @@ describe("applySettings", () => {
     expect((await readFile(path, "utf8")).trim()).toBe("{}");
   });
 
-  it("flags the API for control-plane settings, and listener changes for HAProxy", async () => {
+  it("flags listener changes for HAProxy, and leaves control-plane settings to need no restart", async () => {
     const path = await tmp();
     const r = await applySettings(path, { "api.publicUrl": "https://f.example.com", "haproxy.httpsPort": 4443 });
-    expect(r.restart).toEqual(["api"]);
+    expect(r.restart).toEqual([]);
     expect(r.haproxyChanged).toBe(true);
   });
 

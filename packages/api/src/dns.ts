@@ -7,23 +7,52 @@ export interface DnsResolver {
   resolve6(host: string): Promise<string[]>;
 }
 
-const orEmpty = (p: Promise<string[]>) => p.catch(() => [] as string[]);
+/** "There is no such record": a real answer, as opposed to a lookup that could not be made. */
+const MISSING = new Set(["ENOTFOUND", "ENODATA"]);
+const code = (e: unknown) => (e as NodeJS.ErrnoException)?.code ?? "";
+const orEmpty = (p: Promise<string[]>) =>
+  p.catch((e) => {
+    if (MISSING.has(code(e))) return [] as string[];
+    throw e;
+  });
 
-/** Real lookups, straight to DNS (not /etc/hosts), following CNAMEs. A missing record is an empty answer. */
+/** What the operating system's resolver (getaddrinfo) says, for hosts where direct DNS queries don't get out. */
+async function viaSystem(host: string, family: 4 | 6): Promise<string[]> {
+  try {
+    return (await dns.lookup(host, { family, all: true })).map((a) => a.address);
+  } catch (e) {
+    if (MISSING.has(code(e))) return [];
+    throw e;
+  }
+}
+
+/** Real lookups, following CNAMEs. A missing record is an empty answer; a lookup that can't be made is an error. */
 export const systemDns: DnsResolver = {
-  resolve4: (h) => orEmpty(dns.resolve4(h)),
-  resolve6: (h) => orEmpty(dns.resolve6(h)),
+  resolve4: (h) => orEmpty(dns.resolve4(h)).catch(() => viaSystem(h, 4)),
+  resolve6: (h) => orEmpty(dns.resolve6(h)).catch(() => viaSystem(h, 6)),
 };
 
 /**
  * Lookups through specific servers, e.g. public resolvers, so a stale cache in the local network or container
- * doesn't make a correct DNS setup look wrong. An empty list means the system's resolver.
+ * doesn't make a correct DNS setup look wrong. When those servers can't be reached (some hosts only allow their own
+ * resolver) the system's resolver answers instead. An empty list means the system's resolver.
  */
 export function createDnsResolver(servers: readonly string[]): DnsResolver {
   if (servers.length === 0) return systemDns;
   const r = new dns.Resolver({ timeout: 3000, tries: 2 });
   r.setServers([...servers]);
-  return { resolve4: (h) => orEmpty(r.resolve4(h)), resolve6: (h) => orEmpty(r.resolve6(h)) };
+  const through = (ask: (h: string) => Promise<string[]>, fallback: (h: string) => Promise<string[]>) => (h: string) =>
+    orEmpty(ask(h)).catch(async (e) => {
+      try {
+        return await fallback(h);
+      } catch {
+        throw new Error(`couldn't reach the DNS server${servers.length > 1 ? "s" : ""} ${servers.join(", ")} (${code(e) || (e as Error).message}), and the system resolver failed too`);
+      }
+    });
+  return {
+    resolve4: through((h) => r.resolve4(h), systemDns.resolve4),
+    resolve6: through((h) => r.resolve6(h), systemDns.resolve6),
+  };
 }
 
 export async function resolveAll(r: DnsResolver, host: string): Promise<string[]> {
@@ -50,7 +79,12 @@ export interface DnsCheck {
 /** The hostname must resolve, and only to this server: a stray record elsewhere would send some visitors away. */
 export async function checkDomainDns(r: DnsResolver, hostname: string, expected: string[]): Promise<DnsCheck> {
   if (isLocalName(hostname)) return { ok: true, found: ["127.0.0.1"], expected: ["127.0.0.1"], reason: null };
-  const found = await resolveAll(r, hostname);
+  let found: string[];
+  try {
+    found = await resolveAll(r, hostname);
+  } catch (e) {
+    return { ok: false, found: [], expected, reason: `Could not look up ${hostname}: ${e instanceof Error ? e.message : String(e)}.` };
+  }
   const fail = (reason: string): DnsCheck => ({ ok: false, found, expected, reason });
   if (expected.length === 0) {
     return fail("Freighter doesn't know this server's public IP address. Set api.publicIps in /etc/freighter/config.yaml, then verify again.");

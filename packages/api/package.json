@@ -16,11 +16,11 @@
     "@freighter/registry": "workspace:*",
     "h3": "^1.15.0",
     "zod": "^3.25.0",
-    "@freighter/pki": "workspace:*"
+    "@freighter/pki": "workspace:*",
+    "@freighter/core": "workspace:*"
   },
   "devDependencies": {
     "@freighter/tsconfig": "workspace:*",
-    "@freighter/agent": "workspace:*",
-    "@freighter/core": "workspace:*"
+    "@freighter/agent": "workspace:*"
   }
 }

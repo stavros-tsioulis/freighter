@@ -146,12 +146,14 @@ Control server only.
 | `localAgent` | `false` | Whether this control server also runs apps, through the agent on the same machine (the server named `local`). Off by default: a control server manages remote servers. See [Also run apps on this server](/install/control-server#also-run-apps-on-this-server). |
 | `publicUrl` | derived from each request | This control server's public URL, used in webhook URLs and enrollment commands. Set it when the API sits behind a proxy. |
 | `publicIps` | `[]` | The control server's public IPs, shown as the DNS target when adding domains to apps on `local`. |
-| `dnsServers` | `[1.1.1.1, 8.8.8.8]` | Resolvers used to verify domains. `[]` uses the system resolver, for split-horizon DNS for example. |
+| `dnsServers` | `[1.1.1.1, 8.8.8.8]` | Resolvers used to verify domains. `[]` uses the system resolver, for split-horizon DNS for example. When these can't be reached, the system resolver answers instead. |
 | `trustProxy` | `true` | Take the client address from `X-Forwarded-For`. Correct when the API listens on localhost behind HAProxy. |
 | `maxUploadMb` | `200` | The largest archive accepted for upload. |
 | `syncSeconds` | `60` | How often every server is re-read into the registry. `0` turns periodic sync off. |
 | `metricsSeconds` | `15` | How often service metrics are sampled. `0` turns sampling off. |
 | `metricsRetentionHours` | `6` | How long metric samples are kept. |
+
+Every `api` key except `localAgent` can also be saved from the dashboard (**Settings → Server → Control server**) or fixed with an environment variable, which wins over both. The variable is the key in capitals with underscores: `api.dnsServers` is `FREIGHTER_API_DNS_SERVERS`. See [Server settings](/operate/server-settings#the-control-server-s-own-settings).
 
 ## Environment variables
 
@@ -162,4 +164,5 @@ Control server only.
 | `FREIGHTER_KEY_PASSPHRASE` | CLI (`ssh-key import`) | Passphrase for an encrypted key. |
 | `PORT` | API | Used when `NITRO_PORT` is not set. Container hosts such as Railway set it. |
 | `FREIGHTER_BOOTSTRAP_TOKEN` | API | First run only: creates an admin token named `bootstrap` with this value, when no token has ever existed. For hosts without a shell. See [Run it on Railway](/install/railway). |
+| `FREIGHTER_API_*` | API | One per `api` setting (`FREIGHTER_API_PUBLIC_URL`, `FREIGHTER_API_DNS_SERVERS`, `FREIGHTER_API_MAX_UPLOAD_MB`, …). Override the dashboard and `config.yaml`. |
 | `FREIGHTER_PREFIX` | API | Development only: relocate every path under a directory. |

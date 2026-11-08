@@ -171,6 +171,12 @@ export interface Registry {
     touch(id: string): void;
     remove(id: string): boolean;
   };
+  /** Control-plane settings saved from the dashboard: key -> JSON value. */
+  settings: {
+    all(): Record<string, unknown>;
+    set(key: string, value: unknown): void;
+    remove(key: string): boolean;
+  };
   pendingDomains: {
     list(app?: string): PendingDomainRow[];
     get(hostname: string): PendingDomainRow | undefined;
@@ -317,6 +323,14 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         run("UPDATE ssh_keys SET last_used_at = ? WHERE id = ?", now(), id);
       },
       remove: (id) => Number(run("DELETE FROM ssh_keys WHERE id = ?", id).changes) > 0,
+    },
+
+    settings: {
+      all: () => Object.fromEntries(all("SELECT key, value_json FROM settings").map((r) => [r.key as string, JSON.parse(r.value_json as string)])),
+      set(key, value) {
+        run("INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at", key, JSON.stringify(value), now());
+      },
+      remove: (key) => Number(run("DELETE FROM settings WHERE key = ?", key).changes) > 0,
     },
 
     pendingDomains: {

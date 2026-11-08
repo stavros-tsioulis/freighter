@@ -6,9 +6,14 @@ definePageMeta({ role: "admin" });
 const notify = useNotify();
 const { data: servers } = useServers();
 const server = ref("");
-const choices = computed(() => (servers.value ?? []).filter((s) => s.kind === "local" || s.status !== "pending").map((s) => ({ label: s.name, value: s.name })));
+const choices = computed(() => [
+  { label: "Control server (dashboard & API)", value: CONTROL },
+  ...(servers.value ?? []).filter((s) => s.kind === "local" || s.status !== "pending").map((s) => ({ label: s.name, value: s.name })),
+]);
+const isControl = computed(() => server.value === CONTROL);
 const first = computed(() => choices.value[0]?.value ?? "");
 watch(first, () => { if (!choices.value.some((c) => c.value === server.value)) server.value = first.value; }, { immediate: true });
+const locked = (f: ConfigField) => f.source === "env";
 const { data: fields, isLoading, error } = useServerConfig(server);
 const save = useSaveServerConfig();
 const restart = useRestartService();
@@ -37,6 +42,7 @@ watch(server, () => pending.value.clear());
 const changes = computed(() => {
   const out: Record<string, unknown> = {};
   for (const f of fields.value ?? []) {
+    if (locked(f)) continue;
     if (resets.has(f.key)) {
       if (f.explicit) out[f.key] = null;
     } else if (!same(normalised(f, form[f.key]), f.value)) {
@@ -56,7 +62,7 @@ function useDefault(f: ConfigField) {
   if (f.explicit) resets.add(f.key);
 }
 /** Offer "Use default" while the setting is set in the file or differs from the default, until it has been reset. */
-const showDefaultLink = (f: ConfigField) => !resets.has(f.key) && (f.explicit || !same(normalised(f, form[f.key]), f.default));
+const showDefaultLink = (f: ConfigField) => !locked(f) && !resets.has(f.key) && (f.explicit || !same(normalised(f, form[f.key]), f.default));
 
 function show(f: ConfigField, v: unknown): string {
   if (v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)) return "none";
@@ -104,9 +110,10 @@ async function restartPending() {
 <template>
   <div class="flex flex-col gap-8 pb-24">
     <PageHeader title="Server settings">
-      How this server issues certificates, takes web traffic and handles deploys. Saved to <code>/etc/freighter/config.yaml</code>, with your comments kept.
+      <template v-if="isControl">How the dashboard and API behave. Saved in the registry and applied at once. A setting fixed by an environment variable shows as locked.</template>
+      <template v-else>How this server issues certificates, takes web traffic and handles deploys. Saved to <code>/etc/freighter/config.yaml</code>, with your comments kept.</template>
       <template #actions>
-        <Select v-if="choices.length > 1" v-model="server" :options="choices" option-label="label" option-value="value" size="small" class="w-44" aria-label="Server" />
+        <Select v-model="server" :options="choices" option-label="label" option-value="value" size="small" class="w-44" aria-label="Server" />
       </template>
     </PageHeader>
 
@@ -121,10 +128,7 @@ async function restartPending() {
       This server uses an HAProxy configuration you maintain, so its ports were not changed. Update your <code>haproxy.cfg</code> to match; <code>freighter haproxy setup</code> prints the lines.
     </Message>
 
-    <Message v-if="!choices.length" severity="info" :closable="false">
-      This control server runs no agent of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline">Add a server</NuxtLink> to manage its settings here.
-    </Message>
-    <Skeleton v-else-if="isLoading" height="16rem" />
+    <Skeleton v-if="isLoading" height="16rem" />
     <Message v-else-if="error" severity="error" :closable="false">Could not read this server's settings: {{ errorMessage(error) }}</Message>
 
     <section v-for="s in sections" v-else :key="s.name" class="flex flex-col gap-1">
@@ -140,17 +144,18 @@ async function restartPending() {
             <p v-if="f.restart !== 'none'" class="text-xs text-muted-color mt-1">Needs a restart of {{ SERVICE_NAME[f.restart] }}.</p>
           </div>
           <div class="flex flex-col gap-1.5 md:items-stretch">
-            <InputText v-if="f.type === 'string'" :id="`cfg-${f.key}`" v-model="form[f.key] as string" :placeholder="f.placeholder" fluid @update:model-value="edited(f)" />
+            <InputText v-if="f.type === 'string'" :id="`cfg-${f.key}`" :disabled="locked(f)" v-model="form[f.key] as string" :placeholder="f.placeholder" fluid @update:model-value="edited(f)" />
             <div v-else-if="f.type === 'number'" class="flex items-center gap-2">
-              <InputNumber :input-id="`cfg-${f.key}`" v-model="form[f.key] as number | null" :min="f.min" :max="f.max" :use-grouping="false" :placeholder="f.default === null ? 'none' : String(f.default)" class="w-32" @update:model-value="edited(f)" />
+              <InputNumber :disabled="locked(f)" :input-id="`cfg-${f.key}`" v-model="form[f.key] as number | null" :min="f.min" :max="f.max" :use-grouping="false" :placeholder="f.default === null ? 'none' : String(f.default)" class="w-32" @update:model-value="edited(f)" />
               <span v-if="f.unit" class="text-sm text-muted-color">{{ f.unit }}</span>
             </div>
             <div v-else-if="f.type === 'boolean'" class="flex items-center gap-2">
-              <ToggleSwitch :input-id="`cfg-${f.key}`" v-model="form[f.key] as boolean" @update:model-value="edited(f)" />
+              <ToggleSwitch :disabled="locked(f)" :input-id="`cfg-${f.key}`" v-model="form[f.key] as boolean" @update:model-value="edited(f)" />
               <span class="text-sm text-muted-color">{{ form[f.key] ? "On" : "Off" }}</span>
             </div>
-            <Select v-else-if="f.type === 'enum'" :input-id="`cfg-${f.key}`" v-model="form[f.key] as string" :options="optionsFor(f)" option-label="label" option-value="value" fluid @update:model-value="edited(f)" />
-            <AutoComplete v-else :input-id="`cfg-${f.key}`" v-model="form[f.key] as string[]" multiple :typeahead="false" :placeholder="f.placeholder" fluid add-on-blur separator="," @update:model-value="edited(f)" />
+            <Select v-else-if="f.type === 'enum'" :disabled="locked(f)" :input-id="`cfg-${f.key}`" v-model="form[f.key] as string" :options="optionsFor(f)" option-label="label" option-value="value" fluid @update:model-value="edited(f)" />
+            <AutoComplete v-else :disabled="locked(f)" :input-id="`cfg-${f.key}`" v-model="form[f.key] as string[]" multiple :typeahead="false" :placeholder="f.placeholder" fluid add-on-blur separator="," @update:model-value="edited(f)" />
+            <p v-if="locked(f)" class="text-xs text-muted-color">Set by <code>{{ f.envVar }}</code> in the environment. Change or remove that variable to edit it here.</p>
             <div class="flex items-center gap-2 text-xs text-muted-color min-h-5">
               <span>Default: {{ show(f, f.default) }}</span>
               <Button v-if="showDefaultLink(f)" label="Use default" text size="small" class="!py-0 !px-1 !text-xs" @click="useDefault(f)" />

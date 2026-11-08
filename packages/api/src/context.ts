@@ -2,6 +2,7 @@ import type { AgentClient } from "@freighter/protocol";
 import type { DnsResolver } from "./dns.ts";
 import type { KeyPair } from "@freighter/pki";
 import type { Registry, Role } from "@freighter/registry";
+import type { ControlSettings } from "./control-settings.ts";
 
 /** Resolves the agent for a registered server ("local" is the unix socket; others use mutual TLS). */
 export interface AgentDirectory {
@@ -28,6 +29,8 @@ export interface ApiContext {
   trustProxy: boolean;
   /** How long metric samples are kept (default 6). */
   metricsRetentionHours?: number;
+  /** The control plane's own settings (saved in the registry, overridden by environment variables). */
+  controlSettings?: ControlSettings;
   now?: () => Date;
 }
 

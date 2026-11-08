@@ -13,11 +13,11 @@ describe("registry", () => {
   it("migrates once and is reopenable", async () => {
     const path = join(await mkdtemp(join(tmpdir(), "freighter-db-")), "sub", "r.db");
     const a = openRegistry(path);
-    expect(a.schemaVersion()).toBe(8);
+    expect(a.schemaVersion()).toBe(9);
     a.tokens.create({ name: "x", role: "admin" });
     a.close();
     const b = openRegistry(path);
-    expect(b.schemaVersion()).toBe(8);
+    expect(b.schemaVersion()).toBe(9);
     expect(b.tokens.list()).toHaveLength(1);
   });
 
@@ -97,7 +97,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(8);
+    expect(r.schemaVersion()).toBe(9);
     expect(r.apps.get("shop")?.status).toBe("deployed");
     r.metrics.add([{ app: "shop", service: "web", unit: "u", active: "active", memoryBytes: 1, cpuNanos: 2, restarts: 0 }]);
     expect(r.metrics.series("shop", "")).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(8);
+    expect(r.schemaVersion()).toBe(9);
     expect(r.apps.get("shop")?.server).toBe("local");
     expect(r.servers.list().map((s) => [s.name, s.kind, s.status, s.appCount])).toEqual([["local", "local", "online", 1]]);
   });
@@ -213,7 +213,7 @@ describe("registry", () => {
     old.exec("INSERT INTO deployments (id, app, action, status, source, created_at) VALUES ('d1', 'shop', 'deploy', 'success', 'api', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(8);
+    expect(r.schemaVersion()).toBe(9);
     expect(r.deployments.get("d1")).toMatchObject({ trigger: "upload", commitSha: null });
   });
 
@@ -256,7 +256,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(8);
+    expect(r.schemaVersion()).toBe(9);
     expect(r.gitLinks.get("shop")).toMatchObject({ repository: "git@github.com:a/b.git", sshKeyId: null });
   });
 
@@ -314,7 +314,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(8);
+    expect(r.schemaVersion()).toBe(9);
     expect(r.gitLinks.get("shop")).toMatchObject({ branch: "main", sshKeyId: null });
     expect(r.sshKeys.list()).toEqual([]);
   });
