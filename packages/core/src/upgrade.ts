@@ -128,7 +128,27 @@ for f in "$UNIT_DIR"/freighter-*; do [ -e "$f" ] && cp -a "$f" "$STATE/backup/un
 if head -n1 "$MAIN" 2>/dev/null | grep -q '^# Managed by freighter'; then cp -a "$MAIN" "$STATE/backup/haproxy.cfg"; fi
 
 set_state running "Fetching $REF"
-git -C "$DIR" fetch --quiet --depth 1 origin "$REF" || { set_state failed "Could not fetch $REF from the repository, so nothing was changed"; exit 1; }
+if ! out=$(git -C "$DIR" fetch --quiet --depth 1 origin "$REF" 2>&1); then
+  # git can't fetch a commit by an abbreviation. Look for it in the recent history of the branches and use the full one.
+  full=
+  case $REF in
+    *[!0-9a-f]*|'') ;;
+    *) if [ "\${#REF}" -ge 7 ] && [ "\${#REF}" -lt 40 ]; then
+         say "$REF looks like an abbreviated commit; looking for it in the branches' history"
+         git -C "$DIR" fetch --quiet --depth 200 origin '+refs/heads/*:refs/freighter-resolve/*' >/dev/null 2>&1 \
+           && full=$(git -C "$DIR" rev-parse --verify --quiet "$REF^{commit}") || full=
+       fi ;;
+  esac
+  git -C "$DIR" for-each-ref --format='delete %(refname)' refs/freighter-resolve/ | git -C "$DIR" update-ref --stdin >/dev/null 2>&1 || true
+  if [ -n "$full" ] && out=$(git -C "$DIR" fetch --quiet --depth 1 origin "$full" 2>&1); then
+    say "$REF is $full"
+    REF=$full
+    printf '%s\n' "$REF" >"$STATE/ref"
+  else
+    set_state failed "Could not fetch $REF from the repository, so nothing was changed. git said: $(printf '%s' "$out" | tail -n 1)"
+    exit 1
+  fi
+fi
 TO=$(git -C "$DIR" rev-parse FETCH_HEAD) && printf '%s\\n' "$TO" >"$STATE/to"
 git -C "$DIR" show FETCH_HEAD:infra/install.sh >"$STATE/install.sh" || { set_state failed "$REF has no infra/install.sh, so nothing was changed"; exit 1; }
 

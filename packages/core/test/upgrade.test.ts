@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkForUpdates, checkoutCommit, commitFromEnv, confirmUpgrade, findInstallDir, haproxyMode, renderUpgradeScript, startUpgrade, upgradeStatus, validRef } from "../src/index.ts";
+import { checkForUpdates, checkoutCommit, checkoutCommitFull, commitFromEnv, confirmUpgrade, findInstallDir, haproxyMode, renderUpgradeScript, startUpgrade, upgradeStatus, validRef } from "../src/index.ts";
 import { makeDeps } from "./helpers.ts";
 
 const git = (cwd: string, ...args: string[]) =>
@@ -122,6 +122,30 @@ describe("the upgrade script on a fake server", () => {
     expect(readFileSync(`${s.units}/freighter-agent.service`, "utf8").trim()).toBe("OLD unit");
   });
 
+  it("upgrades to a commit given in full, and to one given as the short hash the dashboard shows", async () => {
+    for (const abbreviate of [false, true]) {
+      const s = await server({ good: installs("NEW"), bad: installs("NEW") });
+      const tip = git(`${s.root}/origin`, "rev-parse", "good");
+      const done = s.run(abbreviate ? tip.slice(0, 12) : tip);
+      await s.waitState("verifying");
+      writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+      expect(await done, abbreviate ? "short hash" : "full hash").toBe(0);
+      expect(s.read("state/state")).toBe("done");
+      expect(s.read("state/to")).toBe(tip);
+      expect(s.read("state/ref")).toBe(tip); // the abbreviation was resolved, and the installer got the full hash
+      expect(s.read("opt/apps/agent/dist/main.js")).toBe("NEW");
+      expect(git(s.dir, "for-each-ref", "refs/freighter-resolve")).toBe(""); // nothing left behind
+    }
+  });
+
+  it("says what git said when a commit can't be found, instead of only that it couldn't be fetched", async () => {
+    const s = await server({ good: installs("NEW"), bad: installs("NEW") });
+    expect(await s.run("deadbeefcafe")).toBe(1);
+    expect(s.read("state/state")).toBe("failed");
+    expect(s.read("state/message")).toMatch(/Could not fetch deadbeefcafe.*nothing was changed.*git said: .*(couldn't find remote ref|not our ref|deadbeefcafe)/);
+    expect(s.read("opt/apps/agent/dist/main.js")).toBe("OLD");
+  });
+
   it("changes nothing when the ref can't be fetched", async () => {
     const s = await server({ good: installs("NEW"), bad: installs("NEW") });
     expect(await s.run("nope")).toBe(1);
@@ -170,6 +194,7 @@ describe("agent side of an upgrade", () => {
   it("reads the checked-out commit", async () => {
     const s = await server({ good: installs("NEW"), bad: installs("NEW") });
     expect(await checkoutCommit(s.dir)).toBe(s.old.slice(0, 12));
+    expect(await checkoutCommitFull(s.dir)).toBe(s.old);
     expect(await checkoutCommit(s.root)).toBeNull();
     expect(await checkoutCommit(null)).toBeNull();
   });
@@ -217,9 +242,10 @@ describe("agent side of an upgrade", () => {
   });
 
   it("takes the control plane's commit from the environment when there is no checkout", () => {
-    expect(commitFromEnv({ FREIGHTER_COMMIT: "0123456789abcdef0123456789abcdef01234567" })).toBe("0123456789ab");
-    expect(commitFromEnv({ RAILWAY_GIT_COMMIT_SHA: "ABCDEF0123456789" })).toBe("abcdef012345");
-    expect(commitFromEnv({ FREIGHTER_COMMIT: "main", RAILWAY_GIT_COMMIT_SHA: "0123456789abcdef" })).toBe("0123456789ab");
+    const full = "0123456789abcdef0123456789abcdef01234567";
+    expect(commitFromEnv({ FREIGHTER_COMMIT: full })).toBe(full); // kept whole: a server can only fetch the full hash
+    expect(commitFromEnv({ RAILWAY_GIT_COMMIT_SHA: "ABCDEF0123456789" })).toBe("abcdef0123456789");
+    expect(commitFromEnv({ FREIGHTER_COMMIT: "main", RAILWAY_GIT_COMMIT_SHA: "0123456789abcdef" })).toBe("0123456789abcdef");
     expect(commitFromEnv({ FREIGHTER_COMMIT: "not a sha" })).toBeNull();
     expect(commitFromEnv({})).toBeNull();
   });

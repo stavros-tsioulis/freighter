@@ -313,6 +313,10 @@ describe("upgrading a remote server", () => {
     expect(r.status).toBe(202);
     expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ ref: "bbbbbbbbbbbb" });
     expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.upgrade", detail: { server: "vps-1", ref: "bbbbbbbbbbbb", from: "aaaaaaaaaaaa" } });
+    // what the server is told to fetch is the full commit: git can't fetch the 12-character one shown in the dashboard
+    t.ctx.versionFull = "b".repeat(12) + "c".repeat(28);
+    await upgrade(t);
+    expect(agent.calls.filter((c) => c.op === "upgrade.start").at(-1)?.args).toEqual({ ref: "b".repeat(12) + "c".repeat(28) });
     await upgrade(t, { ref: "v1.2.0" });
     expect(agent.calls.filter((c) => c.op === "upgrade.start").at(-1)?.args).toEqual({ ref: "v1.2.0" });
   });

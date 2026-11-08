@@ -1,4 +1,4 @@
-import { runningCommit } from "@freighter/core";
+import { runningCommit, runningCommitFull } from "@freighter/core";
 import { AgentError, type OpResult } from "@freighter/protocol";
 import type { ApiContext } from "./context.ts";
 import { checkServer } from "./servers.ts";
@@ -13,10 +13,14 @@ export type UpgradeView = OpResult<"upgrade.status"> & {
 /** The commit this control plane runs (tests can set `ctx.version`). */
 export const controlVersion = async (ctx: Pick<ApiContext, "version">): Promise<string | null> => (ctx.version !== undefined ? ctx.version : runningCommit());
 
+/** What a server is told to fetch: the control plane's commit in full (git can't fetch an abbreviation), when it knows it. */
+export const controlRef = async (ctx: Pick<ApiContext, "version" | "versionFull">): Promise<string | null> =>
+  ctx.version !== undefined ? (ctx.versionFull ?? ctx.version) : ((await runningCommitFull()) ?? (await runningCommit()));
+
 const OLD_AGENT =
   "This agent predates remote upgrades. Run the installer on it once (curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --role agent); after that it can be upgraded from here.";
 
-type UpgradeCtx = Pick<ApiContext, "agents" | "registry" | "version">;
+type UpgradeCtx = Pick<ApiContext, "agents" | "registry" | "version" | "versionFull">;
 
 export async function upgradeView(ctx: UpgradeCtx, name: string): Promise<UpgradeView> {
   const target = await controlVersion(ctx);
@@ -46,7 +50,7 @@ export async function startServerUpgrade(ctx: UpgradeCtx, name: string, ref?: st
   if (!server) throw new UpgradeRefused(400, `unknown server "${name}"`);
   if (server.kind === "local") throw new UpgradeRefused(400, "the local server is upgraded by re-running the installer on this machine");
   if (server.status !== "online") throw new UpgradeRefused(409, `${name} is ${server.status}: the upgrade needs it online`);
-  const target = ref ?? (await controlVersion(ctx));
+  const target = ref ?? (await controlRef(ctx));
   if (!target) throw new UpgradeRefused(400, "this control plane doesn't know which version it runs; pass a ref (a branch, tag or commit)");
   const before = await upgradeView(ctx, name);
   if (!before.supported) throw new UpgradeRefused(409, before.reason ?? "this agent can't upgrade itself");

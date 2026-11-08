@@ -25,6 +25,8 @@ export interface ApiContext {
   publicIps?: string[];
   /** The commit this control plane runs (looked up from its checkout when unset; tests set it). */
   version?: string | null;
+  /** The same commit in full, when a test wants the two to differ. */
+  versionFull?: string | null;
   /** HTTP used for the domain reachability check (default: global fetch; replaceable in tests). */
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   /** DNS used to verify domains (default: the system's). */

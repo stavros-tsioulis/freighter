@@ -140,7 +140,7 @@ A remote server runs the agent and CLI from a git checkout the installer made (`
 
 ```sh
 sudo -u freighter freighter server upgrade vps-fra-1            # to the version this control server runs
-sudo -u freighter freighter server upgrade vps-fra-1 --ref v1.4.0   # a branch, tag or commit instead
+sudo -u freighter freighter server upgrade vps-fra-1 --ref v1.4.0   # a branch, tag or commit instead (a commit may be abbreviated: the server finds it in its branches' recent history)
 ```
 
 The version is the git commit the control server runs, found from its checkout. A control server that runs from a container image has no checkout (on Railway, for instance), so set `FREIGHTER_COMMIT` to the commit it was built from (Railway's `RAILWAY_GIT_COMMIT_SHA` is picked up automatically), or give the version yourself with `--ref` or "Upgrade to a different version". Without either, Freighter can't tell what "the same version" is and asks you to choose.

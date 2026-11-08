@@ -20,28 +20,38 @@ export async function findInstallDir(script: string | undefined = process.argv[1
   return dir && existsSync(`${dir}/infra/install.sh`) ? dir : null;
 }
 
-/** The checked-out commit (12 hex characters), or null when `dir` is not a git checkout. */
+/** The checked-out commit (12 hex characters, for showing), or null when `dir` is not a git checkout. */
 export async function checkoutCommit(dir: string | null | undefined, exec: Run = defaultRun): Promise<string | null> {
+  return (await checkoutCommitFull(dir, exec))?.slice(0, 12) ?? null;
+}
+
+/** The checked-out commit in full (40 hex characters). That is what a server can fetch: git can't fetch an abbreviation. */
+export async function checkoutCommitFull(dir: string | null | undefined, exec: Run = defaultRun): Promise<string | null> {
   if (!dir) return null;
-  const r = await exec("git", ["-C", dir, "rev-parse", "--short=12", "HEAD"]).catch(() => null);
-  return r && r.code === 0 && /^[0-9a-f]{12}$/.test(r.stdout.trim()) ? r.stdout.trim() : null;
+  const r = await exec("git", ["-C", dir, "rev-parse", "HEAD"]).catch(() => null);
+  return r && r.code === 0 && /^[0-9a-f]{40}$/.test(r.stdout.trim()) ? r.stdout.trim() : null;
 }
 
 let controlCommit: Promise<string | null> | undefined;
 /**
  * A commit given by the environment, for deployments that have no git checkout (a container image): `FREIGHTER_COMMIT`,
- * or what Railway sets on every deploy. Anything that isn't a hex commit is ignored.
+ * or what Railway sets on every deploy. Returned as given (12 to 40 hex characters); anything else is ignored.
  */
 export function commitFromEnv(env: Record<string, string | undefined> = process.env): string | null {
   for (const v of [env.FREIGHTER_COMMIT, env.RAILWAY_GIT_COMMIT_SHA]) {
     const c = v?.trim().toLowerCase();
-    if (c && /^[0-9a-f]{12,40}$/.test(c)) return c.slice(0, 12);
+    if (c && /^[0-9a-f]{12,40}$/.test(c)) return c;
   }
   return null;
 }
 
-/** The commit this process (the control plane, or the CLI on it) runs. Looked up once; null when it can't be known. */
-export function runningCommit(): Promise<string | null> {
-  controlCommit ??= Promise.resolve(commitFromEnv()).then((c) => c ?? findInstallDir().then((dir) => checkoutCommit(dir)));
+/** The commit this process (the control plane, or the CLI on it) runs, as complete as it can be known. Looked up once. */
+export function runningCommitFull(): Promise<string | null> {
+  controlCommit ??= Promise.resolve(commitFromEnv()).then((c) => c ?? findInstallDir().then((dir) => checkoutCommitFull(dir)));
   return controlCommit;
+}
+
+/** The same, shortened to 12 characters for showing and comparing. */
+export async function runningCommit(): Promise<string | null> {
+  return (await runningCommitFull())?.slice(0, 12) ?? null;
 }
