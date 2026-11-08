@@ -221,11 +221,21 @@ export function createApi(ctx: ApiContext): Api {
     apps: ctx.registry.apps.list().map((a) => ({ ...a, manifestText: undefined, services: ctx.registry.services.list(a.name) })),
   })));
 
+  /** service -> image reference, as written in the app's current app.yaml ({} for an app without image services). */
+  const imagesOf = (manifestText: string | null | undefined): Record<string, string> => {
+    if (!manifestText) return {};
+    try {
+      return imageServices(parseManifest(manifestText, { legacy: true }));
+    } catch {
+      return {};
+    }
+  };
+
   router.get("/v1/apps/:app", route("viewer", (event) => {
     const name = appParam(event);
     const a = ctx.registry.apps.get(name);
     if (!a) throw new ApiError(404, "not_found", `unknown app "${name}"`);
-    return { ...a, services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
+    return { ...a, images: imagesOf(a.manifestText), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
   }));
 
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
@@ -464,7 +474,7 @@ export function createApi(ctx: ApiContext): Api {
 
   router.post("/v1/apps/:app/image-deployments", route("deployer", async (event, who) => {
     const { manifest } = await body(event, z.object({ manifest: z.string().min(1).max(262_144) }));
-    return queueImageDeploy(event, who, appParam(event), manifest, "upload");
+    return queueImageDeploy(event, who, appParam(event), manifest, "manual");
   }));
 
   // Pull the app's images again (a moved tag, a fixed image) and release the result, keeping the app's current app.yaml.
@@ -473,6 +483,28 @@ export function createApi(ctx: ApiContext): Api {
     const text = ctx.registry.apps.get(name)?.manifestText;
     if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
     return queueImageDeploy(event, who, name, text, "manual");
+  }));
+
+  // Change the image (usually the tag) of some services and release it. Everything else in app.yaml stays as it was.
+  router.post("/v1/apps/:app/images", route("deployer", async (event, who) => {
+    const name = appParam(event);
+    const { images } = await body(event, z.object({ images: z.record(z.string(), z.string().min(1)).refine((i) => Object.keys(i).length > 0, "name at least one service") }));
+    const text = ctx.registry.apps.get(name)?.manifestText;
+    if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
+    const current = parseManifest(text, { legacy: true });
+    for (const service of Object.keys(images)) {
+      if (!current.services[service]?.image) throw new ApiError(400, "bad_request", `service "${service}" does not run an image`);
+    }
+    const { name: _name, source: _source, ...rest } = current;
+    const next = { ...rest, services: Object.fromEntries(Object.entries(current.services).map(([k, v]) => [k, images[k] ? { ...v, image: images[k] } : v])) };
+    let manifestText: string;
+    try {
+      manifestText = renderManifest(name, next);
+    } catch (e) {
+      if (e instanceof z.ZodError) throw e;
+      throw new ApiError(400, "bad_request", e instanceof Error ? e.message.split("\n")[0]! : String(e));
+    }
+    return queueImageDeploy(event, who, name, manifestText, "manual");
   }));
 
   router.post("/v1/apps/:app/rollback", route("deployer", async (event, who) => {

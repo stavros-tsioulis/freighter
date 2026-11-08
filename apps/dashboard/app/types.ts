@@ -21,6 +21,8 @@ export interface AppRow {
   name: string;
   server: string;
   manifestText?: string | null;
+  /** service -> image reference, for services that run an image. */
+  images?: Record<string, string>;
   currentRelease: string | null;
   previousRelease: string | null;
   status: "deployed" | "undeployed" | "missing" | "unknown";
@@ -93,6 +95,8 @@ export interface HostStatus {
   memFree: number;
   diskTotalBytes: number | null;
   diskFreeBytes: number | null;
+  /** Whether the server can run image services (Podman installed). Absent on agents that predate images. */
+  containers?: { available: boolean; version?: string };
 }
 export interface ServerRow {
   name: string;
@@ -121,7 +125,10 @@ export interface AppSettings {
   services: Record<
     string,
     {
-      command: string;
+      command?: string;
+      image?: string;
+      containerPort?: number;
+      volumes?: Record<string, string>;
       port?: number;
       replicas?: number;
       resources?: { memory?: string; cpu?: number };
@@ -219,4 +226,11 @@ export interface ConfigSaved {
   changed: string[];
   restart: ("agent" | "api")[];
   haproxy: "applied" | "manual" | "none";
+}
+
+export interface RegistryLogin {
+  host: string;
+  username: string;
+  createdAt: string;
+  updatedAt: string;
 }

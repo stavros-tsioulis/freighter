@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -627,5 +627,72 @@ export function useRestartService() {
   return useMutation({
     mutationFn: (v: { server: string; service: "agent" | "api" }) => api(`/servers/${v.server}/restart`, { method: "POST", body: { service: v.service } }),
     onError: (e) => notify.fail("Could not restart", e),
+  });
+}
+
+// ---- container images ----
+
+const refreshApps = (qc: ReturnType<typeof useQueryClient>) => {
+  for (const key of ["apps", "app", "deployments"]) void qc.invalidateQueries({ queryKey: [key] });
+};
+
+/** Create (or update) an app made of image services: the API renders app.yaml from the form, then the server pulls the images. */
+export function useDeployImages() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (v: { name: string; settings: AppSettings; server?: string }) => {
+      const { text } = await api<{ text: string }>("/manifest/render", { method: "POST", body: { name: v.name, settings: v.settings } });
+      return api<{ id: string }>(`/apps/${v.name}/image-deployments`, { method: "POST", body: { manifest: text }, query: v.server ? { server: v.server } : undefined });
+    },
+    onSuccess: () => refreshApps(qc),
+  });
+}
+
+/** Pull an image app's images again and release the result. */
+export function useRedeployImages(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: () => api<{ id: string }>(`/apps/${toValue(app)}/redeploy`, { method: "POST" }),
+    onSuccess: () => refreshApps(qc),
+    onError: (e) => notify.fail("Could not start the redeploy", e),
+  });
+}
+
+/** Run different images (usually a new tag) for some services of an app, keeping the rest of its app.yaml. */
+export function useSetImages(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (images: Record<string, string>) => api<{ id: string }>(`/apps/${toValue(app)}/images`, { method: "POST", body: { images } }),
+    onSuccess: () => refreshApps(qc),
+  });
+}
+
+export const useRegistries = (enabled: MaybeRefOrGetter<boolean> = true) => useQuery({ queryKey: ["registries"], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ registries: RegistryLogin[] }>("/registries").then((r) => r.registries) });
+
+export function useSaveRegistry() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { host: string; username: string; password: string }) =>
+      api<RegistryLogin>(`/registries/${encodeURIComponent(v.host)}`, { method: "PUT", body: { username: v.username, password: v.password } }),
+    onSuccess: (r) => {
+      notify.ok("Registry login saved", r.host);
+      void qc.invalidateQueries({ queryKey: ["registries"] });
+    },
+    onError: (e) => notify.fail("Could not save the login", e),
+  });
+}
+
+export function useRemoveRegistry() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (host: string) => api(`/registries/${encodeURIComponent(host)}`, { method: "DELETE" }),
+    onSuccess: () => {
+      notify.ok("Registry login deleted");
+      void qc.invalidateQueries({ queryKey: ["registries"] });
+    },
+    onError: (e) => notify.fail("Could not delete the login", e),
   });
 }

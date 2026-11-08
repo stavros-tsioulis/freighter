@@ -59,7 +59,8 @@ const url = (host: string) => `https://${host}`;
       <Column header="Service" field="name">
         <template #body="{ data }">
           <div class="font-medium">{{ data.name }}</div>
-          <div class="text-xs text-muted-color font-mono">{{ data.unit.replace(/^freighter-/, "").replace(".service", "") }}</div>
+          <div v-if="app.images?.[data.name]" class="text-xs text-muted-color font-mono truncate max-w-[14rem]" :title="app.images[data.name]"><i class="pi pi-box text-[0.65rem] mr-1" aria-hidden="true" />{{ app.images[data.name] }}</div>
+          <div v-else class="text-xs text-muted-color font-mono">{{ data.unit.replace(/^freighter-/, "").replace(".service", "") }}</div>
         </template>
       </Column>
       <Column header="State">

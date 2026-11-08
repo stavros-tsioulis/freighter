@@ -26,7 +26,7 @@ curl -s -H "Authorization: Bearer $TOKEN" https://freighter.example.com/api/v1/a
 | | | Role |
 | --- | --- | --- |
 | `GET /apps` | apps with their services | viewer |
-| `GET /apps/:app` | one app, with services and recent deployments | viewer |
+| `GET /apps/:app` | one app, with services, recent deployments and `images` (service to image reference) | viewer |
 | `GET /apps/:app/releases` | releases on the server (`current`, `result`) | viewer |
 | `GET /apps/:app/metrics?minutes=60` | memory, CPU %, restarts and state per service over time | viewer |
 | `GET /apps/:app/logs?service=web&lines=200` | service journal | deployer |
@@ -57,6 +57,7 @@ Apps whose services all use [`image:`](/deploy/images) have nothing to upload.
 | | | Role |
 | --- | --- | --- |
 | `POST /apps/:app/image-deployments[?server=NAME]` | `{"manifest": "<app.yaml text>"}`. The server pulls the images. Returns `202 {id}`. `400` if a service runs a command. | deployer |
+| `POST /apps/:app/images` | `{"images": {"web": "ghcr.io/acme/shop:1.5"}}`. Runs another image for those services and keeps the rest of the current `app.yaml`. Returns `202 {id}`. | deployer |
 | `POST /apps/:app/redeploy` | Pull the images of the app's current `app.yaml` again. Returns `202 {id}`. `404` for an app that was never deployed. | deployer |
 | `GET /registries` | registry hosts with a saved login (never the password) | admin |
 | `PUT /registries/:host` | `{username, password}`. Saves or replaces a login, stored encrypted. | admin |

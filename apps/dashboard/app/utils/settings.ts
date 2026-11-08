@@ -3,7 +3,15 @@ import type { AppSettings } from "~/types";
 /** Editable shape of the app.yaml options: arrays of rows and text boxes, converted to/from the API's settings. */
 export interface ServiceForm {
   name: string;
+  /** What runs: a command on the host, or a container image pulled from a registry. */
+  kind: "command" | "image";
   command: string;
+  /** Image services: reference such as ghcr.io/acme/shop:1.4. */
+  image: string;
+  /** Image services: the port the image listens on inside the container. */
+  containerPort: number | null;
+  /** Image services: persistent directories (name -> path in the container). */
+  volumes: { name: string; path: string }[];
   port: number | null;
   replicas: number;
   memory: string;
@@ -25,7 +33,7 @@ export interface SettingsForm {
   keep: number;
 }
 
-export const newService = (name = "web"): ServiceForm => ({ name, command: "", port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure" });
+export const newService = (name = "web", kind: ServiceForm["kind"] = "command"): ServiceForm => ({ name, kind, command: "", image: "", containerPort: null, volumes: [], port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure" });
 
 export const emptyForm = (): SettingsForm => ({
   services: [newService()],
@@ -45,8 +53,15 @@ export function toSettings(f: SettingsForm): AppSettings {
   const services: AppSettings["services"] = {};
   for (const s of f.services) {
     if (!s.name.trim()) continue;
+    const volumes = s.volumes.filter((v) => v.name.trim() && v.path.trim());
     services[s.name.trim()] = {
-      command: s.command.trim(),
+      ...(s.kind === "image"
+        ? {
+            image: s.image.trim(),
+            ...(s.containerPort ? { containerPort: s.containerPort } : {}),
+            ...(volumes.length ? { volumes: Object.fromEntries(volumes.map((v) => [v.name.trim(), v.path.trim()])) } : {}),
+          }
+        : { command: s.command.trim() }),
       ...(s.port ? { port: s.port } : {}),
       replicas: s.replicas || 1,
       ...(s.memory.trim() || s.cpu ? { resources: { ...(s.memory.trim() ? { memory: s.memory.trim() } : {}), ...(s.cpu ? { cpu: s.cpu } : {}) } } : {}),
@@ -70,7 +85,11 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
   if (!s) return emptyForm();
   const services = Object.entries(s.services ?? {}).map(([name, v]) => ({
     name,
-    command: v.command,
+    kind: v.image !== undefined ? ("image" as const) : ("command" as const),
+    command: v.command ?? "",
+    image: v.image ?? "",
+    containerPort: v.containerPort ?? null,
+    volumes: Object.entries(v.volumes ?? {}).map(([name, path]) => ({ name, path })),
     port: v.port ?? null,
     replicas: v.replicas ?? 1,
     memory: v.resources?.memory ?? "",
@@ -91,5 +110,17 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
   };
 }
 
-/** True once there is something deployable (a service with a command). */
-export const hasService = (f: SettingsForm) => f.services.some((s) => s.name.trim() && s.command.trim());
+/** True once there is something deployable (a service with a command, or with an image). */
+export const hasService = (f: SettingsForm) => f.services.some((s) => s.name.trim() && (s.kind === "image" ? s.image.trim() : s.command.trim()));
+
+/** Whether every service with a name runs an image, so the app needs no upload (the server pulls it). */
+export const imagesOnly = (f: SettingsForm) => f.services.filter((s) => s.name.trim()).every((s) => s.kind === "image");
+
+/** A pragmatic client-side check of an image reference; the API applies the real rules. */
+export const IMAGE_RE = /^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[a-f0-9]{64})?$/;
+
+/** The registry host an image comes from (Docker Hub when the reference names none). */
+export function imageHost(ref: string): string {
+  const first = ref.split("/")[0]!;
+  return ref.includes("/") && (first.includes(".") || first.includes(":") || first === "localhost") ? first : "docker.io";
+}

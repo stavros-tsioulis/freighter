@@ -77,3 +77,41 @@ describe("POST /v1/apps/:app/redeploy", () => {
     expect((await t.request("/v1/apps/ghost/redeploy", { method: "POST", token: t.tokens.deployer })).status).toBe(404);
   });
 });
+
+describe("images in the app view, and changing them", () => {
+  const seed = (t: Awaited<ReturnType<typeof makeApi>>, text = `${IMAGE_YAML}environment:\n  A: b\n`) =>
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: text, currentRelease: "r1", previousRelease: null, status: "deployed" });
+
+  it("lists the image of each service on GET /apps/:app", async () => {
+    const t = await makeApi();
+    seed(t);
+    expect((await t.request("/v1/apps/shop", { token: t.tokens.viewer })).json.images).toEqual({ web: "ghcr.io/org/shop:1" });
+    t.registry.apps.upsert({ name: "blog", server: "local", manifestText: "name: blog\nservices:\n  web:\n    command: x\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await t.request("/v1/apps/blog", { token: t.tokens.viewer })).json.images).toEqual({});
+  });
+
+  it("deploys the current app.yaml with a new image, leaving the rest alone", async () => {
+    const t = await makeApi();
+    seed(t);
+    const r = await t.request("/v1/apps/shop/images", { method: "POST", token: t.tokens.deployer, json: { images: { web: "ghcr.io/org/shop:2" } } });
+    expect(r.status).toBe(202);
+    await t.api.jobs.idle();
+    const sent = (t.calls.find((c) => c.op === "app.deploy")!.args as { manifestText: string }).manifestText;
+    expect(sent).toContain("image: ghcr.io/org/shop:2");
+    expect(sent).toContain("port: 3000");
+    expect(sent).toContain("A: b");
+    expect(sent).not.toContain("shop:1");
+  });
+
+  it("rejects unknown services, command services and bad references", async () => {
+    const t = await makeApi();
+    seed(t);
+    const post = (images: Record<string, string>, token = t.tokens.deployer) => t.request("/v1/apps/shop/images", { method: "POST", token, json: { images } });
+    expect((await post({ api: "nginx" })).status).toBe(400);
+    expect((await post({ web: "Bad Image" })).status).toBe(400);
+    expect((await post({})).status).toBe(400);
+    expect((await post({ web: "nginx" }, t.tokens.viewer)).status).toBe(403);
+    expect((await t.request("/v1/apps/ghost/images", { method: "POST", token: t.tokens.deployer, json: { images: { web: "nginx" } } })).status).toBe(404);
+    expect(t.calls.some((c) => c.op === "app.deploy")).toBe(false);
+  });
+});

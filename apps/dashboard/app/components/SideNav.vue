@@ -25,6 +25,7 @@ const groups = computed(() => [
           items: [
             { to: "/settings/tokens", label: "API tokens", icon: "pi pi-key" },
             { to: "/settings/ssh-keys", label: "SSH keys", icon: "pi pi-lock" },
+            { to: "/settings/registries", label: "Registry logins", icon: "pi pi-box" },
             { to: "/settings/audit", label: "Audit log", icon: "pi pi-history" },
           ],
         },

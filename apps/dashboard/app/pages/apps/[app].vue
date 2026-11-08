@@ -10,7 +10,8 @@ const { data: app, isLoading, error } = useApp(name);
 useHead({ title: computed(() => `${name.value} - Freighter`) });
 
 // The open tab lives in the URL, so reloads and shared links land on the same tab.
-const TABS = ["services", "domains", "deployments", "source", "logs", "env"] as const;
+const TABS = ["services", "domains", "deployments", "image", "source", "logs", "env"] as const;
+const hasImages = computed(() => Object.keys(app.value?.images ?? {}).length > 0);
 const tab = computed({
   get: () => (TABS.includes(route.query.tab as never) ? String(route.query.tab) : "services"),
   set: (t: string) => void router.replace({ query: { ...route.query, tab: t === "services" ? undefined : t } }),
@@ -58,6 +59,7 @@ const servicesLabel = computed(() => {
           <Tab value="services">Services</Tab>
           <Tab value="domains">Domains</Tab>
           <Tab value="deployments">Deployments</Tab>
+          <Tab v-if="hasImages" value="image">Image</Tab>
           <Tab value="source">Source</Tab>
           <Tab value="logs">Logs</Tab>
           <Tab value="env">Secrets</Tab>
@@ -66,6 +68,7 @@ const servicesLabel = computed(() => {
           <TabPanel value="services"><AppServicesTab :app="app" /></TabPanel>
           <TabPanel value="domains"><AppDomainsTab :app="app" /></TabPanel>
           <TabPanel value="deployments"><AppDeploymentsTab :app="app" /></TabPanel>
+          <TabPanel v-if="hasImages" value="image"><AppImageTab :app="app" /></TabPanel>
           <TabPanel value="source"><AppSourceTab :app="app" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab :app="app" /></TabPanel>
           <TabPanel value="env"><AppEnvTab :app="app" /></TabPanel>

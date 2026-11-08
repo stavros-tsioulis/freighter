@@ -129,6 +129,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
             <Fact label="Load (1 min)">{{ s.host.load1.toFixed(2) }}</Fact>
             <Fact label="Memory used" :title="`${memUsed} of ${formatBytes(s.host.memTotal)}`">{{ memUsed }}<span class="text-muted-color font-normal"> of {{ formatBytes(s.host.memTotal) }}</span></Fact>
             <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
+            <Fact label="Container images" :title="s.host.containers?.available ? `Podman ${s.host.containers.version ?? ''}` : 'Install with --with-containers to deploy images here'">{{ !s.host.containers ? "Agent too old" : s.host.containers.available ? `Podman ${s.host.containers.version ?? ""}`.trim() : "Podman not installed" }}</Fact>
           </template>
           <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
           <Fact label="Added">{{ date(s.createdAt) }}</Fact>

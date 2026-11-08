@@ -46,6 +46,8 @@ secrets:
 
 ## Deploy
 
+In the dashboard, **Apps → Deploy an image** takes an app name, one or more image services (image, ports, volumes, limits, health check, environment, secret names) and, with several servers, the server to run on. It shows the equivalent `app.yaml`, then pulls the image and follows the deployment's log. It warns if the server has no Podman.
+
 With the [CLI](/reference/cli#push), against your control server:
 
 ```sh
@@ -64,7 +66,7 @@ Tags move. When a release is built, Freighter pulls the image, records its diges
 
 ### Redeploy a tag
 
-Pushed a new `:latest` or fixed `:1.4`? Pull it again and release the result:
+Pushed a new `:latest` or fixed `:1.4`? Pull it again and release the result. In the dashboard, open the app's **Image** tab and choose **Pull again and redeploy**; **Change image** on a service runs a different image (usually a new tag) and keeps the rest of `app.yaml`. From the CLI:
 
 ```sh
 freighter redeploy shop
@@ -74,7 +76,7 @@ It reuses the app's current `app.yaml`, so only the image changes. If the new im
 
 ## Private registries
 
-Public images need nothing. For a private registry, save a login (admin token). It's stored encrypted, sent to the server only for the pull, and never shown again:
+Public images need nothing. For a private registry, save a login (admin token), in the dashboard under **Registry logins** or with the CLI. It's stored encrypted, sent to the server only for the pull, and never shown again:
 
 ```sh
 echo "$GHCR_TOKEN" | freighter registry add ghcr.io --username acme --password-stdin
@@ -107,4 +109,5 @@ Over the API, `POST /apps/:app/image-deployments` takes `{"manifest": "<app.yaml
 - Podman only; there is no Docker support. Images must be pullable by Podman (`linux/amd64` or `linux/arm64`, matching the server).
 - One container per service and one instance per service, like other services.
 - Containers are rootless and use user networking, so they can't bind ports below 1024 or reach services bound to the host's loopback by `127.0.0.1`. Use the host's address, or run the dependency as another Freighter service.
-- The dashboard's settings form doesn't cover images yet. Use `app.yaml`, the CLI or the API.
+- Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy an image** or `freighter push`.
+- The dashboard's **Deploy an image** needs every service to be an image. To mix in command services, upload an archive.
