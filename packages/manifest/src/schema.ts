@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { findReferences, isEnvAttr } from "./reference.ts";
 
 /** Lowercase identifier: segments of [a-z0-9] joined by single hyphens, starting with a letter. */
 export const IDENT_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -79,6 +80,18 @@ function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
   for (const s of m.secrets) {
     if (s in m.environment) {
       ctx.addIssue({ code: "custom", path: ["secrets"], message: `${s} is both an environment value and a secret` });
+    }
+  }
+  // Connections to this app's own services can be checked here; other apps' are checked when the app is deployed.
+  for (const [key, value] of Object.entries(m.environment)) {
+    for (const ref of findReferences(value)) {
+      if (ref.app !== undefined && ref.app !== m.name) continue;
+      const path = ["environment", key];
+      if (!(ref.service in m.services)) {
+        ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });
+      } else if (isEnvAttr(ref.attr) && !(ref.attr in m.environment)) {
+        ctx.addIssue({ code: "custom", path, message: `${ref.text}: ${ref.attr} is not set in environment (secrets can't be referenced)` });
+      }
     }
   }
 }

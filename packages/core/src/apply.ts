@@ -1,12 +1,14 @@
 import { readFile, readdir } from "node:fs/promises";
 import { ensureChallengeToken, renderHostnameMap, renderHttpsMap, renderBackends } from "@freighter/haproxy";
-import { parseManifest, routedServices, type Domain, type Manifest } from "@freighter/manifest";
+import { parseManifest, routedServices, type Connections, type Domain, type Manifest } from "@freighter/manifest";
 import { renderUnit, unitName } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { assertHostnamesFree, readDomains } from "./domains.ts";
 import { readContainerPorts, readImages } from "./image.ts";
 import { allocatePort } from "./ports.ts";
+import { readConnections } from "./connections.ts";
+import { resolveEnvironment } from "./references.ts";
 import { activate, releaseDir } from "./releases.ts";
 import { allStates, readState, routesFrom, writeState, type AppState, type RoutedService } from "./state.ts";
 import { defaultTargets, describeFailures, verifyRelease, type Target, type VerifyFailure } from "./verify.ts";
@@ -82,7 +84,22 @@ export async function liveTargets(d: Deps, app: string, manifest: Manifest): Pro
   return targets;
 }
 
-function render(d: Deps, app: string, manifest: Manifest, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
+/** The app's environment with its connections (`@api.url`, ...) filled in, for the ports and domains in force. */
+export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: readonly Domain[], targets: Record<string, Target>, conn: Connections = { peers: {} }): Record<string, string> {
+  return resolveEnvironment(
+    {
+      name: manifest.name,
+      server: conn.server,
+      services: Object.keys(manifest.services),
+      domains: [...domains],
+      ports: Object.fromEntries(Object.entries(targets).map(([s, t]) => [s, t.port])),
+      environment: manifest.environment,
+    },
+    conn.peers,
+  );
+}
+
+function render(d: Deps, app: string, manifest: Manifest, environment: Record<string, string>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
   return renderUnit({
     containerPort: containerPorts[service],
     image: images[service],
@@ -95,19 +112,20 @@ function render(d: Deps, app: string, manifest: Manifest, service: string, id: s
     instance: unit.routed ? id : undefined,
     port,
     loopback: unit.routed,
-    environment: manifest.environment,
+    environment,
   });
 }
 
 /** Put the previous release's in-place services back and drop units that only the failed release introduced. */
-async function restoreInPlace(d: Deps, app: string, previous: string, domains: readonly Domain[]): Promise<void> {
+async function restoreInPlace(d: Deps, app: string, previous: string, domains: readonly Domain[], conn: Connections): Promise<void> {
   const manifest = await loadReleaseManifest(d, app, previous);
   const images = await readImages(d, app, previous);
   const containerPorts = await readContainerPorts(d, app, previous);
   const state = await readState(d, app);
   const keep = new Set(Object.values(state.routed).map((r) => r.unit));
+  const environment = resolveAppEnvironment(d, manifest, domains, await liveTargets(d, app, manifest), conn);
   for (const p of plannedUnits(app, manifest, previous, domains).filter((p) => !p.routed)) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, previous, p, images, containerPorts));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, previous, p, images, containerPorts));
     await d.systemd.enable(p.unit);
     await d.systemd.restart(p.unit);
     keep.add(p.unit);
@@ -127,7 +145,7 @@ export async function goLive(
   d: Deps,
   app: string,
   id: string,
-  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[]; log?: DeployLog },
+  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[]; log?: DeployLog; /** The apps and server around this one, for resolving connections in the environment. */ connections?: Connections },
 ): Promise<GoLiveResult> {
   const log = opts.log ?? noLog;
   const manifest = await loadReleaseManifest(d, app, id);
@@ -151,6 +169,10 @@ export async function goLive(
     targets[p.service] = { unit: p.unit, port: p.routed ? await allocatePort(d, reserved) : manifest.services[p.service]!.port };
   }
 
+  // Resolved before anything is touched: a connection that can't be resolved fails the deploy here.
+  const conn = opts.connections ?? (await readConnections(d, app));
+  const environment = resolveAppEnvironment(d, manifest, domains, targets, conn);
+
   const created: string[] = [];
   const failWith = async (failures: VerifyFailure[]): Promise<GoLiveResult> => {
     await log(`==> the new release did not come up; stopping its instances and keeping ${opts.previous ?? "nothing"} running`);
@@ -159,13 +181,13 @@ export async function goLive(
       await d.systemd.disable(unit);
       await d.systemd.removeUnit(unit);
     }
-    if (opts.previous) await restoreInPlace(d, app, opts.previous, opts.previousDomains ?? domains);
+    if (opts.previous) await restoreInPlace(d, app, opts.previous, opts.previousDomains ?? domains, conn);
     else for (const p of plan.filter((x) => !x.routed)) await d.systemd.stop(p.unit);
     return { ok: false, manifest, failures };
   };
 
   for (const p of plan) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, id, p, images, containerPorts, targets[p.service]!.port));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, id, p, images, containerPorts, targets[p.service]!.port));
     await d.systemd.enable(p.unit);
   }
   for (const p of plan) {

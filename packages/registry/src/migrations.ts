@@ -247,4 +247,12 @@ export const migrations: string[] = [
   );
   ALTER TABLE apps ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
   `,
+  `
+  -- Where each project's services sit on its canvas. scope is a project id, or "none" for apps without a project.
+  CREATE TABLE canvas_layouts (
+    scope TEXT PRIMARY KEY,
+    positions TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

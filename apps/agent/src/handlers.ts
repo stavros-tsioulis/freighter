@@ -31,6 +31,7 @@ import {
   openDeployLog,
   controlApp,
   deploy,
+  writeConnections,
   listApps,
   listEnvNames,
   readDomains,
@@ -94,7 +95,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install"],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "connections"],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -143,6 +144,10 @@ export function createHandlers(d: Deps): Handlers {
           throw e;
         }),
       );
+    },
+    async "connections.set"({ app, server, peers }) {
+      await writeConnections(d, app, { server, peers });
+      return {};
     },
     async "challenge.get"() {
       return { token: await challengeToken(d) };

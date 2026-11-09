@@ -1,0 +1,24 @@
+import { z } from "zod";
+import { domainSchema, IDENT_RE } from "./schema.ts";
+
+/** What a connection can read about an app. Ports are the ones in force for the release being resolved. */
+export const appFactsSchema = z.object({
+  name: z.string().regex(IDENT_RE),
+  /** The server it runs on; `internal` only works between apps on the same one. */
+  server: z.string().optional(),
+  services: z.array(z.string().regex(IDENT_RE)),
+  domains: z.array(domainSchema),
+  ports: z.record(z.string(), z.number().int().positive().optional()),
+  /** The plain `environment:` values as written (they may contain references themselves). */
+  environment: z.record(z.string(), z.string()),
+});
+export type AppFacts = z.infer<typeof appFactsSchema>;
+
+/** What a deploy knows about the apps around it; the control plane fills this in from the app's project. */
+export const connectionsSchema = z.object({
+  /** The server this app runs on. */
+  server: z.string().optional(),
+  /** The other apps in the same project, which environment values may connect to (`@app/service.url`). */
+  peers: z.record(z.string().regex(IDENT_RE), appFactsSchema).default({}),
+});
+export type Connections = z.infer<typeof connectionsSchema>;

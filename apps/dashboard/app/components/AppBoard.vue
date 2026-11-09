@@ -5,7 +5,8 @@ import { shortRelease, timeAgo } from "~/utils/format";
 
 /** The table of apps: status band, services, address, release. Used on the overview and on the apps page. */
 defineProps<{ apps: AppRow[] }>();
-const multi = computed(() => (useServers().data.value?.length ?? 0) > 1);
+const { data: servers } = useServers();
+const multi = computed(() => (servers.value?.length ?? 0) > 1);
 const tone = (a: AppRow) => (troubled(a) ? "bad" : a.status === "deployed" ? "ok" : "idle");
 const hosts = (a: AppRow) => [...new Set(a.services.flatMap((s) => s.hostnames))];
 </script>

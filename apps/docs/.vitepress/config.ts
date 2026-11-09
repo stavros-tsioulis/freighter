@@ -47,6 +47,7 @@ export default defineConfig({
           { text: "Build in CI", link: "/deploy/ci" },
           { text: "Domains and HTTPS", link: "/deploy/domains" },
           { text: "Environment and secrets", link: "/deploy/secrets" },
+          { text: "Connections", link: "/deploy/connections" },
           { text: "Health checks and rollbacks", link: "/deploy/rollbacks" },
         ],
       },

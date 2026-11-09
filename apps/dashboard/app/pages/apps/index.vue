@@ -89,9 +89,12 @@ async function confirmRemove() {
             </h2>
             <p v-if="g.project.description" class="text-sm text-muted-color mt-0.5">{{ g.project.description }}</p>
           </div>
-          <div v-if="can('admin')" class="flex gap-1">
+          <div class="flex items-center gap-1">
+            <NuxtLink :to="`/projects/${g.project.id}`" class="inline-flex"><Button label="Canvas" icon="pi pi-share-alt" text size="small" severity="secondary" tabindex="-1" /></NuxtLink>
+            <template v-if="can('admin')">
             <Button icon="pi pi-pencil" text rounded size="small" severity="secondary" :aria-label="`Edit ${g.project.name}`" title="Rename or describe" @click="openEdit(g.project)" />
             <Button icon="pi pi-trash" text rounded size="small" severity="secondary" :aria-label="`Delete ${g.project.name}`" title="Delete the project (its apps are kept)" @click="removing = g.project" />
+            </template>
           </div>
         </header>
         <AppBoard v-if="g.apps.length" :apps="g.apps" />
@@ -101,12 +104,14 @@ async function confirmRemove() {
       </section>
 
       <section v-if="groups.loose.length" :aria-label="hasProjects ? 'Apps without a project' : 'Apps'" class="flex flex-col gap-3">
-        <header v-if="hasProjects">
-          <h2 class="font-display font-semibold text-[1.5rem] leading-tight flex items-center gap-2.5">
+        <header class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+          <h2 v-if="hasProjects" class="font-display font-semibold text-[1.5rem] leading-tight flex items-center gap-2.5">
             <i class="pi pi-inbox text-[1.1rem] text-muted-color" aria-hidden="true" />
             No project
             <span class="text-sm font-normal text-muted-color">{{ groups.loose.length }} {{ groups.loose.length === 1 ? "app" : "apps" }}</span>
           </h2>
+          <span v-else />
+          <NuxtLink to="/projects/none" class="inline-flex"><Button label="Canvas" icon="pi pi-share-alt" text size="small" severity="secondary" tabindex="-1" /></NuxtLink>
         </header>
         <AppBoard :apps="groups.loose" />
       </section>

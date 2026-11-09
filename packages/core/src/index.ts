@@ -26,3 +26,5 @@ export * from "./upgrade.ts";
 export * from "./delete.ts";
 export * from "./deploylog.ts";
 export * from "./image.ts";
+export * from "./references.ts";
+export * from "./connections.ts";

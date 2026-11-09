@@ -46,6 +46,7 @@ export function fakeAgent() {
     "git.inspect": () => ({ sha: "d".repeat(40), commit: { sha: "d".repeat(40), subject: "init", author: "Ada" }, hasManifest: true, valid: true, appName: "shop", error: null, buildCommands: [] }),
     "domains.get": () => ({ domains: [{ hostname: "shop.example.com", service: "web", tls: "auto" }] }),
     "domains.set": (a: { domains: unknown[] }) => ({ domains: a.domains, deploy: { app: "shop", releaseId: "r8", previous: "r7", units: [], removed: [], pruned: [], hostnames: [], warnings: [], verified: true, historyAt: nextHistoryAt() } }),
+    "connections.set": () => ({}),
     "git.check": () => ({ sha: "a".repeat(40) }),
     "git.deploy": () => ({
       skipped: false,

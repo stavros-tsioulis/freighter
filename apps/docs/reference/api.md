@@ -42,6 +42,8 @@ A project only groups apps; it has no effect on how they run. An app is in at mo
 | `POST /projects` | `{"name": "Storefront", "description": "…"}`; names are unique, ignoring case (`409` otherwise) | admin |
 | `PATCH /projects/:id` | rename or re-describe | admin |
 | `DELETE /projects/:id` | delete the project; its apps are kept and become ungrouped | admin |
+| `GET /projects/:id/graph` | the canvas: apps with their services, the `edges` (connections) between services, each with `broken` (why it can't resolve, or `null`), and saved node `layout`. Use `none` as the id for apps without a project | viewer |
+| `PUT /projects/:id/layout` | `{"positions": {"app:web": {"x": 0, "y": 0}}}`: where the apps sit on the canvas | deployer |
 | `PUT /apps/:app/project` | `{"projectId": "prj_…"}` to move the app into a project, `{"projectId": null}` to take it out | deployer |
 
 ## Deployments

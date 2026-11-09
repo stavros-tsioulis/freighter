@@ -30,6 +30,7 @@ import {
 import { z, ZodError } from "zod";
 import { SESSION_COOKIE, assertCsrfHeader, authenticate, clientIp, createFailureLimiter } from "./auth.ts";
 import { buildSeries } from "./metrics.ts";
+import { buildGraph } from "./graph.ts";
 import type { ApiContext, Principal } from "./context.ts";
 import { ApiError, toHttpError } from "./errors.ts";
 import { createJobs, type Jobs } from "./jobs.ts";
@@ -681,6 +682,21 @@ export function createApi(ctx: ApiContext): Api {
     const cur = projectParam(event);
     ctx.registry.projects.remove(cur.id);
     audit(who, "project.delete", undefined, { project: cur.name, ungrouped: cur.appCount });
+    return { ok: true };
+  }));
+
+  // The canvas: a project's services, the connections between them and where they sit. "none" is the apps without a project.
+  const graphScope = (event: H3Event) => {
+    const id = getRouterParam(event, "id") ?? "";
+    return id === "none" ? null : projectParam(event).id;
+  };
+  router.get("/v1/projects/:id/graph", route("viewer", (event) => buildGraph(ctx, graphScope(event))));
+  const position = z.object({ x: z.number().finite().min(-1e6).max(1e6), y: z.number().finite().min(-1e6).max(1e6) });
+  router.put("/v1/projects/:id/layout", route("deployer", async (event, who) => {
+    const scope = graphScope(event);
+    const { positions } = await body(event, z.object({ positions: z.record(z.string().max(200), position).refine((p) => Object.keys(p).length <= 2000, "too many nodes") }));
+    ctx.registry.layouts.set(scope ?? "none", positions);
+    audit(who, "project.layout", undefined, { project: scope ? ctx.registry.projects.get(scope)?.name : null, nodes: Object.keys(positions).length });
     return { ok: true };
   }));
 

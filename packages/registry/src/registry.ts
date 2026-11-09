@@ -258,6 +258,11 @@ export interface Registry {
     /** Delete the project; its apps stay and become ungrouped. */
     remove(id: string): boolean;
   };
+  /** Node positions on a project's canvas, keyed by node id. `scope` is a project id, or "none". */
+  layouts: {
+    get(scope: string): Record<string, { x: number; y: number }>;
+    set(scope: string, positions: Record<string, { x: number; y: number }>): void;
+  };
   apps: {
     /** Put an app in a project (null: ungrouped). False if the app or the project is unknown. */
     setProject(name: string, projectId: string | null): boolean;
@@ -535,7 +540,27 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         run("UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?", patch.name ?? (cur.name as string), patch.description ?? (cur.description as string), now(), id);
         return true;
       },
-      remove: (id) => Number(run("DELETE FROM projects WHERE id = ?", id).changes) > 0, // apps.project_id is set to NULL
+      remove: (id) => {
+        run("DELETE FROM canvas_layouts WHERE scope = ?", id);
+        return Number(run("DELETE FROM projects WHERE id = ?", id).changes) > 0; // apps.project_id is set to NULL
+      },
+    },
+
+    layouts: {
+      get(scope) {
+        const r = one("SELECT positions FROM canvas_layouts WHERE scope = ?", scope);
+        try {
+          return r ? (JSON.parse(r.positions as string) as Record<string, { x: number; y: number }>) : {};
+        } catch {
+          return {};
+        }
+      },
+      set(scope, positions) {
+        run(
+          "INSERT INTO canvas_layouts (scope, positions, updated_at) VALUES (?, ?, ?) ON CONFLICT(scope) DO UPDATE SET positions = excluded.positions, updated_at = excluded.updated_at",
+          scope, JSON.stringify(positions), now(),
+        );
+      },
     },
 
     apps: {

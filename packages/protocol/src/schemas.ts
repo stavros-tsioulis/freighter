@@ -1,4 +1,4 @@
-import { HOSTNAME_RE, IDENT_RE } from "@freighter/manifest";
+import { HOSTNAME_RE, IDENT_RE, connectionsSchema } from "@freighter/manifest";
 import { z } from "zod";
 
 const app = z.string().regex(IDENT_RE);
@@ -163,6 +163,11 @@ export const ops = {
       /** How it took effect (older agents don't say): `routing` means HAProxy was updated and nothing was redeployed. */
       mode: z.enum(["unchanged", "saved", "routing", "deploy"]).optional(),
     }),
+  },
+  /** Tell the agent what the app may connect to (`@other/api.url`): the next deploy, rollback or domain change resolves against it. Agents with the "connections" capability only. */
+  "connections.set": {
+    args: z.object({ app }).extend(connectionsSchema.shape),
+    result: z.object({}),
   },
   /** The string this server's HAProxy serves at /.well-known/freighter-challenge: proof, for domain checks, that a hostname reaches this server. */
   "challenge.get": { args: z.object({}), result: z.object({ token: z.string() }) },

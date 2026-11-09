@@ -3,3 +3,5 @@ export * from "./parse.ts";
 export * from "./duration.ts";
 export * from "./repo.ts";
 export * from "./render.ts";
+export * from "./reference.ts";
+export * from "./connections.ts";

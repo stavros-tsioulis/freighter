@@ -8,6 +8,12 @@ The landing page: how many apps there are and whether anything needs attention, 
 
 Each row shows the app's status, its services with a dot each (green running, amber starting or stopping, red failed), its first domain, the current release and when it last changed. Apps that need attention (a failed service, or a release missing on disk) are listed first, and the sentence under the title says how many there are. With more than one server, filter the list by server.
 
+## Project canvas
+
+Each project group has a **Canvas** button (and *No project* has one too). The canvas draws every app of the project as a box holding its services, and an arrow from a service to each service it [connects to](/deploy/connections). Click a service or an app to open its panel: state, address, release, its connections, start/stop/restart, and tabs for logs, domains, variables and deployments. The open item is in the URL (`?node=`), so a link opens the same view; press <kbd>Esc</kbd> to close the panel.
+
+Drag an app's box to arrange the canvas. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no domain or port, is on another server for `.internal`, or isn't in the project); the panel says why.
+
 ## Apps and projects
 
 The **Apps** page lists every app, grouped into **projects**. A project is only a place to organize apps in, such as a web app, its API and its workers: it changes nothing about how they are deployed or run. An app is in at most one project, and apps in none are listed under *No project*. Within a group, apps that need attention come first.

@@ -1,6 +1,7 @@
 import { rm } from "node:fs/promises";
 import { imageHost, imageServices, parseManifest } from "@freighter/manifest";
 import { AgentError } from "@freighter/protocol";
+import { pushConnections } from "./connections.ts";
 import type { ApiContext } from "./context.ts";
 import { syncApp } from "./sync.ts";
 
@@ -85,6 +86,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           try {
             // A remote host cannot read our spool: send the file over the connection first.
             if (remote) artifact = (await agent.putArtifact(id, artifactPath)).path;
+            await pushConnections(ctx, server, app);
             const r = await agent.call("app.deploy", { artifact, manifestText });
             ctx.registry.deployments.update(id, {
               status: "success",
@@ -109,6 +111,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
         try {
+          await pushConnections(ctx, server, app);
           const caps = (await agent.call("ping", {})).capabilities ?? [];
           if (!caps.includes("images")) throw new Error("this server's agent is too old to run images; upgrade it from the Servers page");
           // Send only the logins for the registries these images live on.
@@ -142,6 +145,7 @@ export function createJobs(ctx: ApiContext): Jobs {
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
+          await pushConnections(ctx, server, app);
           const r = await ctx.agents.forServer(server).call("app.rollback", { app, release });
           ctx.registry.deployments.update(id, {
             status: "success",
@@ -160,6 +164,7 @@ export function createJobs(ctx: ApiContext): Jobs {
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
+          await pushConnections(ctx, server, app);
           const r = await ctx.agents.forServer(server).call("domains.set", { app, domains, logId: id }, { timeoutMs: 5 * 60_000 });
           const note = r.deploy
             ? []
@@ -196,6 +201,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         const agent = ctx.agents.forServer(job.server);
         let outcome = "";
         try {
+          await pushConnections(ctx, job.server, job.app);
           const sshKey = job.sshKeyId ? ctx.registry.sshKeys.privateKey(job.sshKeyId) : null;
           if (job.sshKeyId) {
             if (!sshKey) throw new Error("the SSH key for this repository no longer exists");

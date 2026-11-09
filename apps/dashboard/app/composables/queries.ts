@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, ProjectGraph, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -73,6 +73,23 @@ export function useMoveApp() {
       void qc.invalidateQueries({ queryKey: ["app"] });
     },
     onError: (e) => notify.fail("Could not move the app", e),
+  });
+}
+
+/** A project's canvas ("none": the apps without a project). */
+export const useProjectGraph = (id: MaybeRef<string>) =>
+  useQuery({ queryKey: ["graph", id], queryFn: () => api<ProjectGraph>(`/projects/${toValue(id)}/graph`), refetchInterval: 10_000, retry: false });
+
+/** Save where the apps sit on a project's canvas. The cached graph is updated in place so the canvas doesn't jump. */
+export function useSaveLayout(id: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (positions: ProjectGraph["layout"]) => api(`/projects/${toValue(id)}/layout`, { method: "PUT", body: { positions } }),
+    onMutate: (positions) => {
+      qc.setQueryData<ProjectGraph>(["graph", toValue(id)], (g) => (g ? { ...g, layout: positions } : g));
+    },
+    onError: (e) => notify.fail("Could not save the layout", e),
   });
 }
 

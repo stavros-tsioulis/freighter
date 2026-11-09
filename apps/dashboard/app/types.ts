@@ -249,3 +249,37 @@ export interface Project {
   updatedAt: string;
   appCount: number;
 }
+
+/** One project's canvas: its apps with their services, the connections between services, and saved node positions. */
+export interface GraphService {
+  name: string;
+  activeState: string;
+  subState: string;
+  port: number | null;
+  hostnames: string[];
+  restarts: number;
+  memoryBytes: number | null;
+  image: string | null;
+  command: string | null;
+}
+export interface GraphApp {
+  name: string;
+  server: string;
+  status: AppRow["status"];
+  currentRelease: string | null;
+  services: GraphService[];
+}
+export interface GraphEdge {
+  from: { app: string; service: string };
+  to: { app: string; service: string };
+  attr: string;
+  key: string;
+  /** Why this reference can't be resolved right now. */
+  broken: string | null;
+}
+export interface ProjectGraph {
+  project: string | null;
+  apps: GraphApp[];
+  edges: GraphEdge[];
+  layout: Record<string, { x: number; y: number }>;
+}
