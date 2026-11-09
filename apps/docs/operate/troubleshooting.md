@@ -6,7 +6,7 @@ Start with the deployment itself: the app's **Deployments** tab (open the row), 
 
 | Symptom | Likely cause and fix |
 | --- | --- |
-| `missing secrets for shop: X` | a name under `secrets:` has no value. Set it on the Secrets tab or with `freighter env set`. |
+| `missing secrets for shop: X` | a name under `secrets:` has no value. Set it on the Variables tab or with `freighter env set`. |
 | health check timed out | the app didn't answer `2xx` on its health path in time. Check it listens on `$PORT` (for routed services) and on `127.0.0.1`, and raise `healthcheck.timeout` if startup is slow. |
 | service exited, or restarted during the settle window | read the journal lines in the error. A missing dependency, a bad `command`, or writing outside `shared/` (the filesystem is read-only) are the usual causes. |
 | `another deploy or rollback is in progress` (CLI) or `a deployment is in progress` (409 from the API) | another deploy holds the server's lock. Wait for it, since deploys on one server run one at a time. |

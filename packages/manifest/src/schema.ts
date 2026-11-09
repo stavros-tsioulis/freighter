@@ -45,6 +45,8 @@ export const serviceSchema = z
     })
     .optional(),
   restart: z.enum(["always", "on-failure", "no"]).default("on-failure"),
+  /** For routed services: how long HAProxy waits on the service (uploads, streaming, slow responses). */
+  proxy: z.object({ timeout: duration }).optional(),
   })
   .superRefine((s, ctx) => {
     if ((s.command === undefined) === (s.image === undefined)) {
@@ -85,7 +87,7 @@ function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
   // Connections to this app's own services can be checked here; other apps' are checked when the app is deployed.
   for (const [key, value] of Object.entries(m.environment)) {
     for (const ref of findReferences(value)) {
-      if (ref.app !== undefined && ref.app !== m.name) continue;
+      if (ref.storage !== undefined || (ref.app !== undefined && ref.app !== m.name)) continue;
       const path = ["environment", key];
       if (!(ref.service in m.services)) {
         ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });

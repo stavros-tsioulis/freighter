@@ -9,8 +9,9 @@ const groups = computed(() => [
   {
     label: "",
     items: [
-      { to: "/", label: "Overview", icon: "pi pi-th-large" },
-      { to: "/apps", label: "Apps", icon: "pi pi-box" },
+      { to: "/", label: "Overview", icon: "pi pi-home" },
+      { to: "/projects", label: "Projects", icon: "pi pi-th-large", also: ["/apps"] },
+      { to: "/storage", label: "Storage", icon: "pi pi-database" },
       { to: "/servers", label: "Servers", icon: "pi pi-server" },
       { to: "/certs", label: "Certificates", icon: "pi pi-shield" },
     ],
@@ -33,7 +34,7 @@ const groups = computed(() => [
       ]
     : []),
 ]);
-const active = (to: string) => (to === "/" ? route.path === "/" : route.path === to || route.path.startsWith(`${to}/`));
+const active = (to: string, also: string[] = []) => (to === "/" ? route.path === "/" : [to, ...also].some((p) => route.path === p || route.path.startsWith(`${p}/`)));
 const roleLabel = computed(() => ({ viewer: "Viewer", deployer: "Deployer", admin: "Admin" })[me.value?.role ?? "viewer"]);
 </script>
 
@@ -51,7 +52,7 @@ const roleLabel = computed(() => ({ viewer: "Viewer", deployer: "Deployer", admi
           :key="l.to"
           :to="l.to"
           class="nav-link"
-          :aria-current="active(l.to) ? 'page' : undefined"
+          :aria-current="active(l.to, l.also) ? 'page' : undefined"
           @click="emit('navigate')"
         >
           <i :class="l.icon" aria-hidden="true" />{{ l.label }}

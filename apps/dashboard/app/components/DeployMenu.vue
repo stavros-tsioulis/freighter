@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Rocket } from "lucide-vue-next";
 /**
  * The one "Deploy" button: asks what to deploy, then shows that kind's form. Each form has a Back button that
  * returns here. What is offered follows the signed-in role (Git links are admin-only, the others need a deployer).
@@ -42,7 +43,9 @@ const showArchive = shown("archive");
 </script>
 
 <template>
-  <Button v-if="can('deployer')" label="Deploy" icon="pi pi-plus" :size="props.size" @click="open" />
+  <Button v-if="can('deployer')" label="Deploy" :size="props.size" @click="open">
+    <template #icon><Rocket :size="props.size === 'small' ? 15 : 17" :stroke-width="2" aria-hidden="true" /></template>
+  </Button>
 
   <Dialog v-model:visible="choosing" modal header="What do you want to deploy?" :style="{ width: '34rem' }">
     <div class="flex flex-col gap-2" role="group" aria-label="Kinds of deployment">

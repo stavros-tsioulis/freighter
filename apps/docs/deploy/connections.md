@@ -28,9 +28,17 @@ The syntax is `@service.attribute`, or `@app/service.attribute` for another app.
 
 Values are filled in when the app goes live (a deploy, rollback or domain change), using the ports and domains in force then. If a connection can't be resolved, the deploy fails before anything is touched and says which one and why: no domain yet, no port, no such service. Secrets can't be referenced, because they are write-only.
 
+## When something changes
+
+If a domain, port, variable or key that an app connects to changes, Freighter re-resolves the app's connections and redeploys its current release when a value it reads is now different, with the usual health check and rollback. The deployment says why ("restarted because billing changed"). Nothing happens when the values are the same.
+
 ## Across apps
 
 `@app/service.attribute` works only between apps in the **same project**. `internal` also needs both apps on the same server; use `url` otherwise. The control plane tells each app's server about the other apps in its project before every deploy, so move an app into the project first.
+
+## S3 storages
+
+`@storage:name.attribute` reaches an [S3 storage](/deploy/storage): `url`, `domain`, `internal`, `region`, `accessKey` and `secretKey`. Storages are global, so they work from any project. The key pair is delivered through a root-only file instead of the unit.
 
 ## On the canvas
 

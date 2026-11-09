@@ -1,4 +1,4 @@
-import { connectionEdges, isEnvAttr, parseManifest, type Manifest } from "@freighter/manifest";
+import { connectionEdges, isEnvAttr, parseManifest, storageApp, storageEdges, type Manifest } from "@freighter/manifest";
 import type { ApiContext } from "./context.ts";
 
 export interface GraphService {
@@ -27,6 +27,21 @@ export interface GraphEdge {
   /** The environment entry that holds the reference. */
   key: string;
   /** Why the reference can't be resolved right now (a deploy would fail), if it can't. */
+  broken: string | null;
+}
+
+export interface GraphStorage {
+  name: string;
+  kind: "local" | "sftp" | "smb";
+  server: string;
+  hostnames: string[];
+  activeState: string;
+}
+export interface GraphStorageEdge {
+  from: { app: string; service: string };
+  storage: string;
+  attr: string;
+  key: string;
   broken: string | null;
 }
 
@@ -91,5 +106,27 @@ export function buildGraph(ctx: ApiContext, projectId: string | null) {
   };
 
   const edges: GraphEdge[] = [...manifests.values()].flatMap((m) => connectionEdges(m)).map((e) => ({ ...e, broken: problem(e) }));
-  return { project: projectId, apps, edges, layout: ctx.registry.layouts.get(projectId ?? "none") };
+
+  // Storages are global: show the ones this project's apps use, with an arrow from each service that does.
+  const storageRows = new Map(ctx.registry.storages.list().map((st) => [st.name, st]));
+  const storageLinks: GraphStorageEdge[] = [...manifests.values()].flatMap((m) => storageEdges(m)).map((e) => {
+    const st = storageRows.get(e.storage);
+    let broken: string | null = null;
+    if (!st) broken = `there is no storage "${e.storage}"`;
+    else {
+      const hostnames = ctx.registry.services.list(storageApp(st.name))[0]?.hostnames ?? [];
+      if (e.attr === "domain" && !hostnames.length) broken = `${st.name} has no domain yet`;
+      else if (e.attr === "internal" && st.server !== byName.get(e.from.app)?.server) broken = `${st.name} runs on another server; use .url`;
+      else if (e.attr === "url" && !hostnames.length && st.server !== byName.get(e.from.app)?.server) broken = `${st.name} has no domain and runs on another server`;
+    }
+    return { ...e, broken };
+  });
+  const used = new Set(storageLinks.map((e) => e.storage));
+  const storages: GraphStorage[] = [...used].flatMap((name) => {
+    const st = storageRows.get(name);
+    if (!st) return [];
+    const svc = ctx.registry.services.list(storageApp(name))[0];
+    return [{ name, kind: st.backend.kind, server: st.server, hostnames: svc?.hostnames ?? [], activeState: svc?.activeState ?? "inactive" }];
+  });
+  return { project: projectId, apps, edges, storages, storageEdges: storageLinks, layout: ctx.registry.layouts.get(projectId ?? "none") };
 }

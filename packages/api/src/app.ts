@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { IDENT_RE, domainSchema, imageHost, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { IDENT_RE, domainSchema, findReferences, referencedStorages, storageApp, storageBackendSchema, storageNameSchema, storageOfApp, storageSecretsSchema, type StorageBackend, type StorageSecrets, imageHost, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { AgentError, ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
-import { isRole, type GitLinkRow, type PendingDomainRow, type Role } from "@freighter/registry";
+import { isRole, type GitLinkRow, type PendingDomainRow, type Role, type StorageRow } from "@freighter/registry";
 import {
   createApp,
   createRouter,
@@ -31,6 +31,8 @@ import { z, ZodError } from "zod";
 import { SESSION_COOKIE, assertCsrfHeader, authenticate, clientIp, createFailureLimiter } from "./auth.ts";
 import { buildSeries } from "./metrics.ts";
 import { buildGraph } from "./graph.ts";
+import { buildConnections, ownFacts, pushConnections } from "./connections.ts";
+import { resolveEnvironmentEach } from "@freighter/core/references";
 import type { ApiContext, Principal } from "./context.ts";
 import { ApiError, toHttpError } from "./errors.ts";
 import { createJobs, type Jobs } from "./jobs.ts";
@@ -41,7 +43,7 @@ import { SettingsError } from "@freighter/core/fields";
 import { checkDomainDns, type ChallengeProbe, isLocalName, isPrivateOrLoopback, resolveAll, systemDns, type DnsResolver } from "./dns.ts";
 import { checkServer, reachableServers } from "./servers.ts";
 import { checkServerUpdates, controlVersion, startServerUpgrade, UpgradeRefused, upgradeView } from "./upgrade.ts";
-import { syncAll, type SyncResult } from "./sync.ts";
+import { syncAll, syncApp, type SyncResult } from "./sync.ts";
 
 const execFileP = promisify(execFile);
 
@@ -132,6 +134,13 @@ export function createApi(ctx: ApiContext): Api {
       }
     });
   const appParam = (event: H3Event) => appName.parse(getRouterParam(event, "app"));
+  /** An app a user manages: the apps that serve storages are managed through the storage instead. */
+  const userAppParam = (event: H3Event) => {
+    const name = appParam(event);
+    const storage = ctx.registry.apps.get(name)?.kind === "storage" ? storageOfApp(name) : null;
+    if (storage) throw new ApiError(409, "managed_by_storage", `"${name}" serves the storage "${storage}"; manage it under Storage`);
+    return name;
+  };
 
   /** Server named in `?server=` (only meaningful for apps that are not pinned yet). */
   const requestedServer = (event: H3Event) => {
@@ -157,6 +166,14 @@ export function createApi(ctx: ApiContext): Api {
   /** The server an app lives on: its pin if it has one, else the requested server, else the default. */
   const serverOf = (event: H3Event, name: string) => ctx.registry.apps.get(name)?.server ?? requestedServer(event) ?? defaultServer();
   const agentFor = (event: H3Event, name: string) => ctx.agents.forServer(serverOf(event, name));
+  /** The `environment:` of an app.yaml, or nothing if it can't be read. */
+  const parseEnvironment = (manifestText: string): Record<string, string> => {
+    try {
+      return parseManifest(manifestText, { legacy: true }).environment;
+    } catch {
+      return {};
+    }
+  };
   const origin = (event: H3Event) => {
     const u = getRequestURL(event, { xForwardedHost: ctx.trustProxy, xForwardedProto: ctx.trustProxy });
     return `${u.protocol}//${u.host}`;
@@ -254,10 +271,49 @@ export function createApi(ctx: ApiContext): Api {
     return { ...a, images: imagesOf(a.manifestText), imageDetails: imageDetailsOf(a.manifestText), registryLogins: ctx.registry.registryCredentials.appChoices(name), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
   }));
 
+  // Variables: app.yaml's `environment:` gives the initial values, anything added here is laid over it. Connections are resolved.
+  router.get("/v1/apps/:app/variables", route("viewer", async (event) => {
+    const name = appParam(event);
+    const row = ctx.registry.apps.get(name);
+    if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
+    const facts = await ownFacts(ctx, name);
+    if (!facts) return { variables: [] };
+    const { peers, storages } = await buildConnections(ctx, name, row.server);
+    const resolved = resolveEnvironmentEach(facts, peers, storages);
+    return {
+      variables: Object.entries(facts.environment)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, value]) => {
+          const r = resolved[key]!;
+          const source = key in facts.stored ? (key in facts.fromFile ? "override" : "added") : "app.yaml";
+          // credentials a connection resolves to are not shown
+          return { key, value, source, resolved: "value" in r && !r.secret ? r.value : null, secret: "value" in r && r.secret, error: "error" in r ? r.error : null, reference: findReferences(value).length > 0 };
+        }),
+    };
+  }));
+
+  const variableChange = async (event: H3Event, who: Principal, change: { set?: Record<string, string>; remove?: string[] }) => {
+    const name = userAppParam(event);
+    const server = serverOf(event, name);
+    const key = Object.keys(change.set ?? {})[0] ?? change.remove?.[0];
+    await pushConnections(ctx, server, name);
+    const r = await ctx.agents.forServer(server).call("variables.set", { app: name, ...change }, { timeoutMs: 5 * 60_000 });
+    audit(who, change.set ? "variable.set" : "variable.remove", name, { key }); // plain values, but not worth logging
+    await syncApp(ctx, server, name).catch(() => {});
+    void jobs.cascade({ app: name }).catch(() => {}); // apps that read this app's variables follow
+    return { ok: true, redeployed: r.deploy !== null };
+  };
+  router.put("/v1/apps/:app/variables/:key", route("admin", async (event, who) => {
+    const key = envKey.parse(getRouterParam(event, "key"));
+    const { value } = await body(event, z.object({ value: z.string().max(65_536) }));
+    return variableChange(event, who, { set: { [key]: value } });
+  }));
+  router.delete("/v1/apps/:app/variables/:key", route("admin", (event, who) => variableChange(event, who, { remove: [envKey.parse(getRouterParam(event, "key"))] })));
+
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
   // Typing the name is required of API clients too, so a stray DELETE can't do it.
   router.delete("/v1/apps/:app", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const { confirm, forget } = await body(event, z.object({ confirm: z.string(), forget: z.boolean().optional() }));
     const row = ctx.registry.apps.get(name);
     if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
@@ -429,7 +485,7 @@ export function createApi(ctx: ApiContext): Api {
 
   // ---- deploy / operate (deployer) ----
   router.post("/v1/apps/:app/deployments", route("deployer", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const server = serverOf(event, name);
     const wanted = requestedServer(event);
     if (wanted && wanted !== server) throw new ApiError(409, "pinned_to_other_server", `app "${name}" is pinned to server "${server}"`);
@@ -499,12 +555,12 @@ export function createApi(ctx: ApiContext): Api {
 
   router.post("/v1/apps/:app/image-deployments", route("deployer", async (event, who) => {
     const { manifest, logins } = await body(event, z.object({ manifest: z.string().min(1).max(262_144), logins: z.record(z.string(), z.string().min(1)).optional() }));
-    return queueImageDeploy(event, who, appParam(event), manifest, "manual", logins);
+    return queueImageDeploy(event, who, userAppParam(event), manifest, "manual", logins);
   }));
 
   // Pull the app's images again (a moved tag, a fixed image) and release the result, keeping the app's current app.yaml.
   router.post("/v1/apps/:app/redeploy", route("deployer", (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const text = ctx.registry.apps.get(name)?.manifestText;
     if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
     return queueImageDeploy(event, who, name, text, "manual");
@@ -512,7 +568,7 @@ export function createApi(ctx: ApiContext): Api {
 
   // Change the image (usually the tag) of some services and release it. Everything else in app.yaml stays as it was.
   router.post("/v1/apps/:app/images", route("deployer", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const { images } = await body(event, z.object({ images: z.record(z.string(), z.string().min(1)).refine((i) => Object.keys(i).length > 0, "name at least one service") }));
     const text = ctx.registry.apps.get(name)?.manifestText;
     if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
@@ -533,7 +589,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   router.post("/v1/apps/:app/rollback", route("deployer", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const { release } = await body(event, z.object({ release: optionalIdent }));
     const server = serverOf(event, name);
     const row = ctx.registry.deployments.create({ id: randomUUID(), app: name, server, action: "rollback", requestedBy: who.id });
@@ -560,7 +616,7 @@ export function createApi(ctx: ApiContext): Api {
 
   // ---- administration (admin) ----
   router.put("/v1/apps/:app/env/:key", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const key = envKey.parse(getRouterParam(event, "key"));
     const { value } = await body(event, z.object({ value: z.string() }));
     await agentFor(event, name).call("env.set", { app: name, key, value });
@@ -702,12 +758,141 @@ export function createApi(ctx: ApiContext): Api {
 
   // Move an app into a project (null: out of any project).
   router.put("/v1/apps/:app/project", route("deployer", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const { projectId } = await body(event, z.object({ projectId: z.string().nullable() }));
     if (!ctx.registry.apps.get(name)) throw new ApiError(404, "not_found", `unknown app "${name}"`);
     if (!ctx.registry.apps.setProject(name, projectId)) throw new ApiError(404, "not_found", "unknown project");
     audit(who, "app.project", name, { project: projectId ? ctx.registry.projects.get(projectId)?.name : null });
     return { projectId };
+  }));
+
+  // ---- S3 storage: an endpoint served from this server's disk or from a remote system, optionally on a domain ----
+  const storageView = (row: StorageRow) => {
+    const app = storageApp(row.name);
+    const a = ctx.registry.apps.get(app);
+    const svc = ctx.registry.services.list(app)[0];
+    return {
+      ...row,
+      app,
+      status: a?.status ?? "unknown",
+      activeState: svc?.activeState ?? "inactive",
+      hostnames: svc?.hostnames ?? [],
+      deployments: ctx.registry.deployments.list({ app, limit: 5 }),
+    };
+  };
+  const needStorage = (event: H3Event) => {
+    const name = storageNameSchema.safeParse(getRouterParam(event, "name"));
+    const row = name.success ? ctx.registry.storages.get(name.data) : undefined;
+    if (!row) throw new ApiError(404, "not_found", "unknown storage");
+    return row;
+  };
+  const storageBody = {
+    backend: storageBackendSchema,
+    secrets: storageSecretsSchema.optional(),
+  };
+  /** Refuse early what the agent would refuse after the deployment was queued. */
+  const checkBackend = (backend: StorageBackend, secrets: StorageSecrets | undefined) => {
+    if (backend.kind === "sftp") {
+      if (!backend.hostKey) throw new ApiError(400, "bad_request", "pin the server's SSH host key first: test the connection and confirm its fingerprint");
+      if (backend.auth === "key" && !secrets?.privateKey) throw new ApiError(400, "bad_request", "a private key is required for key authentication");
+    }
+    if ((backend.kind === "smb" || (backend.kind === "sftp" && backend.auth === "password")) && !secrets?.password) throw new ApiError(400, "bad_request", "a password is required");
+  };
+  const readyServer = async (server: string) => {
+    const target = ctx.registry.servers.get(server);
+    if (!target) throw new ApiError(404, "not_found", `unknown server "${server}"`);
+    if (target.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${server}" has not been enrolled yet`);
+    const caps = (await ctx.agents.forServer(server).call("ping", {}).catch((e: unknown) => {
+      throw new ApiError(502, "agent_unreachable", `server "${server}" did not answer: ${e instanceof Error ? e.message : String(e)}`);
+    })).capabilities ?? [];
+    if (!caps.includes("storage")) throw new ApiError(409, "storage_unavailable", `server "${server}" cannot serve storages: install rclone ${"1.65"} or newer (re-run the installer with FREIGHTER_WITH_STORAGE=1) and upgrade its agent`);
+  };
+  const queueStorage = (event: H3Event, who: Principal, name: string, server: string, what: string) => {
+    const id = randomUUID();
+    ctx.registry.deployments.create({ id, app: storageApp(name), server, action: "deploy", requestedBy: who.id, trigger: "manual" });
+    audit(who, `storage.${what}`, storageApp(name), { storage: name, deployment: id, server });
+    jobs.enqueueStorage({ id, name, server });
+    setResponseStatus(event, 202);
+    return id;
+  };
+  const newKeyPair = () => ({ accessKey: `FR${randomBytes(10).toString("hex").toUpperCase()}`, secretKey: randomBytes(30).toString("base64url") });
+
+  router.get("/v1/storages", route("viewer", () => ({ storages: ctx.registry.storages.list().map(storageView) })));
+  router.get("/v1/storages/:name", route("viewer", (event) => storageView(needStorage(event))));
+
+  // Try a backend before creating anything. An SFTP server's host key comes back to be confirmed (and sent with the real request).
+  router.post("/v1/storages/test", route("admin", async (event) => {
+    const b = await body(event, z.object({ server: z.string().optional(), ...storageBody }));
+    const server = b.server ?? defaultServer();
+    await readyServer(server);
+    return ctx.agents.forServer(server).call("storage.test", { backend: b.backend, secrets: b.secrets }, { timeoutMs: 60_000 });
+  }));
+
+  router.post("/v1/storages", route("admin", async (event, who) => {
+    const b = await body(event, z.object({ name: storageNameSchema, server: z.string().optional(), ...storageBody }));
+    if (ctx.registry.storages.get(b.name) || ctx.registry.apps.get(storageApp(b.name))) throw new ApiError(409, "conflict", `there is already a storage or an app named "${storageApp(b.name)}"`);
+    checkBackend(b.backend, b.secrets);
+    const server = b.server ?? defaultServer();
+    await readyServer(server);
+    const keys = newKeyPair();
+    ctx.registry.apps.ensure(storageApp(b.name), server, "storage");
+    const row = ctx.registry.storages.create({ name: b.name, server, backend: b.backend, port: 0, ...keys, remoteSecrets: b.secrets, createdBy: who.id });
+    const id = queueStorage(event, who, b.name, server, "create");
+    // The key pair is shown once, here; later it is only reachable by an app that connects to the storage.
+    return { id, status: "queued", storage: storageView(row), ...keys };
+  }));
+
+  // Change the backend or its credentials (what is left out stays), then redeploy the endpoint.
+  router.patch("/v1/storages/:name", route("admin", async (event, who) => {
+    const cur = needStorage(event);
+    const b = await body(event, z.object({ backend: storageBackendSchema.optional(), secrets: storageSecretsSchema.optional() }));
+    const backend = b.backend ?? cur.backend;
+    // Credentials carry over while the kind of backend stays; a different kind starts from what is sent.
+    const sameKind = !b.backend || b.backend.kind === cur.backend.kind;
+    const merged = sameKind ? { ...ctx.registry.storages.secrets(cur.name)!.remote, ...b.secrets } : { ...b.secrets };
+    checkBackend(backend, merged);
+    await readyServer(cur.server);
+    ctx.registry.storages.update(cur.name, { backend, remoteSecrets: merged });
+    return { id: queueStorage(event, who, cur.name, cur.server, "update"), status: "queued" };
+  }));
+
+  // Deploy the endpoint again with what is stored (after a failed create, or to pick up a newer rclone).
+  router.post("/v1/storages/:name/apply", route("admin", async (event, who) => {
+    const cur = needStorage(event);
+    await readyServer(cur.server);
+    return { id: queueStorage(event, who, cur.name, cur.server, "apply"), status: "queued" };
+  }));
+
+  // A new secret key (the access key stays). Shown once.
+  router.post("/v1/storages/:name/rotate-keys", route("admin", async (event, who) => {
+    const cur = needStorage(event);
+    await readyServer(cur.server);
+    const { secretKey } = newKeyPair();
+    ctx.registry.storages.update(cur.name, { secretKey });
+    return { id: queueStorage(event, who, cur.name, cur.server, "rotate-keys"), status: "queued", accessKey: cur.accessKey, secretKey };
+  }));
+
+  router.delete("/v1/storages/:name", route("admin", async (event, who) => {
+    const cur = needStorage(event);
+    const { confirm, forget } = await body(event, z.object({ confirm: z.string(), forget: z.boolean().optional() }));
+    if (confirm !== cur.name) throw new ApiError(400, "bad_request", `to delete ${cur.name}, send its name as "confirm"`);
+    const users = ctx.registry.apps.list().filter((a) => a.manifestText && referencedStorages(parseEnvironment(a.manifestText)).includes(cur.name)).map((a) => a.name);
+    if (users.length && !forget) throw new ApiError(409, "in_use", `${cur.name} is used by ${users.join(", ")}; remove those references first`);
+    const app = storageApp(cur.name);
+    if (ctx.registry.deployments.list({ app, limit: 20 }).some((x) => x.status === "queued" || x.status === "running")) throw new ApiError(409, "conflict", `${cur.name} has a deployment in progress; wait for it to finish`);
+    const row = ctx.registry.apps.get(app);
+    let removed = null as null | { units: string[]; hostnames: string[] };
+    if (row && row.status !== "missing") {
+      try {
+        removed = await ctx.agents.forServer(cur.server).call("app.delete", { app }, { timeoutMs: 5 * 60_000 });
+      } catch (e) {
+        if (!(e instanceof AgentError && e.code === "not_found")) throw e;
+      }
+    }
+    ctx.registry.apps.remove(app);
+    ctx.registry.storages.remove(cur.name);
+    audit(who, "storage.delete", app, { storage: cur.name, server: cur.server, hostnames: removed?.hostnames ?? [] });
+    return { ok: true, storage: cur.name, hostnames: removed?.hostnames ?? [] };
   }));
 
   // ---- container registries: logins used when pulling the images of image services ----
@@ -738,7 +923,7 @@ export function createApi(ctx: ApiContext): Api {
 
   // Which login an app pulls its images from `host` with (null: the registry's default, i.e. its only login).
   router.put("/v1/apps/:app/registry-logins/:host", route("deployer", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const host = registryHost.parse(getRouterParam(event, "host"));
     const { username } = await body(event, z.object({ username: z.string().min(1).max(255).nullable() }));
     if (!ctx.registry.registryCredentials.setAppChoice(name, host, username)) throw new ApiError(404, "not_found", `no login "${username}" for "${host}"`);
@@ -820,7 +1005,7 @@ export function createApi(ctx: ApiContext): Api {
   router.get("/v1/apps/:app/git", route("viewer", (event) => publicLink(event, needLink(appParam(event)))));
 
   router.put("/v1/apps/:app/git", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const b = await body(event, linkSchema);
     checkLink(b);
     const existing = ctx.registry.gitLinks.get(name);
@@ -847,7 +1032,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   router.patch("/v1/apps/:app/git", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const cur = needLink(name);
     const patch = await body(event, linkSchema.partial().omit({ server: true }));
     const merged = { ...cur, ...Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined)) } as GitLinkRow;
@@ -872,7 +1057,7 @@ export function createApi(ctx: ApiContext): Api {
   };
 
   router.post("/v1/apps/:app/git/rotate-secret", route("admin", (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const cur = needLink(name);
     const secret = newSecret();
     ctx.registry.gitLinks.upsert({ ...cur, webhookSecret: secret });
@@ -881,7 +1066,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   router.post("/v1/apps/:app/git/rotate-key", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const cur = needLink(name);
     refuseIfImportedKey(cur);
     const key = await agentFor(event, name).call("git.keygen", { app: name, rotate: true });
@@ -891,13 +1076,13 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   router.post("/v1/apps/:app/git/check", route("deployer", async (event) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const link = needLink(name);
     return agentFor(event, name).call("git.check", { app: name, repository: link.repository, branch: link.branch, auth: authFor(link.sshKeyId) });
   }));
 
   router.post("/v1/apps/:app/git/deploy", route("deployer", (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     const r = queueGitDeploy(name, needLink(name), "manual", who.id, false);
     audit(who, "git.deploy", name, { deployment: r.id, coalesced: r.coalesced });
     setResponseStatus(event, 202);
@@ -905,7 +1090,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   router.delete("/v1/apps/:app/git", route("admin", async (event, who) => {
-    const name = appParam(event);
+    const name = userAppParam(event);
     needLink(name);
     ctx.registry.gitLinks.remove(name);
     audit(who, "git.unlink", name);
@@ -1013,6 +1198,7 @@ export function createApi(ctx: ApiContext): Api {
       name = b.appName;
       checkSettings(name, b.settings);
     }
+    if (ctx.registry.apps.get(name)?.kind === "storage") throw new ApiError(409, "managed_by_storage", `"${name}" serves a storage; pick another name`);
     const pinned = ctx.registry.apps.get(name)?.server;
     if (pinned && pinned !== server) throw new ApiError(409, "pinned_to_other_server", `app "${name}" is pinned to server "${pinned}"`);
     if (ctx.registry.gitLinks.get(name)) throw new ApiError(409, "conflict", `app "${name}" is already linked to a repository`);

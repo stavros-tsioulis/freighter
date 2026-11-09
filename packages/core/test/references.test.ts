@@ -68,3 +68,59 @@ environment:
     expect(h.unitFiles()).toEqual([]);
   });
 });
+
+describe("resolveEnvironmentEach", () => {
+  it("returns a result per entry instead of stopping at the first broken one", async () => {
+    const { resolveEnvironmentEach } = await import("../src/index.ts");
+    const r = resolveEnvironmentEach(facts({ name: "a", domains: [{ hostname: "h.example.com", service: "web", tls: "auto" }], environment: { GOOD: "@web.domain", BAD: "@api.url", PLAIN: "x" } }));
+    expect(r).toEqual({ GOOD: { value: "h.example.com", secret: false }, BAD: { error: expect.stringMatching(/^BAD: @api.url: .*no domain/) }, PLAIN: { value: "x", secret: false } });
+  });
+});
+
+describe("storage references", () => {
+  const st = { name: "up", server: "s1", hostname: "s3.example.com", tls: "auto" as const, port: 20100, accessKey: "AK", secretKey: "SK" };
+  const me = facts({ name: "a", server: "s1", environment: { URL: "@storage:up.url", DOM: "@storage:up.domain", INT: "@storage:up.internal", REG: "@storage:up.region", AK: "@storage:up.accessKey", SK: "@storage:up.secretKey", VIA: "@web.SK2", SK2: "k=@storage:up.secretKey" } });
+  it("resolves attributes and marks credentials as secret, also through another value", async () => {
+    const { resolveEnvironmentEach } = await import("../src/index.ts");
+    const r = resolveEnvironmentEach(me, {}, { up: st });
+    expect(r.URL).toEqual({ value: "https://s3.example.com", secret: false });
+    expect(r.INT).toEqual({ value: "http://127.0.0.1:20100", secret: false });
+    expect(r.REG).toEqual({ value: "us-east-1", secret: false });
+    expect(r.AK).toEqual({ value: "AK", secret: true });
+    expect(r.VIA).toEqual({ value: "k=SK", secret: true });
+  });
+  it("falls back to the internal address without a domain, and says why when it can't", async () => {
+    const { resolveEnvironmentEach } = await import("../src/index.ts");
+    expect(resolveEnvironmentEach(me, {}, { up: { ...st, hostname: undefined } }).URL).toEqual({ value: "http://127.0.0.1:20100", secret: false });
+    expect(resolveEnvironmentEach(me, {}, { up: { ...st, hostname: undefined, server: "s2" } }).URL).toMatchObject({ error: expect.stringMatching(/give it a domain/) });
+    expect(resolveEnvironmentEach(me, {}, { up: { ...st, server: "s2" } }).INT).toMatchObject({ error: expect.stringMatching(/use .url instead/) });
+    expect(resolveEnvironmentEach(me, {}, {}).URL).toMatchObject({ error: expect.stringMatching(/no storage "up"/) });
+  });
+});
+
+describe("deploy with storage references", () => {
+  it("keeps the key pair out of the unit and in a root-only file the unit loads", async () => {
+    const { stat, readFile } = await import("node:fs/promises");
+    const h = await makeDeps();
+    const manifest = `name: web
+services:
+  web:
+    command: node server.mjs
+    port: 3000
+environment:
+  S3_URL: "@storage:up.url"
+  S3_SECRET: "@storage:up.secretKey"
+`;
+    const { writeConnections } = await import("../src/index.ts");
+    await writeConnections(h.deps, "web", { peers: {}, storages: { up: { name: "up", hostname: "s3.example.com", tls: "auto", port: 20100, accessKey: "AK", secretKey: "SK-top-secret" } } });
+    await deploy(h.deps, { manifestText: manifest, source: await artifact() });
+    const unit = h.unitFiles().map((u) => h.unitText(u)).join("\n");
+    expect(unit).toContain('Environment="S3_URL=https://s3.example.com"');
+    expect(unit).not.toContain("SK-top-secret");
+    expect(unit).not.toContain("S3_SECRET=");
+    expect(unit).toContain(".refs.env");
+    const file = `${h.deps.layout.envDir}/web.refs.env`;
+    expect(await readFile(file, "utf8")).toBe('S3_SECRET="SK-top-secret"\n');
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+  });
+});

@@ -4,7 +4,7 @@ import type { FlowNode } from "~/utils/graph";
 // Vue Flow passes every node prop (id, type, selected, ...); only `data` is used.
 defineOptions({ inheritAttrs: false });
 const props = defineProps<{ data: FlowNode["data"] }>();
-const a = computed(() => props.data.app);
+const a = computed(() => props.data.app!);
 const bad = computed(() => a.value.status === "missing" || a.value.services.some((s) => s.activeState === "failed"));
 </script>
 

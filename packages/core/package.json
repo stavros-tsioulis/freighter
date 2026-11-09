@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./config": "./src/config.ts",
+    "./references": "./src/references.ts",
     "./fields": "./src/fields.ts",
     "./testing": "./test/helpers.ts",
     "./testing/git": "./test/gitrepo.ts"

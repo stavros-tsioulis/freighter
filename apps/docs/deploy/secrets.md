@@ -18,11 +18,11 @@ secrets:
   - SESSION_SECRET
 ```
 
-Names are `UPPER_SNAKE_CASE`. A deploy fails until every declared secret has a value, so set them before the first deploy. The app's **Secrets** tab warns about declared names that aren't set yet, with a button to set each one.
+Names are `UPPER_SNAKE_CASE`. A deploy fails until every declared secret has a value, so set them before the first deploy. The app's **Variables** tab warns about declared names that aren't set yet, with a button to set each one.
 
 ## Set a value
 
-**Dashboard (admin).** On the app's **Secrets** tab, press **Set secret**, enter the name and value, and save.
+**Dashboard (admin).** On the app's **Variables** tab, in its *Secrets* section, press **Set secret**, enter the name and value, and save.
 
 **API (admin).**
 

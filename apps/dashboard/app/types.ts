@@ -277,9 +277,63 @@ export interface GraphEdge {
   /** Why this reference can't be resolved right now. */
   broken: string | null;
 }
+export interface GraphStorage {
+  name: string;
+  kind: StorageBackend["kind"];
+  server: string;
+  hostnames: string[];
+  activeState: string;
+}
+export interface GraphStorageEdge {
+  from: { app: string; service: string };
+  storage: string;
+  attr: string;
+  key: string;
+  broken: string | null;
+}
 export interface ProjectGraph {
   project: string | null;
   apps: GraphApp[];
   edges: GraphEdge[];
+  /** The S3 storages this project's apps use, with an arrow from each service that does. */
+  storages: GraphStorage[];
+  storageEdges: GraphStorageEdge[];
   layout: Record<string, { x: number; y: number }>;
+}
+
+/** An S3 storage. The key pair is shown once, when it is created or rotated; apps get it through connections. */
+export type StorageBackend =
+  | { kind: "local" }
+  | { kind: "sftp"; host: string; port?: number; user: string; path: string; auth: "password" | "key"; hostKey?: string }
+  | { kind: "smb"; host: string; port?: number; share: string; user: string; domain?: string; path: string };
+export interface StorageSecrets {
+  password?: string;
+  privateKey?: string;
+}
+export interface StorageRow {
+  name: string;
+  server: string;
+  backend: StorageBackend;
+  port: number;
+  accessKey: string;
+  createdAt: string;
+  updatedAt: string;
+  /** The app that serves it (domains, logs and deployments are those of this app). */
+  app: string;
+  status: AppRow["status"];
+  activeState: string;
+  hostnames: string[];
+  deployments: DeploymentRow[];
+}
+export interface StorageCreated {
+  id: string;
+  status: string;
+  storage: StorageRow;
+  accessKey: string;
+  secretKey: string;
+}
+export interface StorageTest {
+  ok: boolean;
+  error?: string;
+  hostKey?: { line: string; fingerprint: string; type: string };
 }

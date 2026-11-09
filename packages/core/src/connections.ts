@@ -22,11 +22,12 @@ export async function readConnections(d: Deps, app: string): Promise<Connections
 export async function writeConnections(d: Deps, app: string, conn: Connections): Promise<void> {
   const parsed = connectionsSchema.parse(conn);
   const path = connectionsPath(d, app);
-  if (parsed.server === undefined && Object.keys(parsed.peers).length === 0) {
+  if (parsed.server === undefined && Object.keys(parsed.peers).length === 0 && Object.keys(parsed.storages ?? {}).length === 0) {
     await rm(path, { force: true });
     return;
   }
   await mkdir(appDir(d, app), { recursive: true });
-  await writeFile(`${path}.tmp`, JSON.stringify(parsed, null, 2) + "\n");
+  // Storage key pairs travel in here, so it is as private as the secrets file.
+  await writeFile(`${path}.tmp`, JSON.stringify(parsed, null, 2) + "\n", { mode: 0o600 });
   await rename(`${path}.tmp`, path);
 }

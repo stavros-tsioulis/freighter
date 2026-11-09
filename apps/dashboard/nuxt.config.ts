@@ -99,6 +99,8 @@ export default defineNuxtConfig({
     devOptions: { enabled: false },
   },
   routeRules: {
+    // the apps list moved into projects
+    "/apps": { redirect: "/projects" },
     "/**": {
       headers: {
         "X-Frame-Options": "DENY",

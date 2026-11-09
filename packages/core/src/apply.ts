@@ -8,7 +8,10 @@ import { assertHostnamesFree, readDomains } from "./domains.ts";
 import { readContainerPorts, readImages } from "./image.ts";
 import { allocatePort } from "./ports.ts";
 import { readConnections } from "./connections.ts";
-import { resolveEnvironment } from "./references.ts";
+import { readVariables } from "./variables.ts";
+import { resolveEnvironmentSplit } from "./references.ts";
+import { writeRefsEnv } from "./env.ts";
+import { hashResolved, writeResolvedHash } from "./reapply.ts";
 import { activate, releaseDir } from "./releases.ts";
 import { allStates, readState, routesFrom, writeState, type AppState, type RoutedService } from "./state.ts";
 import { defaultTargets, describeFailures, verifyRelease, type Target, type VerifyFailure } from "./verify.ts";
@@ -84,9 +87,12 @@ export async function liveTargets(d: Deps, app: string, manifest: Manifest): Pro
   return targets;
 }
 
+/** The manifest with the variables added on the server laid over its `environment:` (which gives the initial values). */
+export const withVariables = (manifest: Manifest, vars: Record<string, string>): Manifest => ({ ...manifest, environment: { ...manifest.environment, ...vars } });
+
 /** The app's environment with its connections (`@api.url`, ...) filled in, for the ports and domains in force. */
-export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: readonly Domain[], targets: Record<string, Target>, conn: Connections = { peers: {} }): Record<string, string> {
-  return resolveEnvironment(
+export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: readonly Domain[], targets: Record<string, Target>, conn: Connections = { peers: {} }): { plain: Record<string, string>; secret: Record<string, string> } {
+  return resolveEnvironmentSplit(
     {
       name: manifest.name,
       server: conn.server,
@@ -96,10 +102,11 @@ export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: read
       environment: manifest.environment,
     },
     conn.peers,
+    conn.storages,
   );
 }
 
-function render(d: Deps, app: string, manifest: Manifest, environment: Record<string, string>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
+function render(d: Deps, app: string, manifest: Manifest, env: { plain: Record<string, string>; secret: Record<string, string> }, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
   return renderUnit({
     containerPort: containerPorts[service],
     image: images[service],
@@ -112,7 +119,8 @@ function render(d: Deps, app: string, manifest: Manifest, environment: Record<st
     instance: unit.routed ? id : undefined,
     port,
     loopback: unit.routed,
-    environment,
+    environment: env.plain,
+    refSecrets: Object.keys(env.secret),
   });
 }
 
@@ -123,7 +131,8 @@ async function restoreInPlace(d: Deps, app: string, previous: string, domains: r
   const containerPorts = await readContainerPorts(d, app, previous);
   const state = await readState(d, app);
   const keep = new Set(Object.values(state.routed).map((r) => r.unit));
-  const environment = resolveAppEnvironment(d, manifest, domains, await liveTargets(d, app, manifest), conn);
+  const environment = resolveAppEnvironment(d, withVariables(manifest, await readVariables(d, app)), domains, await liveTargets(d, app, manifest), conn);
+  await writeRefsEnv(d, app, environment.secret);
   for (const p of plannedUnits(app, manifest, previous, domains).filter((p) => !p.routed)) {
     await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, previous, p, images, containerPorts));
     await d.systemd.enable(p.unit);
@@ -171,7 +180,8 @@ export async function goLive(
 
   // Resolved before anything is touched: a connection that can't be resolved fails the deploy here.
   const conn = opts.connections ?? (await readConnections(d, app));
-  const environment = resolveAppEnvironment(d, manifest, domains, targets, conn);
+  const environment = resolveAppEnvironment(d, withVariables(manifest, await readVariables(d, app)), domains, targets, conn);
+  await writeRefsEnv(d, app, environment.secret);
 
   const created: string[] = [];
   const failWith = async (failures: VerifyFailure[]): Promise<GoLiveResult> => {
@@ -221,6 +231,7 @@ export async function goLive(
       release: id,
       hostnames: domains.filter((x) => x.service === p.service).map((x) => ({ hostname: x.hostname, tls: x.tls })),
       healthPath: manifest.services[p.service]!.healthcheck?.path,
+      timeout: manifest.services[p.service]!.proxy?.timeout,
     };
   }
   const touchesProxy = Object.keys(routed).length > 0 || Object.keys(oldState.routed).length > 0;
@@ -238,6 +249,7 @@ export async function goLive(
   const state: AppState = { routed };
   await writeState(d, app, state);
   await activate(d, app, id);
+  await writeResolvedHash(d, app, hashResolved(environment));
 
   const oldInstances = Object.values(oldState.routed).filter((r) => !(r.unit in Object.fromEntries(plan.map((p) => [p.unit, 1]))));
   if (oldInstances.length > 0) {

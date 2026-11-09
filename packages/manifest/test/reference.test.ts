@@ -43,3 +43,19 @@ describe("connectionEdges", () => {
     expect(edges).toEqual(["api>billing/api.internal", "jobs>a/api.url", "jobs>billing/api.internal", "web>a/api.url", "web>billing/api.internal"]);
   });
 });
+
+describe("storage references", () => {
+  it("finds @storage:name.attr and leaves lookalikes alone", async () => {
+    const { findReferences, storageEdges, referencedStorages } = await import("../src/index.ts");
+    expect(findReferences("@storage:uploads.url/x")).toEqual([{ storage: "uploads", attr: "url", text: "@storage:uploads.url" }]);
+    expect(findReferences("@storage:uploads.secretKey")[0]).toMatchObject({ attr: "secretKey" });
+    expect(findReferences("@storage:uploads.nope")).toEqual([]);
+    expect(findReferences("me@storage:uploads.url")).toEqual([]);
+    expect(referencedStorages({ A: "@storage:b.url", B: "@storage:a.region @storage:b.domain", C: "@api.url" })).toEqual(["a", "b"]);
+    const m = parseManifest('name: a\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:up.url"\n');
+    expect(storageEdges(m)).toEqual([{ from: { app: "a", service: "web" }, storage: "up", attr: "url", key: "S3" }]);
+  });
+  it("accepts them in a manifest without checking the storage exists", () => {
+    expect(() => parseManifest('name: a\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:anything.url"\n')).not.toThrow();
+  });
+});

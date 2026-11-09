@@ -49,7 +49,7 @@ releases:
 | `name` | identifier | required | The app's name: lowercase letters, digits and single hyphens, starting with a letter. It must match the app you deploy to. |
 | `services` | map of identifier to [service](#services) | required | The app's processes. |
 | `build` | [build](#build) | none | Commands that run before deploying, for Git deploys. |
-| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for every service. |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for every service. These are the initial values: variables added or changed on the app's **Variables** tab are laid over them. |
 | `secrets` | list of `UPPER_SNAKE_CASE` | `[]` | Names that must have a value (set separately) before a deploy. See [secrets](/deploy/secrets). |
 | `releases.keep` | integer, 2 or more | `5` | How many releases to keep on disk. The current and previous ones are always kept. |
 | `source` | object | none | `type: git`, `repository`, `branch` (default `main`). Accepted for documentation only: the repository link set in Freighter is what's used. |
@@ -73,6 +73,7 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `healthcheck.timeout` | duration | `30s` | How long a new release may take to become healthy. |
 | `healthcheck.interval` | duration | `10s` | Accepted, but not used yet. Deploys poll every second and HAProxy checks every 5 seconds. |
 | `restart` | `on-failure`, `always`, `no` | `on-failure` | systemd's restart policy, with 3 seconds between restarts and at most 5 starts per minute. |
+| `proxy.timeout` | duration | HAProxy's `30s` | Routed services: how long HAProxy waits on the service before giving up, for uploads, streaming and slow responses. |
 | `replicas` | integer | `1` | Accepted, but only one instance runs for now, and values above 1 produce a warning. |
 
 Set exactly one of `command` and `image` on each service. An app can mix both kinds.

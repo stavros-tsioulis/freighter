@@ -35,8 +35,8 @@ const servicesLabel = computed(() => {
   <div class="flex flex-col gap-6">
     <PageHeader :title="name">
       <template #before>
-        <NuxtLink to="/apps" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1.5">
-          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps<template v-if="project"> / {{ project.name }}</template>
+        <NuxtLink :to="app ? `/projects/${project?.id ?? 'none'}` : '/projects'" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1.5">
+          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />{{ project ? project.name : app ? "No project" : "Projects" }}
         </NuxtLink>
       </template>
       <template v-if="app && (can('admin') || canMove)" #actions>
@@ -79,7 +79,7 @@ const servicesLabel = computed(() => {
           <Tab value="deployments">Deployments</Tab>
           <Tab value="source">Source</Tab>
           <Tab value="logs">Logs</Tab>
-          <Tab value="env">Secrets</Tab>
+          <Tab value="env">Variables</Tab>
         </TabList>
         <TabPanels>
           <TabPanel value="services"><AppServicesTab :app="app" /></TabPanel>

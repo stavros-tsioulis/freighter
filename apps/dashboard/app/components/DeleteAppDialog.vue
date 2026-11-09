@@ -28,7 +28,7 @@ async function go() {
   const ok = await del.mutateAsync({ app: props.app.name, forget: forget.value }).then(() => true, () => false);
   if (ok) {
     visible.value = false;
-    await router.push("/apps");
+    await router.push("/projects");
   }
 }
 </script>

@@ -7,6 +7,7 @@ import { readHistory } from "./history.ts";
 const execFileP = promisify(execFile);
 
 export const appDir = (d: Deps, app: string) => `${d.layout.appsRoot}/${app}`;
+export const sharedDirOf = (d: Deps, app: string) => `${appDir(d, app)}/shared`;
 export const releasesDir = (d: Deps, app: string) => `${appDir(d, app)}/releases`;
 export const releaseDir = (d: Deps, app: string, id: string) => `${releasesDir(d, app)}/${id}`;
 export const currentLink = (d: Deps, app: string) => `${appDir(d, app)}/current`;

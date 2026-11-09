@@ -9,6 +9,7 @@ export interface RoutedService {
   release: string;
   hostnames: { hostname: string; tls: "auto" | "off" }[];
   healthPath?: string;
+  timeout?: string;
 }
 export interface AppState {
   routed: Record<string, RoutedService>;
@@ -53,7 +54,7 @@ export function routesFrom(states: Record<string, AppState>): Route[] {
         const other = owner.get(hostname);
         if (other !== undefined && other !== app) throw new Error(`hostname ${hostname} is already used by app "${other}"`);
         owner.set(hostname, app);
-        routes.push({ app, service, hostname, tls, port: r.port, healthPath: r.healthPath });
+        routes.push({ app, service, hostname, tls, port: r.port, healthPath: r.healthPath, timeout: r.timeout });
       }
     }
   }

@@ -20,6 +20,11 @@ describe("render", () => {
     );
   });
 
+  it("gives a backend its own server and tunnel timeout when the service asks for one", () => {
+    const out = renderBackends([{ app: "s3", service: "s3", hostname: "s3.example.com", tls: "auto", port: 20003, timeout: "30m" }], { acmePort: 8888, challengeToken: TOKEN });
+    expect(out).toContain("backend be_s3_s3\n    option forwardfor\n    http-request set-header X-Forwarded-Proto https if { ssl_fc }\n    timeout server 30m\n    timeout tunnel 30m\n    server app 127.0.0.1:20003\n");
+  });
+
   it("renders one backend per service, with health checks only when configured", () => {
     expect(renderBackends(routes, { acmePort: 8888, challengeToken: TOKEN })).toBe(`# Managed by freighter. Do not edit; regenerated on every deploy.
 

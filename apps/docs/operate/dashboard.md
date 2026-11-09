@@ -8,21 +8,27 @@ The landing page: how many apps there are and whether anything needs attention, 
 
 Each row shows the app's status, its services with a dot each (green running, amber starting or stopping, red failed), its first domain, the current release and when it last changed. Apps that need attention (a failed service, or a release missing on disk) are listed first, and the sentence under the title says how many there are. With more than one server, filter the list by server.
 
-## Project canvas
+## Projects
 
-Each project group has a **Canvas** button (and *No project* has one too). The canvas draws every app of the project as a box holding its services, and an arrow from a service to each service it [connects to](/deploy/connections). Click a service or an app to open its panel: state, address, release, its connections, start/stop/restart, and tabs for logs, domains, variables and deployments. The open item is in the URL (`?node=`), so a link opens the same view; press <kbd>Esc</kbd> to close the panel.
+The **Projects** page has a card for every project, plus *No project* for apps that belong to none. A project is only a place to organize apps in, such as a web app, its API and its workers: it changes nothing about how they are deployed or run. An app is in at most one project.
 
-Drag an app's box to arrange the canvas. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no domain or port, is on another server for `.internal`, or isn't in the project); the panel says why.
+Admins create projects with **New project** and rename, describe or delete them from the card. Deleting a project keeps its apps and moves them to *No project*. Deployers move an app with the project picker in the app's header (choose *No project* to take it out).
 
-## Apps and projects
+Opening a project shows its **canvas**. The header stays the same when you switch the view to **List** (one row per app, those that need attention first); the choice is in the URL (`?view=list`).
 
-The **Apps** page lists every app, grouped into **projects**. A project is only a place to organize apps in, such as a web app, its API and its workers: it changes nothing about how they are deployed or run. An app is in at most one project, and apps in none are listed under *No project*. Within a group, apps that need attention come first.
+### Canvas
 
-Admins create projects with **New project** and rename, describe or delete them from the group's header. Deleting a project keeps its apps and moves them to *No project*. Deployers move an app with the project picker in the app's header (choose *No project* to take it out). The **Deploy** button is here as well, and the page has a search box once there are more than a few apps.
+The canvas draws every app of the project as a box holding its services, and an arrow from a service to each service it [connects to](/deploy/connections). Click a service or an app to open its panel: state, address, release, its connections, start/stop/restart, and tabs for logs, domains, variables and deployments. The open item is in the URL (`?node=`), so a link opens the same view; press <kbd>Esc</kbd> to close the panel.
 
-On both pages the **Deploy** button asks what to deploy, then shows that kind's form: a **Git repository** (admin), a **Container image** (see [Deploy images](/deploy/images)) or an **Archive** (both deployer). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync.
+Drag an app's box to arrange the canvas; boxes snap to the grid. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no domain or port, is on another server for `.internal`, or isn't in the project); the panel says why.
+
+The **Deploy** button is on the Overview and project pages. It asks what to deploy, then shows that kind's form: a **Git repository** (admin), a **Container image** (see [Deploy images](/deploy/images)) or an **Archive** (both deployer). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync.
 
 Below the list, **Recent deployments** shows the latest deploys and rollbacks across all apps.
+
+## Storage
+
+**Storage** lists the [S3 storages](/deploy/storage). A storage's page has Overview (backend, endpoint, keys, a snippet to connect an app), Domains, Logs, Deployments and, for admins, Settings (the connection to an SFTP or SMB share, and delete).
 
 ## An app
 
@@ -35,7 +41,7 @@ The header shows the app's server, how many services are running, the current an
 | **Deployments** | history with trigger, commit and duration; open a row for its log (the build output for Git deploys, then each step of the deploy: certificates, new instances, health check, HAProxy switch; domain changes have one too), warnings and errors; **Roll back**, **Upload archive** | viewer (actions: deployer) |
 | **Source** | for an app that runs container images: each service's image, its registry and login, where it is reachable (domains, the published port and the container port), its volumes, **Pull again and redeploy** and **Change image**; for other apps: the linked repository, branch, key, auto-deploy, last webhook, settings for repositories without `app.yaml`; **Deploy latest**, **Test connection**, rotate secret or key, unlink | viewer (changes: admin) |
 | **Logs** | the journal of a service, 10–1000 lines, *Live* mode refreshing every 3 seconds, copy and download | deployer |
-| **Secrets** | secret names, warnings for declared ones that aren't set, set a value | viewer (set: admin) |
+| **Variables** | variables (the `environment:` of app.yaml as initial values, plus any you add or change here; connections show what they resolve to), and secrets (names, and a way to set a value) | viewer (change: admin) |
 
 The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link straight to it.
 

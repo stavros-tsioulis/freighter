@@ -1,5 +1,5 @@
 import dagre from "@dagrejs/dagre";
-import type { GraphApp, GraphEdge, GraphService, ProjectGraph } from "~/types";
+import type { GraphApp, GraphEdge, GraphService, GraphStorage, GraphStorageEdge, ProjectGraph } from "~/types";
 
 /** Card geometry, in canvas pixels. Groups are sized from the number of services they hold. */
 export const CARD = { w: 264, h: 66, gap: 12, pad: 14, head: 48 } as const;
@@ -8,6 +8,8 @@ export const GRID = 22;
 const snap = (n: number) => Math.round(n / GRID) * GRID;
 
 export const appNodeId = (app: string) => `app:${app}`;
+export const STORAGE_CARD = { w: 232, h: 66 } as const;
+export const storageNodeId = (name: string) => `storage:${name}`;
 export const serviceNodeId = (app: string, service: string) => `svc:${app}/${service}`;
 /** What the URL's `?node=` holds: `app` or `app/service`. */
 export const selectionId = (app: string, service?: string) => (service ? `${app}/${service}` : app);
@@ -24,7 +26,7 @@ export function groupSize(services: number) {
 
 export interface FlowNode {
   id: string;
-  type: "app" | "service";
+  type: "app" | "service" | "storage";
   position: { x: number; y: number };
   parentNode?: string;
   extent?: "parent";
@@ -33,7 +35,7 @@ export interface FlowNode {
   focusable: boolean;
   zIndex: number;
   style?: Record<string, string>;
-  data: { app: GraphApp; service?: GraphService; selected: boolean };
+  data: { app?: GraphApp; service?: GraphService; storage?: GraphStorage; selected: boolean };
 }
 export interface EdgeLabel {
   attr: string;
@@ -50,7 +52,7 @@ export interface FlowEdge {
 }
 
 /** Where apps without a saved position go: left to right in the order the connections flow (dagre). */
-export function autoLayout(apps: GraphApp[], edges: GraphEdge[]): Record<string, { x: number; y: number }> {
+export function autoLayout(apps: GraphApp[], edges: GraphEdge[], storages: GraphStorage[] = [], storageEdges: GraphStorageEdge[] = []): Record<string, { x: number; y: number }> {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "LR", nodesep: 56, ranksep: 120, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
@@ -58,7 +60,14 @@ export function autoLayout(apps: GraphApp[], edges: GraphEdge[]): Record<string,
     const { w, h } = groupSize(a.services.length);
     g.setNode(a.name, { width: w, height: h });
   }
+  for (const st of storages) g.setNode(`storage:${st.name}`, { width: STORAGE_CARD.w, height: STORAGE_CARD.h });
   const seen = new Set<string>();
+  for (const e of storageEdges) {
+    const k = `${e.from.app}>storage:${e.storage}`;
+    if (seen.has(k) || !g.hasNode(e.from.app) || !g.hasNode(`storage:${e.storage}`)) continue;
+    seen.add(k);
+    g.setEdge(e.from.app, `storage:${e.storage}`);
+  }
   for (const e of edges) {
     const k = `${e.from.app}>${e.to.app}`;
     if (e.from.app === e.to.app || seen.has(k) || !g.hasNode(e.from.app) || !g.hasNode(e.to.app)) continue;
@@ -66,12 +75,11 @@ export function autoLayout(apps: GraphApp[], edges: GraphEdge[]): Record<string,
     g.setEdge(e.from.app, e.to.app);
   }
   dagre.layout(g);
-  return Object.fromEntries(
-    apps.map((a) => {
-      const n = g.node(a.name)!;
-      return [appNodeId(a.name), { x: snap(n.x - n.width / 2), y: snap(n.y - n.height / 2) }];
-    }),
-  );
+  const at = (id: string, key: string) => {
+    const n = g.node(id)!;
+    return [key, { x: snap(n.x - n.width / 2), y: snap(n.y - n.height / 2) }] as const;
+  };
+  return Object.fromEntries([...apps.map((a) => at(a.name, appNodeId(a.name))), ...storages.map((st) => at(`storage:${st.name}`, storageNodeId(st.name)))]);
 }
 
 /**
@@ -80,7 +88,7 @@ export function autoLayout(apps: GraphApp[], edges: GraphEdge[]): Record<string,
  * project has no node to point at, so it is returned in `unresolved` for the panel to list.
  */
 export function buildFlow(graph: ProjectGraph, selected: { app: string; service?: string } | null) {
-  const auto = autoLayout(graph.apps, graph.edges);
+  const auto = autoLayout(graph.apps, graph.edges, graph.storages ?? [], graph.storageEdges ?? []);
   const nodes: FlowNode[] = [];
   const services = new Set<string>();
 
@@ -116,8 +124,36 @@ export function buildFlow(graph: ProjectGraph, selected: { app: string; service?
     });
   }
 
+  for (const st of graph.storages ?? []) {
+    const id = storageNodeId(st.name);
+    services.add(id);
+    nodes.push({
+      id,
+      type: "storage",
+      position: graph.layout[id] ?? auto[id]!,
+      draggable: true,
+      selectable: true,
+      focusable: true,
+      zIndex: 1,
+      style: { width: `${STORAGE_CARD.w}px`, height: `${STORAGE_CARD.h}px` },
+      data: { storage: st, selected: false },
+    });
+  }
+
   const merged = new Map<string, FlowEdge>();
   const unresolved: GraphEdge[] = [];
+  const addEdge = (source: string, target: string, label: EdgeLabel) => {
+    const id = `${source}>${target}`;
+    const edge = merged.get(id) ?? ({ id, type: "connection", source, target, zIndex: 2, data: { labels: [], broken: false, highlight: false, dim: false } } satisfies FlowEdge);
+    edge.data.labels.push(label);
+    edge.data.broken ||= label.broken !== null;
+    merged.set(id, edge);
+  };
+  for (const e of graph.storageEdges ?? []) {
+    const source = serviceNodeId(e.from.app, e.from.service);
+    const target = storageNodeId(e.storage);
+    if (services.has(source) && services.has(target)) addEdge(source, target, { attr: e.attr, key: e.key, broken: e.broken });
+  }
   for (const e of graph.edges) {
     const source = serviceNodeId(e.from.app, e.from.service);
     const target = serviceNodeId(e.to.app, e.to.service);
@@ -125,13 +161,7 @@ export function buildFlow(graph: ProjectGraph, selected: { app: string; service?
       unresolved.push(e);
       continue;
     }
-    const id = `${source}>${target}`;
-    const edge =
-      merged.get(id) ??
-      ({ id, type: "connection", source, target, zIndex: 2, data: { labels: [], broken: false, highlight: false, dim: false } } satisfies FlowEdge);
-    edge.data.labels.push({ attr: e.attr, key: e.key, broken: e.broken });
-    edge.data.broken ||= e.broken !== null;
-    merged.set(id, edge);
+    addEdge(source, target, { attr: e.attr, key: e.key, broken: e.broken });
   }
   const edges = [...merged.values()];
   if (selected) {

@@ -14,11 +14,27 @@ export const appFactsSchema = z.object({
 });
 export type AppFacts = z.infer<typeof appFactsSchema>;
 
+/** What a reference to a storage (`@storage:name.url`) can read. The key pair is a credential. */
+export const storageFactsSchema = z.object({
+  name: z.string().regex(IDENT_RE),
+  server: z.string().optional(),
+  /** The storage's domain, if it has one. */
+  hostname: z.string().optional(),
+  tls: z.enum(["auto", "off"]).default("auto"),
+  /** The port it listens on, for `internal` (and for `url` while it has no domain). */
+  port: z.number().int().positive().optional(),
+  accessKey: z.string(),
+  secretKey: z.string(),
+});
+export type StorageFacts = z.infer<typeof storageFactsSchema>;
+
 /** What a deploy knows about the apps around it; the control plane fills this in from the app's project. */
 export const connectionsSchema = z.object({
   /** The server this app runs on. */
   server: z.string().optional(),
   /** The other apps in the same project, which environment values may connect to (`@app/service.url`). */
   peers: z.record(z.string().regex(IDENT_RE), appFactsSchema).default({}),
+  /** The storages this app's environment uses (only those; they carry credentials). */
+  storages: z.record(z.string().regex(IDENT_RE), storageFactsSchema).optional(),
 });
 export type Connections = z.infer<typeof connectionsSchema>;

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, ProjectGraph, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, ProjectGraph, RegistryLogin, StorageBackend, StorageCreated, StorageRow, StorageSecrets, StorageTest, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -134,6 +134,41 @@ export const useLogs = (app: MaybeRef<string>, service: MaybeRef<string | null>,
     staleTime: 0,
     retry: false,
   });
+
+export interface VariableRow {
+  key: string;
+  /** As written in app.yaml. */
+  value: string;
+  /** With connections filled in; null when one can't be resolved (see `error`). */
+  resolved: string | null;
+  error: string | null;
+  /** The value contains a connection such as `@api.url`. */
+  reference: boolean;
+  /** It resolves to a credential (a storage's key pair), which is never shown. */
+  secret?: boolean;
+  /** `app.yaml`: the initial value; `added`: set in the dashboard; `override`: set in the dashboard over app.yaml's. */
+  source: "app.yaml" | "added" | "override";
+}
+export const useVariables = (app: MaybeRef<string>) =>
+  useQuery({ queryKey: ["variables", app], queryFn: () => api<{ variables: VariableRow[] }>(`/apps/${toValue(app)}/variables`).then((r) => r.variables), refetchInterval: 15_000 });
+
+/** Add or change a variable, or remove one added in the dashboard (an override goes back to app.yaml's value). The app is redeployed to apply it. */
+export function useVariableChange(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { key: string; value?: string }) =>
+      v.value === undefined
+        ? api(`/apps/${toValue(app)}/variables/${v.key}`, { method: "DELETE" })
+        : api(`/apps/${toValue(app)}/variables/${v.key}`, { method: "PUT", body: { value: v.value } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["variables"] });
+      void qc.invalidateQueries({ queryKey: ["app"] });
+      void qc.invalidateQueries({ queryKey: ["graph"] });
+    },
+    onError: (e) => notify.fail("Could not change the variable", e),
+  });
+}
 
 export const useEnvNames = (app: MaybeRef<string>) =>
   useQuery({ queryKey: ["env", app], queryFn: () => api<{ names: string[] }>(`/apps/${toValue(app)}/env`).then((r) => r.names), retry: false });
@@ -770,5 +805,37 @@ export function useChooseLogin(app: MaybeRef<string>) {
     mutationFn: (v: { host: string; username: string | null }) => api(`/apps/${toValue(app)}/registry-logins/${encodeURIComponent(v.host)}`, { method: "PUT", body: { username: v.username } }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["app"] }),
     onError: (e) => notify.fail("Could not choose the login", e),
+  });
+}
+
+// ---- S3 storage ----
+export const useStorages = () => useQuery({ queryKey: ["storages"], queryFn: () => api<{ storages: StorageRow[] }>("/storages").then((r) => r.storages), refetchInterval: 10_000 });
+export const useStorage = (name: MaybeRef<string>) => useQuery({ queryKey: ["storage", name], queryFn: () => api<StorageRow>(`/storages/${toValue(name)}`), refetchInterval: 10_000, retry: false });
+
+function useStorageMutation<V, R>(fn: (v: V) => Promise<R>, failure: string, after?: (r: R) => void) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: (r) => {
+      for (const key of ["storages", "storage", "apps", "app", "graph", "variables"]) void qc.invalidateQueries({ queryKey: [key] });
+      after?.(r);
+    },
+    onError: (e) => notify.fail(failure, e),
+  });
+}
+export const useCreateStorage = () =>
+  useStorageMutation((v: { name: string; server?: string; backend: StorageBackend; secrets?: StorageSecrets }) => api<StorageCreated>("/storages", { method: "POST", body: v }), "Could not create the storage");
+export const usePatchStorage = (name: MaybeRef<string>) =>
+  useStorageMutation((v: { backend?: StorageBackend; secrets?: StorageSecrets }) => api(`/storages/${toValue(name)}`, { method: "PATCH", body: v }), "Could not change the storage");
+export const useApplyStorage = (name: MaybeRef<string>) => useStorageMutation(() => api(`/storages/${toValue(name)}/apply`, { method: "POST" }), "Could not deploy the storage");
+export const useRotateStorageKeys = (name: MaybeRef<string>) =>
+  useStorageMutation(() => api<{ id: string; accessKey: string; secretKey: string }>(`/storages/${toValue(name)}/rotate-keys`, { method: "POST" }), "Could not rotate the keys");
+export const useDeleteStorage = () => useStorageMutation((v: { name: string; forget?: boolean }) => api(`/storages/${v.name}`, { method: "DELETE", body: { confirm: v.name, forget: v.forget } }), "Could not delete the storage");
+export function useTestStorage() {
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { server?: string; backend: StorageBackend; secrets?: StorageSecrets }) => api<StorageTest>("/storages/test", { method: "POST", body: v }),
+    onError: (e) => notify.fail("Could not test the connection", e),
   });
 }

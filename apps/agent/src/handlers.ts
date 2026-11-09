@@ -32,6 +32,12 @@ import {
   controlApp,
   deploy,
   writeConnections,
+  reapply,
+  applyStorage,
+  testStorage,
+  storageAvailable,
+  readVariables,
+  setVariables,
   listApps,
   listEnvNames,
   readDomains,
@@ -95,7 +101,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "connections"],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "connections", "variables", "reapply", ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -148,6 +154,36 @@ export function createHandlers(d: Deps): Handlers {
     async "connections.set"({ app, server, peers }) {
       await writeConnections(d, app, { server, peers });
       return {};
+    },
+    async "variables.get"({ app }) {
+      return { variables: await readVariables(d, app) };
+    },
+    async "variables.set"({ app, set, remove, logId }) {
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      const r = await setVariables(d, app, { set, remove }, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      });
+      return { variables: r.variables, deploy: r.deploy ? toDeployResult(r.deploy) : null };
+    },
+    async "app.reapply"({ app, logId }) {
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      const r = await reapply(d, app, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      });
+      return { changed: r.changed, deploy: r.deploy ? toDeployResult(r.deploy) : null };
+    },
+    async "storage.apply"({ name, backend, accessKey, secretKey, secrets, logId }) {
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      const r = await applyStorage(d, { name, backend, accessKey, secretKey }, { secrets, skipVerify: d.dev, log }).catch(async (e: unknown) => {
+        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      });
+      return { deploy: toDeployResult(r.deploy), port: r.port };
+    },
+    async "storage.test"({ backend, secrets }) {
+      return testStorage(d, backend, secrets);
     },
     async "challenge.get"() {
       return { token: await challengeToken(d) };

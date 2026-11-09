@@ -1,5 +1,5 @@
 import type { Service } from "@freighter/manifest";
-import { containerHome, containerName, containerRuntimeDir, containerRuntimeName, defaultLayout, envFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
+import { containerHome, containerName, containerRuntimeDir, containerRuntimeName, defaultLayout, envFile, refsEnvFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
 import { assertIdent } from "./names.ts";
 import { splitCommand, toExecStart } from "./exec.ts";
 
@@ -35,6 +35,8 @@ export interface RenderInput {
   containerPort?: number;
   /** Image services: names of the manifest's secrets, forwarded from the unit's environment into the container. */
   secrets?: string[];
+  /** Names of environment values that hold credentials from connections: read from the app's root-only refs file, not written here. */
+  refSecrets?: string[];
 }
 
 /** Path of the container runtime. systemd needs an absolute path. */
@@ -59,7 +61,7 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald"];
   if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? input.containerPort ?? port}`);
   // Values come from the unit's environment (static env, secrets file, PORT), so they never appear on a command line.
-  const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...Object.keys(input.environment ?? {})]);
+  const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...(input.refSecrets ?? []), ...Object.keys(input.environment ?? {})]);
   if (input.loopback && port !== undefined) keys.add("HOST");
   if (port === undefined) keys.delete("PORT");
   for (const k of [...keys].sort()) {
@@ -113,6 +115,7 @@ function renderImageUnit(input: RenderInput): string {
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));
   }
   svc.push(line("EnvironmentFile", `-${envFile(layout, app)}`));
+  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app)}`));
   if (port !== undefined) svc.push(line("Environment", `PORT=${port}`));
   svc.push(line("Restart", def.restart), line("RestartSec", 3), line("TimeoutStopSec", 20));
   svc.push(line("CPUAccounting", "true"), line("MemoryAccounting", "true"));
@@ -157,6 +160,7 @@ export function renderUnit(input: RenderInput): string {
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));
   }
   svc.push(line("EnvironmentFile", `-${envFile(layout, app)}`));
+  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app)}`));
   if (port !== undefined) svc.push(line("Environment", `PORT=${port}`));
 
   svc.push(line("Restart", def.restart), line("RestartSec", 3));

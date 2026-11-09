@@ -7,6 +7,8 @@ export interface Route {
   tls: "auto" | "off";
   port: number;
   healthPath?: string;
+  /** How long the service may take to answer or stream before HAProxy gives up on it (default: HAProxy's 30s). */
+  timeout?: string;
 }
 
 export const backendName = (r: Pick<Route, "app" | "service">) => `be_${r.app}_${r.service}`;
@@ -39,6 +41,7 @@ export function renderBackends(routes: Route[], opts: { acmePort: number; challe
     out += `\nbackend ${name}\n`;
     out += "    option forwardfor\n";
     out += "    http-request set-header X-Forwarded-Proto https if { ssl_fc }\n";
+    if (r.timeout) out += `    timeout server ${r.timeout}\n    timeout tunnel ${r.timeout}\n`;
     if (r.healthPath) {
       out += "    option httpchk\n";
       out += `    http-check send meth GET uri ${r.healthPath}\n`;

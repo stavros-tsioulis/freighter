@@ -32,6 +32,10 @@ A service that a domain points at is **routed**. It listens on `$PORT` (Freighte
 
 An environment variable whose value is set separately from `app.yaml`, for example `DATABASE_URL`. `app.yaml` lists the names. Values are set with the dashboard, API or CLI, are stored only on the app's server, and can never be read back.
 
+### Storage
+
+An S3-compatible endpoint Freighter runs for you, backed by the server's disk or by an SFTP or SMB share, optionally on a domain. Apps use it through `@storage:name.url`. See [S3 storage](/deploy/storage).
+
 ### Token and role
 
 Everyone and everything that talks to the API uses an API token (`fr_…`). Each token has a role:

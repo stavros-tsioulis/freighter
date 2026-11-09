@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync, type SQLInputValue } from "node:sqlite";
+import type { StorageBackend, StorageSecrets } from "@freighter/manifest";
 import { migrations } from "./migrations.ts";
 import { createSecretBox, memorySecretBox, type SecretBox } from "./secrets.ts";
 import {
@@ -20,6 +21,7 @@ import {
   type Role,
   type ProjectRow,
   type ServiceRow,
+  type StorageRow,
   type TokenRow,
 } from "./types.ts";
 
@@ -36,6 +38,17 @@ const appFrom = (r: Row): AppRow => ({
   syncedAt: r.synced_at as string | null,
   updatedAt: r.updated_at as string,
   projectId: (r.project_id as string | null) ?? null,
+  kind: (r.kind as string) === "storage" ? "storage" : "app",
+});
+const storageFrom = (r: Row): StorageRow => ({
+  name: r.name as string,
+  server: r.server as string,
+  backend: JSON.parse(r.backend as string) as StorageBackend,
+  port: r.port as number,
+  accessKey: r.access_key as string,
+  createdBy: (r.created_by as string | null) ?? null,
+  createdAt: r.created_at as string,
+  updatedAt: r.updated_at as string,
 });
 const projectFrom = (r: Row): ProjectRow => ({
   id: r.id as string,
@@ -258,6 +271,18 @@ export interface Registry {
     /** Delete the project; its apps stay and become ungrouped. */
     remove(id: string): boolean;
   };
+  /** S3 storages. Their secrets are sealed; only `secrets()` opens them. */
+  storages: {
+    /** Throws if the name is taken. */
+    create(s: { name: string; server: string; backend: StorageBackend; port: number; accessKey: string; secretKey: string; remoteSecrets?: StorageSecrets; createdBy?: string | null }): StorageRow;
+    get(name: string): StorageRow | undefined;
+    list(): StorageRow[];
+    /** The key pair and the credentials of a remote backend, decrypted. */
+    secrets(name: string): { secretKey: string; remote: StorageSecrets } | undefined;
+    /** Change the backend and/or credentials (what is omitted stays). False if there is no such storage. */
+    update(name: string, patch: { backend?: StorageBackend; port?: number; accessKey?: string; secretKey?: string; remoteSecrets?: StorageSecrets }): boolean;
+    remove(name: string): boolean;
+  };
   /** Node positions on a project's canvas, keyed by node id. `scope` is a project id, or "none". */
   layouts: {
     get(scope: string): Record<string, { x: number; y: number }>;
@@ -266,11 +291,12 @@ export interface Registry {
   apps: {
     /** Put an app in a project (null: ungrouped). False if the app or the project is unknown. */
     setProject(name: string, projectId: string | null): boolean;
-    /** Pin an app to a server if it has no row yet (never moves an existing app). */
-    ensure(name: string, server: string): void;
+    /** Pin an app to a server if it has no row yet (never moves an existing app). `storage` marks the app that serves a storage. */
+    ensure(name: string, server: string, kind?: "app" | "storage"): void;
     upsert(a: { name: string; server?: string; manifestText: string | null; currentRelease: string | null; previousRelease: string | null; status: AppRow["status"] }): void;
     get(name: string): AppRow | undefined;
-    list(): AppRow[];
+    /** User apps; the apps that serve storages are left out unless asked for. */
+    list(o?: { includeStorage?: boolean }): AppRow[];
     /** Forget an app and everything recorded about it (services, deployments and their logs, metrics, pending domains, Git link). The audit log keeps its entries. */
     remove(name: string): boolean;
     /** Mark apps pinned to `server` that are no longer reported by it. */
@@ -286,6 +312,8 @@ export interface Registry {
     setLog(id: string, text: string): void;
     getLog(id: string): string | null;
     update(id: string, patch: DeploymentPatch): void;
+    /** Forget a deployment (one that turned out to have nothing to do). */
+    remove(id: string): void;
     get(id: string): DeploymentRow | undefined;
     list(o?: { app?: string; limit?: number }): DeploymentRow[];
     importHistory(app: string, entries: HistoryEntryLike[]): number;
@@ -546,6 +574,43 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
       },
     },
 
+    storages: {
+      create(s) {
+        const t = now();
+        run(
+          "INSERT INTO storages (name, server, backend, port, access_key, secret_key_enc, remote_secrets_enc, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          s.name, s.server, JSON.stringify(s.backend), s.port, s.accessKey, box.seal(s.secretKey), s.remoteSecrets && Object.keys(s.remoteSecrets).length ? box.seal(JSON.stringify(s.remoteSecrets)) : null, s.createdBy ?? null, t, t,
+        );
+        return storageFrom(one("SELECT * FROM storages WHERE name = ?", s.name)!);
+      },
+      get: (name) => {
+        const r = one("SELECT * FROM storages WHERE name = ?", name);
+        return r && storageFrom(r);
+      },
+      list: () => all("SELECT * FROM storages ORDER BY name").map(storageFrom),
+      secrets(name) {
+        const r = one("SELECT secret_key_enc, remote_secrets_enc FROM storages WHERE name = ?", name);
+        if (!r) return undefined;
+        return { secretKey: box.open(r.secret_key_enc as string), remote: r.remote_secrets_enc ? (JSON.parse(box.open(r.remote_secrets_enc as string)) as StorageSecrets) : {} };
+      },
+      update(name, patch) {
+        const cur = one("SELECT * FROM storages WHERE name = ?", name);
+        if (!cur) return false;
+        run(
+          "UPDATE storages SET backend = ?, port = ?, access_key = ?, secret_key_enc = ?, remote_secrets_enc = ?, updated_at = ? WHERE name = ?",
+          patch.backend ? JSON.stringify(patch.backend) : (cur.backend as string),
+          patch.port ?? (cur.port as number),
+          patch.accessKey ?? (cur.access_key as string),
+          patch.secretKey ? box.seal(patch.secretKey) : (cur.secret_key_enc as string),
+          patch.remoteSecrets ? (Object.keys(patch.remoteSecrets).length ? box.seal(JSON.stringify(patch.remoteSecrets)) : null) : ((cur.remote_secrets_enc as string | null) ?? null),
+          now(),
+          name,
+        );
+        return true;
+      },
+      remove: (name) => Number(run("DELETE FROM storages WHERE name = ?", name).changes) > 0,
+    },
+
     layouts: {
       get(scope) {
         const r = one("SELECT positions FROM canvas_layouts WHERE scope = ?", scope);
@@ -568,8 +633,8 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         if (projectId !== null && !one("SELECT 1 AS x FROM projects WHERE id = ?", projectId)) return false;
         return Number(run("UPDATE apps SET project_id = ? WHERE name = ?", projectId, name).changes) > 0;
       },
-      ensure(name, server) {
-        run("INSERT OR IGNORE INTO apps (name, server, status, updated_at) VALUES (?, ?, 'unknown', ?)", name, server, now());
+      ensure(name, server, kind = "app") {
+        run("INSERT OR IGNORE INTO apps (name, server, status, kind, updated_at) VALUES (?, ?, 'unknown', ?, ?)", name, server, kind, now());
       },
       upsert(a) {
         const t = now();
@@ -585,7 +650,7 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         const r = one("SELECT * FROM apps WHERE name = ?", name);
         return r && appFrom(r);
       },
-      list: () => all("SELECT * FROM apps ORDER BY name").map(appFrom),
+      list: (o) => all(o?.includeStorage ? "SELECT * FROM apps ORDER BY name" : "SELECT * FROM apps WHERE kind <> 'storage' ORDER BY name").map(appFrom),
       remove(name) {
         run("DELETE FROM app_registry_logins WHERE app = ?", name);
         run("DELETE FROM pending_domains WHERE app = ?", name);
@@ -649,6 +714,9 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
           if (app && patch.historyAt) run("DELETE FROM deployments WHERE app = ? AND history_at = ? AND id <> ? AND source = 'host'", app, patch.historyAt, id);
           run(`UPDATE deployments SET ${keys.map((k) => `${k} = ?`).join(", ")} WHERE id = ?`, ...keys.map((k) => cols[k]!), id);
         });
+      },
+      remove(id) {
+        run("DELETE FROM deployments WHERE id = ?", id);
       },
       setLog(id, text) {
         run("UPDATE deployments SET log = ? WHERE id = ?", text, id);

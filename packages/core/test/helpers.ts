@@ -25,7 +25,7 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
   const calls: string[][] = [];
   const created = new Set<string>();
   const probed: string[] = [];
-  const ctl = { podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[], exposed: [] as number[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
+  const ctl = { rclone: { version: "rclone v1.68.2" as string | null, lsdCode: 0, lsdStderr: "", keyscan: "" }, podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[], exposed: [] as number[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
 
   const unitFiles = () => (existsSync(layout.unitDir) ? readdirSync(layout.unitDir).filter((f) => f.endsWith(".service")) : []);
   const unitText = (unit: string) => (existsSync(`${layout.unitDir}/${unit}`) ? readFileSync(`${layout.unitDir}/${unit}`, "utf8") : "");
@@ -35,8 +35,12 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
     return wd !== undefined && existsSync(`${wd}/${flag}`);
   };
 
-  const run: Run = async (cmd, args) => {
+  const run: Run = async (cmd, args, opts) => {
     calls.push([cmd, ...args]);
+    if (cmd === "/usr/local/bin/rclone" && args[0] === "version") return ctl.rclone.version ? { stdout: `${ctl.rclone.version}\n- os/version: debian\n`, code: 0 } : { stdout: "", code: 127 };
+    if (cmd === "/usr/local/bin/rclone" && args[0] === "lsd") return { stdout: "", stderr: ctl.rclone.lsdStderr, code: ctl.rclone.lsdCode };
+    if (cmd === "sh" && args.some((a) => a.includes("rclone obscure"))) return { stdout: `obscured(${opts?.env?.FR_PW})\n`, code: 0 };
+    if (cmd === "ssh-keyscan") return { stdout: ctl.rclone.keyscan, code: 0 };
     if (cmd === "useradd") created.add(args.at(-1)!);
     if (cmd === "id") return created.has(args.at(-1)!) ? { stdout: "1001\n", code: 0 } : { stdout: "", code: 1 }; // the app user exists once useradd ran
     if (cmd === "/usr/bin/podman") return ctl.podman.installed ? { stdout: "podman version 5.0.0\n", code: 0 } : { stdout: "", code: 127 };

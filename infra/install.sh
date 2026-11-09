@@ -24,6 +24,8 @@
 #   --with-containers      agent servers: also install Podman, so apps can be deployed as container images
 #                          (`image:` in app.yaml). Off by default; apps that run a command need none.
 #                          Upgrades keep it.                                         [FREIGHTER_WITH_CONTAINERS=1]
+#   --with-storage         agent servers: also install rclone, so this server can serve S3 storages (Storage in the
+#                          dashboard). Off by default. Safe to re-run on an existing server.  [FREIGHTER_WITH_STORAGE=1]
 #   --haproxy auto|dedicated|existing
 #                          auto: use the HAProxy already on this server if there is one, else a dedicated one.
 #                          dedicated: a separate Freighter-only HAProxy (own unit, own config); the system's
@@ -168,6 +170,8 @@ install_packages() {
 		# pasta (passt) is the newer rootless network stack; not every release has it, and slirp4netns covers the others.
 		if apt-cache show passt >/dev/null 2>&1; then pkgs="$pkgs passt"; fi
 	fi
+	# rclone comes as a zip.
+	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_STORAGE" = 1 ]; then pkgs="$pkgs unzip"; fi
 	missing=
 	for p in $pkgs; do
 		dpkg -s "$p" >/dev/null 2>&1 || missing="$missing $p"
@@ -215,6 +219,36 @@ install_node() {
 	for b in node npm npx corepack; do ln -sf "$dest/bin/$b" "/usr/local/bin/$b"; done
 	NODE_BIN=/usr/local/bin/node
 	ok "node $ver -> /usr/local/bin/node ($(printf '%s' "$got" | cut -c1-12)… verified)"
+}
+
+# ---------- 3b. rclone, for S3 storages ----------
+# `rclone serve s3` needs 1.65 or newer, which the distributions' packages are not, so the upstream release is installed,
+# checked against the checksums published next to it.
+RCLONE_VERSION=1.68.2
+install_rclone() {
+	[ "$HAS_AGENT" = 1 ] && [ "$WITH_STORAGE" = 1 ] || return 0
+	step "Installing rclone $RCLONE_VERSION (S3 storage)"
+	if [ -x /usr/local/bin/rclone ] && /usr/local/bin/rclone version 2>/dev/null | awk 'NR==1 {split(substr($2,2),v,"."); exit !((v[1]+0>1) || (v[1]+0==1 && v[2]+0>=65))}'; then
+		skip "$(/usr/local/bin/rclone version | head -n1) is already installed"
+		return
+	fi
+	[ "$DRY_RUN" = 1 ] && { printf '  %s$%s %sdownload + verify rclone v%s linux-%s from downloads.rclone.org%s\n' "$DIM" "$RST" "$DIM" "$RCLONE_VERSION" "$NODE_ARCH" "$RST"; return; }
+
+	case $NODE_ARCH in x64) rarch=amd64 ;; *) rarch=$NODE_ARCH ;; esac
+	base="https://downloads.rclone.org/v$RCLONE_VERSION"
+	file="rclone-v$RCLONE_VERSION-linux-$rarch.zip"
+	sums=$($DL "$base/SHA256SUMS") || die "could not fetch $base/SHA256SUMS"
+	want=$(printf '%s\n' "$sums" | awk -v f="$file" '$2 == f {print $1}')
+	[ -n "$want" ] || die "no rclone $RCLONE_VERSION build for linux-$rarch on downloads.rclone.org."
+
+	tmp=$(mktemp -d)
+	$DL "$base/$file" >"$tmp/$file" || die "download of $file failed."
+	got=$(sha256sum "$tmp/$file" | awk '{print $1}')
+	[ "$got" = "$want" ] || die "checksum mismatch for $file (expected $want, got $got); refusing to install it."
+	unzip -q -j "$tmp/$file" '*/rclone' -d "$tmp" || die "could not unpack $file."
+	install -m 0755 "$tmp/rclone" /usr/local/bin/rclone
+	rm -rf "$tmp"
+	ok "rclone $RCLONE_VERSION -> /usr/local/bin/rclone ($(printf '%s' "$got" | cut -c1-12)… verified)"
 }
 
 # ---------- 4. user, group, directories ----------
@@ -477,6 +511,7 @@ main() {
 	HAPROXY_MODE=${FREIGHTER_HAPROXY:-auto}; HTTP_PORT=${FREIGHTER_HTTP_PORT:-80}; HTTPS_PORT=${FREIGHTER_HTTPS_PORT:-443}; PUBLIC_HTTPS_PORT=${FREIGHTER_PUBLIC_HTTPS_PORT:-}; ACCEPT_PROXY=0
 	HAS_AGENT=0; [ "${FREIGHTER_WITH_AGENT:-0}" = 1 ] && HAS_AGENT=1
 	WITH_CONTAINERS=0; [ "${FREIGHTER_WITH_CONTAINERS:-0}" = 1 ] && WITH_CONTAINERS=1
+	WITH_STORAGE=0; [ "${FREIGHTER_WITH_STORAGE:-0}" = 1 ] && WITH_STORAGE=1
 	NO_START=0; DRY_RUN=0; HAPROXY_MANUAL=0; DL=; NODE_BIN=; NODE_ARCH=
 
 	while [ $# -gt 0 ]; do
@@ -495,6 +530,7 @@ main() {
 			--accept-proxy) ACCEPT_PROXY=1; shift ;;
 			--with-agent) HAS_AGENT=1; shift ;;
 			--with-containers) WITH_CONTAINERS=1; shift ;;
+			--with-storage) WITH_STORAGE=1; shift ;;
 			--no-agent) HAS_AGENT=0; shift ;; # the default; kept for scripts written before it was
 			--no-start) NO_START=1; shift ;;
 			--dry-run) DRY_RUN=1; shift ;;
@@ -522,6 +558,7 @@ main() {
 	detect_haproxy_mode
 	install_packages
 	install_node
+	install_rclone
 	create_user_and_dirs
 	install_freighter
 	write_config

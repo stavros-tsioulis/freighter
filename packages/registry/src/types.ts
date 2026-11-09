@@ -1,3 +1,4 @@
+import type { StorageBackend } from "@freighter/manifest";
 export type Role = "viewer" | "deployer" | "admin";
 const ORDER: Role[] = ["viewer", "deployer", "admin"];
 export const roleAtLeast = (have: Role, need: Role) => ORDER.indexOf(have) >= ORDER.indexOf(need);
@@ -15,6 +16,8 @@ export interface AppRow {
   updatedAt: string;
   /** The project this app is organized under, if any. */
   projectId: string | null;
+  /** `storage`: the app that serves an S3 storage (hidden from app lists). */
+  kind: "app" | "storage";
 }
 export interface ProjectRow {
   id: string;
@@ -174,4 +177,17 @@ export interface SshKeyRow {
   lastUsedAt: string | null;
   /** Number of linked apps that clone with this key. */
   appCount: number;
+}
+
+/** An S3 storage. The key pair and any remote credentials are sealed; `registry.storages.secrets` opens them. */
+export interface StorageRow {
+  name: string;
+  server: string;
+  backend: StorageBackend;
+  /** The port its endpoint listens on while it has no domain. */
+  port: number;
+  accessKey: string;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
 }

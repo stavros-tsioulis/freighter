@@ -47,19 +47,21 @@ onNodeDragStart(() => (dragging.value = true));
 onNodeDragStop(() => {
   dragging.value = false;
   const positions: ProjectGraph["layout"] = { ...props.graph.layout };
-  for (const n of getNodes.value) if (n.type === "app") positions[n.id] = { x: Math.round(n.position.x / GRID) * GRID, y: Math.round(n.position.y / GRID) * GRID };
+  for (const n of getNodes.value) if (n.type === "app" || n.type === "storage") positions[n.id] = { x: Math.round(n.position.x / GRID) * GRID, y: Math.round(n.position.y / GRID) * GRID };
   emit("layout", positions);
 });
 onNodeClick(({ node }: NodeMouseEvent) => {
   const d = node.data as FlowNode["data"];
-  emit("select", { app: d.app.name, service: node.type === "service" ? d.service?.name : undefined });
+  // a storage is a page of its own
+  if (node.type === "storage") return void navigateTo(`/storage/${d.storage!.name}`);
+  emit("select", { app: d.app!.name, service: node.type === "service" ? d.service?.name : undefined });
 });
 onPaneClick(() => emit("select", null));
 
 const fit = () => void fitView({ padding: 0.2, duration: 250, maxZoom: 1 });
 defineExpose({ fit });
 const minimapColor = (n: { data?: FlowNode["data"]; type?: string }) =>
-  n.type === "app" ? "transparent" : n.data?.service?.activeState === "failed" ? "#ef4444" : n.data?.service?.activeState === "active" ? "#22c55e" : "#96a1ab";
+  n.type === "app" ? "transparent" : n.type === "storage" ? "#7183ea" : n.data?.service?.activeState === "failed" ? "#ef4444" : n.data?.service?.activeState === "active" ? "#22c55e" : "#96a1ab";
 </script>
 
 <template>
@@ -83,6 +85,7 @@ const minimapColor = (n: { data?: FlowNode["data"]; type?: string }) =>
   >
     <template #node-app="p"><CanvasAppGroupNode v-bind="p" /></template>
     <template #node-service="p"><CanvasServiceNode v-bind="p" /></template>
+    <template #node-storage="p"><CanvasStorageNode v-bind="p" /></template>
     <template #edge-connection="p"><CanvasConnectionEdge v-bind="p" /></template>
     <Background :gap="GRID" :size="1.6" pattern-color="var(--canvas-dot)" />
     <Controls position="bottom-left" :show-interactive="false" />

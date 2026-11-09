@@ -1,7 +1,9 @@
 import { rm } from "node:fs/promises";
-import { imageHost, imageServices, parseManifest } from "@freighter/manifest";
+import { imageHost, imageServices, parseManifest, storageApp, storageOfApp } from "@freighter/manifest";
+import { randomUUID } from "node:crypto";
 import { AgentError } from "@freighter/protocol";
 import { pushConnections } from "./connections.ts";
+import { dependantsOf } from "./dependants.ts";
 import type { ApiContext } from "./context.ts";
 import { syncApp } from "./sync.ts";
 
@@ -26,6 +28,13 @@ export interface Jobs {
   enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string }): void;
   enqueueRollback(job: { id: string; app: string; server: string; release?: string }): void;
   enqueueGit(job: GitJob): void;
+  /** Create or update the endpoint that serves a storage, from what the registry holds for it. */
+  enqueueStorage(job: { id: string; name: string; server: string }): void;
+  /**
+   * Something an app or storage offers has changed (a domain, a port, a key): redeploy the apps that connect to it,
+   * those whose resolved values actually differ. Call after a change that did not go through a job.
+   */
+  cascade(target: { app: string }, depth?: number): Promise<void>;
   /** Replace an app's domains; a deployed app is redeployed with the new routing (health-gated, rolled back on failure). */
   enqueueDomains(job: { id: string; app: string; server: string; domains: { hostname: string; service: string; tls: "auto" | "off" }[]; /** Called with the failure message, or null on success. */ done?: (error: string | null) => void }): void;
   /** A git deployment for this app that is queued but has not started yet (further triggers fold into it). */
@@ -45,7 +54,7 @@ export function createJobs(ctx: ApiContext): Jobs {
   const queuedGitByApp = new Map<string, string>();
   let pending = 0;
 
-  const enqueue = (server: string, app: string, run: () => Promise<void>, cleanup?: () => Promise<void>) => {
+  const enqueue = (server: string, app: string, run: () => Promise<void>, cleanup?: () => Promise<void>, depth = 0, jobId?: string) => {
     pending++;
     const next = (chains.get(server) ?? Promise.resolve()).then(async () => {
       try {
@@ -53,11 +62,59 @@ export function createJobs(ctx: ApiContext): Jobs {
       } finally {
         await cleanup?.().catch(() => {});
         await syncApp(ctx, server, app).catch(() => {}); // refresh observed state; failures are non-fatal
+        // What this app offers (domains, ports, keys) may have moved: the apps that connect to it follow.
+        // A job that turned out to have nothing to do (its deployment was removed) changed nothing for anyone.
+        const done = jobId ? ctx.registry.deployments.get(jobId) : ctx.registry.deployments.list({ app, limit: 1 })[0];
+        if (done?.status === "success") await cascade({ app }, depth).catch(() => {});
         pending--;
       }
     });
     chains.set(server, next);
   };
+
+  const MAX_DEPTH = 3; // A reaching B reaching C is fine; a loop of apps that read each other must end.
+  /** Queue a re-resolve for every app that connects to `target`. They only redeploy when a value they read changed. */
+  async function cascade(target: { app: string }, depth = 0): Promise<void> {
+    if (depth >= MAX_DEPTH) return;
+    const storage = ctx.registry.apps.get(target.app)?.kind === "storage" ? storageOfApp(target.app) : null;
+    for (const row of await dependantsOf(ctx, storage ? { storage } : { app: target.app })) {
+      const id = randomUUID();
+      ctx.registry.deployments.create({ id, app: row.name, server: row.server, action: "deploy", trigger: "manual", requestedBy: null });
+      enqueueReapply({ id, app: row.name, server: row.server, because: storage ? `storage ${storage}` : target.app, depth: depth + 1 });
+    }
+  }
+
+  function enqueueReapply({ id, app, server, because, depth }: { id: string; app: string; server: string; because: string; depth: number }) {
+    enqueue(
+      server,
+      app,
+      async () => {
+        const agent = ctx.agents.forServer(server);
+        ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
+        try {
+          await pushConnections(ctx, server, app);
+          const r = await agent.call("app.reapply", { app, logId: id }, { timeoutMs: 15 * 60_000 });
+          if (!r.changed || !r.deploy) return void ctx.registry.deployments.remove(id); // nothing it reads has changed: no deployment to show
+          ctx.registry.deployments.update(id, {
+            status: "success",
+            releaseId: r.deploy.releaseId,
+            previousRelease: r.deploy.previous,
+            warnings: [`restarted because ${because} changed`, ...r.deploy.warnings],
+            historyAt: r.deploy.historyAt,
+            finishedAt: now(),
+          });
+          await agent.call("build.log", { id, from: 0 }).then((l) => ctx.registry.deployments.setLog(id, l.text)).catch(() => {});
+        } catch (e) {
+          // An agent that predates this has nothing to re-resolve; it is not a failure worth a deployment.
+          if (e instanceof AgentError && /unknown op|not supported/i.test(e.message)) return void ctx.registry.deployments.remove(id);
+          ctx.registry.deployments.update(id, failure(e));
+        }
+      },
+      undefined,
+      depth,
+      id,
+    );
+  }
 
   const failure = (e: unknown) => {
     if (e instanceof AgentError) {
@@ -193,6 +250,33 @@ export function createJobs(ctx: ApiContext): Jobs {
       });
     },
 
+    enqueueStorage({ id, name, server }) {
+      const app = storageApp(name);
+      enqueue(server, app, async () => {
+        ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
+        const agent = ctx.agents.forServer(server);
+        try {
+          const row = ctx.registry.storages.get(name);
+          const secrets = ctx.registry.storages.secrets(name);
+          if (!row || !secrets) throw new Error("the storage was deleted");
+          const hasRemote = Object.keys(secrets.remote).length > 0;
+          const r = await agent.call(
+            "storage.apply",
+            { name, backend: row.backend, accessKey: row.accessKey, secretKey: secrets.secretKey, secrets: hasRemote ? secrets.remote : undefined, logId: id },
+            { timeoutMs: 10 * 60_000 },
+          );
+          ctx.registry.storages.update(name, { port: r.port });
+          ctx.registry.deployments.update(id, { status: "success", releaseId: r.deploy.releaseId, previousRelease: r.deploy.previous, warnings: r.deploy.warnings, historyAt: r.deploy.historyAt, finishedAt: now() });
+        } catch (e) {
+          ctx.registry.deployments.update(id, failure(e));
+        }
+        await agent
+          .call("build.log", { id, from: 0 })
+          .then((l) => ctx.registry.deployments.setLog(id, l.text))
+          .catch(() => {});
+      });
+    },
+
     enqueueGit(job) {
       queuedGitByApp.set(job.app, job.id);
       enqueue(job.server, job.app, async () => {
@@ -242,6 +326,7 @@ export function createJobs(ctx: ApiContext): Jobs {
     },
 
     queuedGit: (app) => queuedGitByApp.get(app),
+    cascade: (target, depth) => cascade(target, depth),
 
     async idle() {
       while (pending > 0) await Promise.all([...chains.values()]);

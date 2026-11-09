@@ -255,4 +255,20 @@ export const migrations: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  `
+  -- S3 storages. Each is served by a hidden app (apps.kind = 'storage') named storage-<name>. Credentials are sealed.
+  ALTER TABLE apps ADD COLUMN kind TEXT NOT NULL DEFAULT 'app';
+  CREATE TABLE storages (
+    name TEXT PRIMARY KEY,
+    server TEXT NOT NULL,
+    backend TEXT NOT NULL,
+    port INTEGER NOT NULL,
+    access_key TEXT NOT NULL,
+    secret_key_enc TEXT NOT NULL,
+    remote_secrets_enc TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

@@ -11,6 +11,21 @@ const { data: graph, isLoading, error } = useProjectGraph(id);
 const { data: projects } = useProjects();
 const save = useSaveLayout(id);
 
+// Canvas is the default; the list is a second view of the same project under the same header (?view=list).
+const view = computed({
+  get: () => (route.query.view === "list" ? "list" : "canvas"),
+  set: (v: string) => void router.replace({ query: { ...route.query, view: v === "list" ? "list" : undefined } }),
+});
+const views = [
+  { label: "Canvas", value: "canvas", icon: "pi pi-share-alt" },
+  { label: "List", value: "list", icon: "pi pi-list" },
+];
+const { data: allApps } = useApps();
+const known = computed(() => new Set((projects.value ?? []).map((p) => p.id)));
+const listed = computed(() =>
+  (allApps.value ?? []).filter((a) => (id.value === "none" ? a.projectId === null || !known.value.has(a.projectId) : a.projectId === id.value)),
+);
+
 const project = computed(() => projects.value?.find((p) => p.id === id.value));
 const title = computed(() => (id.value === "none" ? "No project" : (project.value?.name ?? "Project")));
 useHead({ title: computed(() => `${title.value} - Freighter`) });
@@ -24,7 +39,6 @@ const selected = computed(() => {
 const select = (s: { app: string; service?: string } | null) =>
   void router.replace({ query: { ...route.query, node: s ? selectionId(s.app, s.service) : undefined } });
 
-const canvas = ref<{ fit: () => void } | null>(null);
 const wrap = ref<HTMLElement | null>(null);
 
 // Only worth saying when something needs attention; counts are visible on the canvas itself.
@@ -38,15 +52,16 @@ const warning = computed(() => {
   <div class="flex-1 min-h-0 flex flex-col" @keydown.esc="select(null)">
     <div class="shrink-0 px-4 sm:px-6 pt-5 pb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-3 border-b border-[var(--fr-line)]">
       <div class="min-w-0">
-        <NuxtLink to="/apps" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1">
-          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps
+        <NuxtLink to="/projects" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1">
+          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Projects
         </NuxtLink>
         <h1 class="font-display text-[1.9rem] leading-none font-semibold truncate">{{ title }}</h1>
         <p v-if="warning || project?.description" class="mt-1 text-sm" :class="warning ? 'text-red-600 dark:text-red-400' : 'text-muted-color'">{{ warning || project?.description }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <Button label="Fit" icon="pi pi-expand" size="small" severity="secondary" @click="canvas?.fit()" />
-        <NuxtLink to="/apps"><Button label="List" icon="pi pi-list" size="small" severity="secondary" tabindex="-1" /></NuxtLink>
+        <SelectButton v-model="view" :options="views" option-label="label" option-value="value" :allow-empty="false" size="small" aria-label="View">
+          <template #option="{ option }"><i :class="option.icon" class="text-[0.8rem]" aria-hidden="true" /><span class="ml-1.5">{{ option.label }}</span></template>
+        </SelectButton>
         <DeployMenu size="small" />
       </div>
     </div>
@@ -60,9 +75,11 @@ const warning = computed(() => {
           <p class="mt-1.5 text-muted-color">Deploy an app and move it into this project from its page. Services show up here, with an arrow wherever one connects to another.</p>
         </div>
       </div>
+      <div v-else-if="view === 'list'" class="absolute inset-0 overflow-y-auto px-4 sm:px-6 py-5">
+        <AppBoard :apps="listed" />
+      </div>
       <template v-else-if="graph">
         <CanvasProjectCanvas
-          ref="canvas"
           :graph="graph"
           :selected="selected"
           :editable="can('deployer')"

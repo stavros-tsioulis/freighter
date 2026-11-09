@@ -1,4 +1,4 @@
-import { HOSTNAME_RE, IDENT_RE, connectionsSchema } from "@freighter/manifest";
+import { HOSTNAME_RE, IDENT_RE, connectionsSchema, storageBackendSchema, storageNameSchema, storageSecretsSchema } from "@freighter/manifest";
 import { z } from "zod";
 
 const app = z.string().regex(IDENT_RE);
@@ -283,6 +283,44 @@ export const ops = {
   "build.log": {
     args: z.object({ id: z.string().regex(/^[0-9a-f-]{8,64}$/), from: z.number().int().min(0).default(0) }),
     result: z.object({ text: z.string(), next: z.number(), done: z.boolean() }),
+  },
+  /** Variables added on the server, on top of app.yaml's `environment:`. Agents with the "variables" capability only. */
+  "variables.get": { args: z.object({ app }), result: z.object({ variables: z.record(envKey, z.string()) }) },
+  "variables.set": {
+    args: z.object({
+      app,
+      set: z.record(envKey, z.string().max(65_536).refine((v) => !/[\r\n\0]/.test(v), "no newlines")).optional(),
+      remove: z.array(envKey).max(200).optional(),
+      logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
+    }),
+    result: z.object({ variables: z.record(envKey, z.string()), deploy: deployResult.nullable() }),
+  },
+  /** Create or update the S3 endpoint of a storage (an app the agent manages). Agents with the "storage" capability only. */
+  "storage.apply": {
+    args: z.object({
+      name: storageNameSchema,
+      backend: storageBackendSchema,
+      accessKey: z.string().min(8).max(128).regex(/^[A-Za-z0-9]+$/),
+      secretKey: z.string().min(16).max(256).regex(/^[A-Za-z0-9+/_-]+$/),
+      secrets: storageSecretsSchema.optional(),
+      logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
+    }),
+    /** `port`: where the endpoint listens while it has no domain (the agent picks it the first time and keeps it). */
+    result: z.object({ deploy: deployResult, port: z.number() }),
+  },
+  /** Try a backend without creating anything. For SFTP without a pinned host key, returns the key to confirm instead. */
+  "storage.test": {
+    args: z.object({ backend: storageBackendSchema, secrets: storageSecretsSchema.optional() }),
+    result: z.object({
+      ok: z.boolean(),
+      error: z.string().optional(),
+      hostKey: z.object({ line: z.string(), fingerprint: z.string(), type: z.string() }).optional(),
+    }),
+  },
+  /** Redeploy the current release unchanged if something its connections resolve to has changed since it went live. Agents with the "reapply" capability only. */
+  "app.reapply": {
+    args: z.object({ app, logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
+    result: z.object({ changed: z.boolean(), deploy: deployResult.nullable() }),
   },
   "env.list": { args: z.object({ app }), result: z.object({ names: z.array(z.string()) }) },
   "env.set": {

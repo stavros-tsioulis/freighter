@@ -32,6 +32,23 @@ curl -s -H "Authorization: Bearer $TOKEN" https://freighter.example.com/api/v1/a
 | `GET /apps/:app/logs?service=web&lines=200` | service journal | deployer |
 | `POST /apps/:app/start`, `/stop`, `/restart` | body `{"service": "web"}`, or `{}` for all | deployer |
 
+## Storage
+
+An [S3 storage](/deploy/storage). Credentials are never returned, except the key pair in the response that creates or rotates it.
+
+| Endpoint | | Role |
+| --- | --- | --- |
+| `GET /storages` | storages with their state and domains | viewer |
+| `GET /storages/:name` | one storage | viewer |
+| `POST /storages/test` | `{"backend": {…}, "secrets": {…}, "server": "…"}`: try a backend. For SFTP without `hostKey` it returns the server's `hostKey` to confirm | admin |
+| `POST /storages` | `{"name": "uploads", "server": "…", "backend": {"kind": "local"}}` (or `sftp` / `smb` with `secrets`). `202` with the deployment `id`, `accessKey` and `secretKey` | admin |
+| `PATCH /storages/:name` | `{"backend": {…}, "secrets": {…}}`; what is left out stays. Redeploys the endpoint | admin |
+| `POST /storages/:name/apply` | deploy the endpoint again with what is stored | admin |
+| `POST /storages/:name/rotate-keys` | new secret key, returned once | admin |
+| `DELETE /storages/:name` | `{"confirm": "uploads"}`; refused while an app references it | admin |
+
+A storage's domains, logs and deployments are those of its app, `storage-<name>`: use the app endpoints (`/apps/storage-uploads/domains`, …).
+
 ## Projects
 
 A project only groups apps; it has no effect on how they run. An app is in at most one project.
@@ -96,6 +113,9 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 
 | | | Role |
 | --- | --- | --- |
+| `GET /apps/:app/variables` | the environment: `key`, `value` as written, `source` (`app.yaml`, `added`, `override`), `resolved` (connections filled in), `error` if one can't be resolved, `reference` | viewer |
+| `PUT /apps/:app/variables/:KEY` | `{"value": "…"}`. Adds or changes a variable over app.yaml's and redeploys the current release to apply it | admin |
+| `DELETE /apps/:app/variables/:KEY` | removes an added variable, or takes an override back to app.yaml's value | admin |
 | `GET /apps/:app/env` | secret names | viewer |
 | `PUT /apps/:app/env/:KEY` | `{"value": "…"}`. The value is never stored or logged by the API. | admin |
 
