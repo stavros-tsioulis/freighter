@@ -6,7 +6,7 @@ import { ensureApp } from "./app.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
 import { goLive, liveTargets, ownedUnits, plannedUnits } from "./apply.ts";
 import { missingSecrets } from "./env.ts";
-import { containersAvailable, ensureContainerRuntime, imageServices, NO_CONTAINERS_MESSAGE, pruneImages, pullImages, writeImages, type RegistryAuth } from "./image.ts";
+import { containersAvailable, ensureContainerRuntime, imageServices, NO_CONTAINERS_MESSAGE, pruneImages, pullImages, writeContainerPorts, writeImages, type RegistryAuth } from "./image.ts";
 import { recordHistory, type SourceMeta } from "./history.ts";
 import { withLock } from "./lock.ts";
 import { allocateReleaseId, currentRelease, newReleaseId, pruneReleases, releaseDir, stageEmptyRelease, stageRelease } from "./releases.ts";
@@ -128,8 +128,9 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     try {
       if (hasImages) {
         await ensureContainerRuntime(d, app, manifest);
-        const { images } = await pullImages(d, app, manifest, { auth: opts.registryAuth, log });
+        const { images, containerPorts } = await pullImages(d, app, manifest, { auth: opts.registryAuth, log });
         await writeImages(d, app, releaseId, images);
+        await writeContainerPorts(d, app, releaseId, containerPorts);
       }
       if (changesDomains) await writeDomains(d, app, domains);
       live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains, log });

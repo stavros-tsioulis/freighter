@@ -113,6 +113,11 @@ describe("renderUnit for image services", () => {
     expect(out).toContain("CPUQuota=100%");
     expect(out).toContain("Delegate=yes");
   });
+  it("publishes onto the port the image was found to listen on, unless app.yaml says otherwise", () => {
+    expect(run({ def: { ...img.services.web!, containerPort: undefined }, containerPort: 3000 })).toContain("-p 127.0.0.1:21000:3000 ");
+    expect(run({ containerPort: 3000 })).toContain("-p 127.0.0.1:21000:8080 "); // containerPort: 8080 in app.yaml wins
+    expect(run({ def: { ...img.services.web!, containerPort: undefined } })).toContain("-p 127.0.0.1:21000:21000 ");
+  });
   it("never puts values on the command line", () => {
     expect(run()).not.toMatch(/ExecStart=.*production/);
   });

@@ -92,9 +92,42 @@ export async function ensureContainerRuntime(d: Deps, app: string, manifest: Pic
   await d.run("chown", ["-R", `${app}:${app}`, home, `${d.layout.appsRoot}/${app}/shared`]);
 }
 
+const PORTS_FILE = ".freighter-container-ports.json";
+
+/** Ports the images of a release were found to listen on (service -> port), for services that did not set `containerPort`. */
+export async function readContainerPorts(d: Deps, app: string, release: string): Promise<Record<string, number>> {
+  try {
+    return JSON.parse(await readFile(`${releaseDir(d, app, release)}/${PORTS_FILE}`, "utf8")) as Record<string, number>;
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return {};
+    throw e;
+  }
+}
+export async function writeContainerPorts(d: Deps, app: string, release: string, ports: Record<string, number>): Promise<void> {
+  if (Object.keys(ports).length > 0) await writeFile(`${releaseDir(d, app, release)}/${PORTS_FILE}`, JSON.stringify(ports, null, 2));
+}
+
+/** The TCP ports an image declares with EXPOSE (sorted). */
+async function exposedPorts(d: Deps, app: string, ref: string): Promise<number[]> {
+  const r = await podman(d, app, ["image", "inspect", "--format", "{{json .Config.ExposedPorts}}", ref]);
+  if (r.code !== 0) return [];
+  try {
+    const parsed = JSON.parse(r.stdout.trim() || "null") as Record<string, unknown> | null;
+    const ports = Object.keys(parsed ?? {}).flatMap((k) => {
+      const m = /^(\d+)(?:\/tcp)?$/.exec(k);
+      return m ? [Number(m[1])] : [];
+    });
+    return [...new Set(ports)].sort((a, b) => a - b);
+  } catch {
+    return [];
+  }
+}
+
 export interface PullResult {
   /** service -> pinned reference (`repo@sha256:...`), or the reference as written when the digest cannot be known (dev mode). */
   images: Record<string, string>;
+  /** service -> the port its image declares (EXPOSE), for image services that set no `containerPort` and whose image names exactly one. */
+  containerPorts: Record<string, number>;
 }
 
 /**
@@ -105,14 +138,37 @@ export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, 
   const log = opts.log ?? noLog;
   const wanted = imageServices(manifest);
   const images: Record<string, string> = {};
+  const containerPorts: Record<string, number> = {};
   const pulled = new Map<string, string>();
+  const exposed = new Map<string, number[]>();
   const authFile = `${containerHome(d.layout, app)}/auth-${process.pid}-${d.now().getTime()}.json`;
+
+  /**
+   * Without `containerPort` the image's own EXPOSE says where it listens: most images (Grafana, nginx, Postgres...)
+   * ignore $PORT, so publishing onto "the same port" would reach nothing. One declared port is used; zero or several
+   * are said out loud, and the published port is used as before.
+   */
+  const resolvePort = async (service: string, ref: string) => {
+    const def = manifest.services[service]!;
+    if (def.containerPort !== undefined) return;
+    if (!exposed.has(ref)) exposed.set(ref, await exposedPorts(d, app, ref));
+    const ports = exposed.get(ref)!;
+    if (ports.length === 1) {
+      containerPorts[service] = ports[0]!;
+      await log(`    ${service} listens on ${ports[0]} (the port the image declares; set containerPort to override)`);
+    } else if (ports.length > 1) {
+      await log(`    warning: the image of ${service} declares ports ${ports.join(", ")}; set containerPort to say which one to publish (using $PORT for now)`);
+    } else if (!d.dev) {
+      await log(`    note: the image of ${service} declares no port; it has to listen on $PORT, or set containerPort`);
+    }
+  };
 
   try {
     for (const [service, ref] of Object.entries(wanted)) {
       const done = pulled.get(ref);
       if (done !== undefined) {
         images[service] = done;
+        await resolvePort(service, ref);
         continue;
       }
       const args = ["pull", "--quiet"];
@@ -142,11 +198,12 @@ export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, 
       } else {
         throw new Error(`could not resolve the digest of ${ref}`);
       }
+      await resolvePort(service, ref);
     }
   } finally {
     await rm(authFile, { force: true });
   }
-  return { images };
+  return { images, containerPorts };
 }
 
 /**

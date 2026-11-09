@@ -27,7 +27,7 @@ services:
   web:
     image: ghcr.io/acme/shop:1.4
     port: 3000              # where Freighter publishes it, on 127.0.0.1
-    containerPort: 8080     # where the image listens (defaults to port)
+    containerPort: 8080     # where the image listens (default: the one port the image declares)
     healthcheck:
       path: /health
     resources:

@@ -25,7 +25,7 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
   const calls: string[][] = [];
   const created = new Set<string>();
   const probed: string[] = [];
-  const ctl = { podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
+  const ctl = { podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[], exposed: [] as number[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
 
   const unitFiles = () => (existsSync(layout.unitDir) ? readdirSync(layout.unitDir).filter((f) => f.endsWith(".service")) : []);
   const unitText = (unit: string) => (existsSync(`${layout.unitDir}/${unit}`) ? readFileSync(`${layout.unitDir}/${unit}`, "utf8") : "");
@@ -43,6 +43,9 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
     if (cmd === "runuser") {
       const args2 = args.slice(args.indexOf("/usr/bin/podman") + 1).filter((a) => !a.startsWith("--cgroup-manager"));
       if (args2[0] === "pull") return ctl.podman.failPull ? { stdout: "", stderr: "manifest unknown\n", code: 125 } : { stdout: "", code: 0 };
+      if (args2[0] === "image" && args2[1] === "inspect" && args2.some((a) => a.includes("ExposedPorts"))) {
+        return { stdout: `${ctl.podman.exposed.length ? JSON.stringify(Object.fromEntries(ctl.podman.exposed.map((p) => [`${p}/tcp`, {}]))) : "null"}\n`, code: 0 };
+      }
       if (args2[0] === "image" && args2[1] === "inspect") return { stdout: `${args2.at(-1)!.replace(/[:@].*$/, "")}@sha256:${ctl.podman.digest}\n`, code: 0 };
       if (args2[0] === "images") return { stdout: ctl.podman.images.join("\n"), code: 0 };
       return { stdout: "", code: 0 };

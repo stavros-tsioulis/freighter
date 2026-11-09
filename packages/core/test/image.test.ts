@@ -41,6 +41,49 @@ describe("image deploys", () => {
     expect((await readdir(`${deps.layout.appsRoot}/shop/current`)).sort()).toEqual([".freighter-images.json", "app.yaml"]);
   });
 
+  describe("the port inside the container", () => {
+    const publish = (unit: string) => /-p (\S+) /.exec(unit.split("\n").find((l) => l.startsWith("ExecStart="))!)![1];
+    const deployWith = async (exposed: number[], extra = "", tag = "1") => {
+      const t = await makeDeps();
+      const { setEnv } = await import("../src/index.ts");
+      await setEnv(t.deps, "shop", "DB_URL", "x");
+      t.ctl.podman.exposed = exposed;
+      const logs: string[] = [];
+      const r = await deploy(t.deps, { manifestText: IMG(tag).replace("    port: 3000\n", `    port: 3000\n${extra}`), log: (l) => void logs.push(l) });
+      return { ...t, r, logs };
+    };
+
+    it("uses the one port the image declares when containerPort is not set (Grafana listens on 3000, ignoring $PORT)", async () => {
+      const t = await deployWith([8080]);
+      expect(publish(t.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:8080");
+      expect(t.logs.join("\n")).toMatch(/web listens on 8080/);
+      expect(JSON.parse(await readFile(`${t.deps.layout.appsRoot}/shop/current/.freighter-container-ports.json`, "utf8"))).toEqual({ web: 8080 });
+    });
+    it("lets containerPort win over the image", async () => {
+      const t = await deployWith([8080], "    containerPort: 9000\n");
+      expect(publish(t.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:9000");
+    });
+    it("says so, and keeps the published port, when the image declares several or none", async () => {
+      const many = await deployWith([80, 443]);
+      expect(publish(many.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:3000");
+      expect(many.logs.join("\n")).toMatch(/declares ports 80, 443; set containerPort/);
+      const none = await deployWith([]);
+      expect(publish(none.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:3000");
+      expect(none.logs.join("\n")).toMatch(/declares no port/);
+    });
+    it("rolls back to the port that release was deployed with", async () => {
+      const t = await deployWith([3000]);
+      const { setEnv } = await import("../src/index.ts");
+      void setEnv;
+      t.ctl.podman.exposed = [8081]; // the next image moved
+      const second = await deploy(t.deps, { manifestText: IMG("2") });
+      expect(publish(t.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:8081");
+      await rollback(t.deps, "shop", { target: t.r.releaseId });
+      expect(publish(t.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:3000");
+      void second;
+    });
+  });
+
   it("fails cleanly, leaving no release behind, when the pull fails", async () => {
     const { deps, ctl } = await makeDeps();
     const { setEnv } = await import("../src/index.ts");

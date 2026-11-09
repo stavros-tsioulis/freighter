@@ -28,6 +28,11 @@ export interface RenderInput {
    * Defaults to `def.image`.
    */
   image?: string;
+  /**
+   * Image services: the port the image listens on inside the container, when it was worked out from the image rather
+   * than set in app.yaml (see `containerPorts` in core). Defaults to `def.containerPort`, then to the published port.
+   */
+  containerPort?: number;
   /** Image services: names of the manifest's secrets, forwarded from the unit's environment into the container. */
   secrets?: string[];
 }
@@ -52,7 +57,7 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   if (!/^[^\s"'\\;$%]+$/.test(image)) throw new Error(`illegal image reference "${image}"`);
   // cgroupfs rather than systemd: the app's user has no systemd user bus, and the unit's own cgroup is delegated to it.
   const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald"];
-  if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? port}`);
+  if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? input.containerPort ?? port}`);
   // Values come from the unit's environment (static env, secrets file, PORT), so they never appear on a command line.
   const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...Object.keys(input.environment ?? {})]);
   if (input.loopback && port !== undefined) keys.add("HOST");

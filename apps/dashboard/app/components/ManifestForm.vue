@@ -60,7 +60,7 @@ const addService = () => form.value.services.push(newService(form.value.services
               <InputText :id="`svc-img-${i}`" v-model="s.image" placeholder="ghcr.io/acme/shop:1.4" autocomplete="off" spellcheck="false" class="font-mono" :invalid="!!imageError(s.image)" />
               <small v-if="imageError(s.image)" class="text-red-500">{{ imageError(s.image) }}</small>
             </div>
-            <div class="flex flex-col gap-1"><label :for="`svc-cport-${i}`" class="text-sm font-medium">Container port</label><InputNumber :input-id="`svc-cport-${i}`" v-model="s.containerPort" :min="1" :max="65535" :use-grouping="false" placeholder="same as port" fluid /></div>
+            <div class="flex flex-col gap-1"><label :for="`svc-cport-${i}`" class="text-sm font-medium">Container port</label><InputNumber :input-id="`svc-cport-${i}`" v-model="s.containerPort" :min="1" :max="65535" :use-grouping="false" placeholder="from the image" fluid /></div>
           </div>
           <div class="flex flex-col gap-2 mt-3">
             <div class="flex items-center justify-between">
