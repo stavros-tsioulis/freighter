@@ -159,10 +159,10 @@ Pull an image app's images again and release the result, with the app's current 
 ```sh
 freighter registry add <host> --username U (--password-stdin | --password P)
 freighter registry list
-freighter registry remove <host>
+freighter registry remove <host> [--username U]
 ```
 
-Logins for private container registries, used when pulling images. Stored encrypted and never shown again. Needs an admin token.
+Logins for private container registries, used when pulling images. A registry can have several (`add` with another `--username`); `remove` needs `--username` then. `push --login host=username` chooses which one an app's images are pulled with. Stored encrypted and never shown again. Needs an admin token.
 
 ### git
 

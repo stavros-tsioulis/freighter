@@ -7,7 +7,7 @@ import { waitForDeployment } from "./push.ts";
 interface Login { host: string; username: string; updatedAt: string }
 
 const add = defineCommand({
-  meta: { name: "add", description: "Save a login for a container registry (used when pulling images). Stored encrypted." },
+  meta: { name: "add", description: "Save a login for a container registry (used when pulling images). Stored encrypted. A registry can have several; an app pulls with the one chosen for it (push --login)." },
   args: {
     host: { type: "positional", required: true, description: "registry host, e.g. ghcr.io (Docker Hub is docker.io)" },
     username: { type: "string", required: true, description: "registry user name" },
@@ -37,11 +37,15 @@ const list = defineCommand({
 
 const remove = defineCommand({
   meta: { name: "remove", description: "Delete the login for a registry" },
-  args: { host: { type: "positional", required: true, description: "registry host" }, ...conn },
+  args: {
+    host: { type: "positional", required: true, description: "registry host" },
+    username: { type: "string", description: "which login, when the registry has several" },
+    ...conn,
+  },
   run: ({ args }) =>
     guard(async () => {
-      await client(args)(`/registries/${encodeURIComponent(args.host)}`, "DELETE");
-      console.log(`removed the login for ${args.host}`);
+      await client(args)(`/registries/${encodeURIComponent(args.host)}${args.username ? `?username=${encodeURIComponent(args.username)}` : ""}`, "DELETE");
+      console.log(`removed the login for ${args.host}${args.username ? ` (${args.username})` : ""}`);
     }),
 });
 

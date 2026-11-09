@@ -1,5 +1,5 @@
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { containerHome, volumeDir, PODMAN } from "@freighter/systemd";
+import { containerHome, containerRuntimeDir, volumeDir, PODMAN } from "@freighter/systemd";
 import { imageServices, type Manifest } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
@@ -47,23 +47,11 @@ export async function containersAvailable(d: Deps): Promise<{ available: boolean
 export const NO_CONTAINERS_MESSAGE =
   "this server cannot run images: Podman is not installed (re-run the installer with FREIGHTER_WITH_CONTAINERS=1, or install podman, uidmap and passt)";
 
-/** The numeric user id of an app's system user (a made-up one in dev mode, where nothing real runs). */
-export async function uidOf(d: Deps, app: string): Promise<string> {
-  const r = await d.run("id", ["-u", app]);
-  const uid = r.stdout.trim();
-  if (r.code !== 0 || !/^\d+$/.test(uid)) {
-    if (d.dev) return "1000";
-    throw new Error(`cannot find the user ${app}`);
-  }
-  return uid;
-}
-
 /** Run podman as the app's user (rootless), with its own HOME and runtime directory. */
 async function podman(d: Deps, app: string, args: string[], timeoutMs?: number) {
-  const uid = await uidOf(d, app);
   return d.run(
     "runuser",
-    ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `XDG_RUNTIME_DIR=/run/user/${uid}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
+    ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
     { timeoutMs },
   );
 }
@@ -79,8 +67,9 @@ async function nextFreeSubidStart(file: string): Promise<number> {
 }
 
 /**
- * Everything rootless Podman needs for this app's user: a subordinate uid/gid range, a login session that stays alive
- * (so /run/user/<uid> exists), a home for the image store, and the service volumes. Idempotent. Runs under the deploy lock,
+ * Everything rootless Podman needs for this app's user: a subordinate uid/gid range, a private runtime directory
+ * (units create it themselves; this makes it exist for pulls before any unit has started), a home for the image store,
+ * and the service volumes. No login session is involved, so it works where systemd-logind is absent. Idempotent. Runs under the deploy lock,
  * which also keeps two deploys from picking the same subuid range.
  */
 export async function ensureContainerRuntime(d: Deps, app: string, manifest: Pick<Manifest, "services">): Promise<void> {
@@ -97,15 +86,9 @@ export async function ensureContainerRuntime(d: Deps, app: string, manifest: Pic
       const r = await d.run("usermod", ["--add-subuids", `${start}-${start + SUBID_COUNT - 1}`, "--add-subgids", `${gidStart}-${gidStart + SUBID_COUNT - 1}`, app]);
       if (r.code !== 0) throw new Error(`could not allocate subordinate ids for ${app} (usermod exit code ${r.code})`);
     }
-    const linger = await d.run("loginctl", ["enable-linger", app]);
-    if (linger.code !== 0) throw new Error(`loginctl enable-linger ${app} failed with exit code ${linger.code}`);
-    const uid = await uidOf(d, app);
-    for (let i = 0; i < 50; i++) {
-      if ((await d.run("test", ["-d", `/run/user/${uid}`])).code === 0) break;
-      if (i === 49) throw new Error(`/run/user/${uid} did not appear after enabling linger for ${app}`);
-      await d.sleep(200);
-    }
   }
+  // Owned by the app's user and private to it, like the directory the units create (see containerRuntimeDir).
+  await d.run("install", ["-d", "-o", app, "-g", app, "-m", "0700", containerRuntimeDir(app)]);
   await d.run("chown", ["-R", `${app}:${app}`, home, `${d.layout.appsRoot}/${app}/shared`]);
 }
 
@@ -190,5 +173,5 @@ export async function removeContainers(d: Deps, app: string): Promise<void> {
   if ((await d.run("id", ["-u", app])).code !== 0) return;
   await podman(d, app, ["rm", "--all", "--force", "--ignore"]).catch(() => undefined);
   await podman(d, app, ["system", "reset", "--force"]).catch(() => undefined);
-  await d.run("loginctl", ["disable-linger", app]).catch(() => undefined);
+  await d.run("rm", ["-rf", containerRuntimeDir(app)]).catch(() => undefined);
 }

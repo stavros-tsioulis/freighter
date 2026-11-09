@@ -212,4 +212,27 @@ export const migrations: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  `
+  -- More than one login per registry host (say two GitHub accounts), and which one each app pulls with.
+  CREATE TABLE registry_credentials_new (
+    id TEXT PRIMARY KEY,
+    host TEXT NOT NULL,
+    username TEXT NOT NULL,
+    secret_enc TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (host, username)
+  );
+  INSERT INTO registry_credentials_new (id, host, username, secret_enc, created_by, created_at, updated_at)
+    SELECT 'reg_' || lower(hex(randomblob(6))), host, username, secret_enc, created_by, created_at, updated_at FROM registry_credentials;
+  DROP TABLE registry_credentials;
+  ALTER TABLE registry_credentials_new RENAME TO registry_credentials;
+  CREATE TABLE app_registry_logins (
+    app TEXT NOT NULL,
+    host TEXT NOT NULL,
+    credential_id TEXT NOT NULL REFERENCES registry_credentials(id) ON DELETE CASCADE,
+    PRIMARY KEY (app, host)
+  );
+  `,
 ];

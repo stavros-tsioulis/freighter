@@ -16,8 +16,12 @@ describe("registry logins", () => {
     const list = await t.request("/v1/registries", { token: t.tokens.admin });
     expect(list.json.registries).toHaveLength(1);
     expect(JSON.stringify(list.json)).not.toMatch(/pw[12]/);
-    expect(t.registry.registryCredentials.password("ghcr.io")).toEqual({ username: "me", password: "pw2" });
-    expect((await t.request("/v1/registries", { token: t.tokens.deployer })).status).toBe(403);
+    expect(t.registry.registryCredentials.secret("ghcr.io", "me")).toEqual({ username: "me", password: "pw2" });
+    // deployers may see which logins exist (to choose one), never a secret
+    const asDeployer = await t.request("/v1/registries", { token: t.tokens.deployer });
+    expect(asDeployer.status).toBe(200);
+    expect(JSON.stringify(asDeployer.json)).not.toMatch(/pw[12]/);
+    expect((await t.request("/v1/registries", { token: t.tokens.viewer })).status).toBe(403);
 
     expect((await t.request("/v1/registries/Not A Host!", { method: "PUT", token: t.tokens.admin, json: { username: "a", password: "b" } })).status).toBe(400);
     expect((await t.request("/v1/registries/ghcr.io", { method: "DELETE", token: t.tokens.admin })).status).toBe(200);
@@ -113,5 +117,63 @@ describe("images in the app view, and changing them", () => {
     expect((await post({ web: "nginx" }, t.tokens.viewer)).status).toBe(403);
     expect((await t.request("/v1/apps/ghost/images", { method: "POST", token: t.tokens.deployer, json: { images: { web: "nginx" } } })).status).toBe(404);
     expect(t.calls.some((c) => c.op === "app.deploy")).toBe(false);
+  });
+});
+
+describe("several logins for one registry", () => {
+  const two = (t: Awaited<ReturnType<typeof makeApi>>) => {
+    t.registry.registryCredentials.set({ host: "ghcr.io", username: "alice", password: "pa" });
+    t.registry.registryCredentials.set({ host: "ghcr.io", username: "bob", password: "pb" });
+  };
+  const deploy = (t: Awaited<ReturnType<typeof makeApi>>, json: Record<string, unknown> = {}) =>
+    t.request("/v1/apps/shop/image-deployments", { method: "POST", token: t.tokens.deployer, json: { manifest: IMAGE_YAML, ...json } });
+
+  it("refuses to guess: a deploy has to say which login the app pulls with", async () => {
+    const t = await makeApi();
+    two(t);
+    const r = await deploy(t);
+    expect(r.status).toBe(409);
+    expect(r.json.error.code).toBe("login_required");
+    expect(r.json.error.message).toMatch(/alice, bob/);
+    expect(t.calls.some((c) => c.op === "app.deploy")).toBe(false);
+  });
+
+  it("uses the chosen login, remembers it for the app, and keeps it for redeploys", async () => {
+    const t = await makeApi();
+    two(t);
+    const r = await deploy(t, { logins: { "ghcr.io": "bob" } });
+    expect(r.status).toBe(202);
+    await t.api.jobs.idle();
+    expect((t.calls.find((c) => c.op === "app.deploy")!.args as { registryAuth: unknown }).registryAuth).toEqual([{ host: "ghcr.io", username: "bob", password: "pb" }]);
+    expect((await t.request("/v1/apps/shop", { token: t.tokens.viewer })).json.registryLogins).toEqual({ "ghcr.io": "bob" });
+
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: IMAGE_YAML, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await t.request("/v1/apps/shop/redeploy", { method: "POST", token: t.tokens.deployer })).status).toBe(202);
+    await t.api.jobs.idle();
+    expect((t.calls.filter((c) => c.op === "app.deploy").at(-1)!.args as { registryAuth: { username: string }[] }).registryAuth[0]!.username).toBe("bob");
+  });
+
+  it("changes the choice for an app, and rejects a login that doesn't exist", async () => {
+    const t = await makeApi();
+    two(t);
+    const put = (username: string | null, token = t.tokens.deployer) => t.request("/v1/apps/shop/registry-logins/ghcr.io", { method: "PUT", token, json: { username } });
+    expect((await put("alice")).json.registryLogins).toEqual({ "ghcr.io": "alice" });
+    expect((await put("nobody")).status).toBe(404);
+    expect((await put("alice", t.tokens.viewer)).status).toBe(403);
+    expect((await put(null)).json.registryLogins).toEqual({});
+    expect((await deploy(t, { logins: { "ghcr.io": "mallory" } })).status).toBe(400);
+  });
+
+  it("deletes one login by user name, and asks which when there are several", async () => {
+    const t = await makeApi();
+    two(t);
+    const del = (q = "") => t.request(`/v1/registries/ghcr.io${q}`, { method: "DELETE", token: t.tokens.admin });
+    const ask = await del();
+    expect(ask.status).toBe(400);
+    expect(ask.json.error.message).toMatch(/alice, bob/);
+    expect((await del("?username=nobody")).status).toBe(404);
+    expect((await del("?username=bob")).status).toBe(200);
+    expect(t.registry.registryCredentials.list().map((c) => c.username)).toEqual(["alice"]);
+    expect((await del()).status).toBe(200); // the only one left needs no name
   });
 });

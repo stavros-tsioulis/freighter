@@ -114,7 +114,8 @@ export function createJobs(ctx: ApiContext): Jobs {
           // Send only the logins for the registries these images live on.
           const hosts = new Set(Object.values(imageServices(parseManifest(manifestText))).map(imageHost));
           const registryAuth = [...hosts].flatMap((host) => {
-            const c = ctx.registry.registryCredentials.password(host);
+            const c = ctx.registry.registryCredentials.resolve(app, host);
+            if (c && "ambiguous" in c) throw new Error(`${app} has no login chosen for ${host}, which has several (${c.ambiguous.join(", ")}). Choose one and deploy again.`);
             return c ? [{ host, ...c }] : [];
           });
           const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuth.length ? registryAuth : undefined, logId: id }, { timeoutMs: 30 * 60_000 });

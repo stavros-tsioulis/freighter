@@ -6,7 +6,7 @@ import type { AppSettings } from "~/types";
  * The options of app.yaml as a form. Used when a repository has no app.yaml (an app.yaml in the repository always
  * wins). The API renders and validates the result, so the preview below is exactly what would be deployed.
  */
-const props = defineProps<{ appName: string; disabled?: boolean; /** Leave out the build section (images are built elsewhere). */ hideBuild?: boolean }>();
+const props = defineProps<{ appName: string; disabled?: boolean; /** Leave out the build section (images are built elsewhere). */ hideBuild?: boolean; /** Every service runs an image (the image deploy form): no choice of kind, and new services are images. */ imagesOnly?: boolean }>();
 const form = defineModel<SettingsForm>({ required: true });
 const emit = defineEmits<{ settings: [AppSettings] }>();
 
@@ -30,7 +30,7 @@ const imageError = (ref: string) => (ref.trim() && !IMAGE_RE.test(ref.trim()) ? 
 function removeService(i: number) {
   form.value.services.splice(i, 1);
 }
-const addService = () => form.value.services.push(newService(form.value.services.length ? "" : "web"));
+const addService = () => form.value.services.push(newService(form.value.services.length ? "" : "web", props.imagesOnly ? "image" : "command"));
 </script>
 
 <template>
@@ -45,9 +45,9 @@ const addService = () => form.value.services.push(newService(form.value.services
         <template #icons>
           <Button v-if="form.services.length > 1" icon="pi pi-trash" size="small" severity="danger" text rounded aria-label="Remove service" @click="removeService(i)" />
         </template>
-        <div class="grid sm:grid-cols-[10rem_1fr] gap-3">
+        <div class="grid gap-3" :class="imagesOnly ? 'sm:grid-cols-[10rem]' : 'sm:grid-cols-[10rem_1fr]'">
           <div class="flex flex-col gap-1"><label :for="`svc-name-${i}`" class="text-sm font-medium">Name</label><InputText :id="`svc-name-${i}`" v-model="s.name" placeholder="web" autocomplete="off" /></div>
-          <div class="flex flex-col gap-1">
+          <div v-if="!imagesOnly" class="flex flex-col gap-1">
             <span :id="`svc-kind-l-${i}`" class="text-sm font-medium">Runs</span>
             <SelectButton v-model="s.kind" :options="kinds" option-label="label" option-value="value" :allow-empty="false" size="small" :aria-labelledby="`svc-kind-l-${i}`" />
           </div>

@@ -56,12 +56,12 @@ export function imageManifest(name: string, image: string, port?: number): strin
 }
 
 /** Queue an image deployment (nothing to upload) and, unless told not to, wait for it. */
-export async function pushImages(base: string, token: string, app: string, manifest: string, opts: { server?: string; wait: boolean }): Promise<void> {
+export async function pushImages(base: string, token: string, app: string, manifest: string, opts: { server?: string; wait: boolean; logins?: Record<string, string> }): Promise<void> {
   const query = opts.server ? `?server=${encodeURIComponent(opts.server)}` : "";
   const res = await fetch(`${base}/api/v1/apps/${app}/image-deployments${query}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ manifest }),
+    body: JSON.stringify({ manifest, ...(opts.logins ? { logins: opts.logins } : {}) }),
   });
   const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
   if (res.status !== 202 || !json.id) throw new Error(`deploy failed (${res.status}): ${json.error?.message ?? res.statusText}`);
@@ -75,6 +75,7 @@ export const push = defineCommand({
     source: { type: "positional", required: false, description: "Directory (with app.yaml), .tar.gz, or an app.yaml whose services all use `image:`" },
     image: { type: "string", description: "Deploy this image instead of a source, e.g. ghcr.io/org/app:1.2 (needs --name)" },
     name: { type: "string", description: "App name for --image" },
+    login: { type: "string", description: "Which registry login the images are pulled with, as host=username (e.g. ghcr.io=alice), when a registry has several; remembered for the app" },
     port: { type: "string", description: "Port the image listens on, for --image (the service is then routable; set containerPort in app.yaml for more control)" },
     url: { type: "string", description: "API base URL (or $FREIGHTER_URL)" },
     token: { type: "string", description: "API token (or $FREIGHTER_TOKEN)" },
@@ -88,18 +89,24 @@ export const push = defineCommand({
       if (!base) throw new Error("no API URL: pass --url or set FREIGHTER_URL");
       if (!token) throw new Error("no API token: pass --token or set FREIGHTER_TOKEN");
 
+      let logins: Record<string, string> | undefined;
+      if (args.login !== undefined) {
+        const [host, ...user] = args.login.split("=");
+        if (!host || user.length === 0 || !user.join("=")) throw new Error(`--login takes host=username, e.g. ghcr.io=alice (got "${args.login}")`);
+        logins = { [host]: user.join("=") };
+      }
       if (args.image !== undefined) {
         if (!args.name) throw new Error("--image needs --name (the app's name)");
         const port = args.port === undefined ? undefined : Number(args.port);
         if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(`invalid --port "${args.port}"`);
-        return pushImages(base, token, args.name, imageManifest(args.name, args.image, port), { server: args.server, wait: args.wait });
+        return pushImages(base, token, args.name, imageManifest(args.name, args.image, port), { server: args.server, wait: args.wait, logins });
       }
       if (!args.source) throw new Error("nothing to deploy: pass a directory, an artifact, an app.yaml or --image");
       if (/\.ya?ml$/.test(args.source)) {
         const manifest = await readFile(args.source, "utf8").catch(() => {
           throw new Error(`source not found: ${args.source}`);
         });
-        return pushImages(base, token, parseManifest(manifest).name, manifest, { server: args.server, wait: args.wait });
+        return pushImages(base, token, parseManifest(manifest).name, manifest, { server: args.server, wait: args.wait, logins });
       }
 
       const info = await stat(args.source).catch(() => {

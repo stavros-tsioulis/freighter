@@ -8,16 +8,19 @@ const notify = useNotify();
 const name = computed(() => props.app.name);
 const redeploy = useRedeployImages(name);
 const setImages = useSetImages(name);
-const { data: registries } = useRegistries(() => can("admin"));
+const { data: registries } = useRegistries(() => can("deployer"));
+const choose = useChooseLogin(name);
 
+const loginsOf = (host: string) => (registries.value ?? []).filter((r) => r.host === host).map((r) => r.username);
 const rows = computed(() =>
-  Object.entries(props.app.images ?? {}).map(([service, image]) => ({
-    service,
-    image,
-    host: imageHost(image),
-    login: can("admin") ? !!registries.value?.some((r) => r.host === imageHost(image)) : null,
-  })),
+  Object.entries(props.app.images ?? {}).map(([service, image]) => {
+    const host = imageHost(image);
+    return { service, image, host, logins: loginsOf(host), chosen: props.app.registryLogins?.[host] ?? null };
+  }),
 );
+
+const loginFor = ref<string | null>(null);
+const loginOpen = computed({ get: () => loginFor.value !== null, set: (v: boolean) => { if (!v) loginFor.value = null; } });
 
 // One dialog follows whichever deployment was just started (a redeploy or a change of image).
 const progress = ref(false);
@@ -64,8 +67,14 @@ async function saveEdit() {
       <Column header="Image"><template #body="{ data }"><code class="break-all">{{ data.image }}</code></template></Column>
       <Column header="Registry">
         <template #body="{ data }">
-          {{ data.host }}
-          <Tag v-if="data.login" value="login saved" severity="success" class="ml-2" />
+          <div class="flex flex-wrap items-center gap-2">
+            <span>{{ data.host }}</span>
+            <template v-if="data.logins.length > 1 && can('deployer')">
+              <Select :model-value="data.chosen" :options="data.logins" placeholder="Choose a login" size="small" class="w-44" :aria-label="`Login for ${data.host}`" :invalid="!data.chosen" :loading="choose.isPending.value" @update:model-value="choose.mutate({ host: data.host, username: $event })" />
+            </template>
+            <Tag v-else-if="data.logins.length === 1" :value="`login: ${data.logins[0]}`" severity="success" />
+            <Button v-else-if="can('admin')" label="Add login" icon="pi pi-key" size="small" text title="For a private image" @click="loginFor = data.host" />
+          </div>
         </template>
       </Column>
       <Column v-if="can('deployer')" header="" class="text-right whitespace-nowrap">
@@ -88,6 +97,8 @@ async function saveEdit() {
         <Button label="Pull and deploy" icon="pi pi-cloud-download" :disabled="!editReady" :loading="setImages.isPending.value" @click="saveEdit" />
       </template>
     </Dialog>
+
+    <RegistryLoginDialog v-model:visible="loginOpen" :host="loginFor ?? undefined" />
 
     <Dialog v-model:visible="progress" modal header="Deploying" :style="{ width: '40rem' }">
       <DeploymentStatus :id="deploymentId" @finished="finished = $event" />

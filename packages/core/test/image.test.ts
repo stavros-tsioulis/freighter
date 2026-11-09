@@ -33,7 +33,11 @@ describe("image deploys", () => {
     expect(unit.split("\n").find((l) => l.startsWith("ExecStart="))).toMatch(new RegExp(`${pinned}$`));
 
     expect(calls.some((c) => c[0] === "runuser" && c.includes("pull") && c.at(-1) === "ghcr.io/org/shop:1")).toBe(true);
-    expect(calls).toContainEqual(["loginctl", "enable-linger", "shop"]);
+    // no login session (linger / systemd-logind) is involved: the runtime directory is made directly
+    expect(calls.some((c) => c[0] === "loginctl")).toBe(false);
+    expect(calls).toContainEqual(["install", "-d", "-o", "shop", "-g", "shop", "-m", "0700", "/run/freighter-shop"]);
+    expect(unitText("freighter-shop--web.service")).toContain("Environment=XDG_RUNTIME_DIR=/run/freighter-shop");
+    expect(calls.find((c) => c[0] === "runuser" && c.includes("pull"))).toContain("XDG_RUNTIME_DIR=/run/freighter-shop");
     expect((await readdir(`${deps.layout.appsRoot}/shop/current`)).sort()).toEqual([".freighter-images.json", "app.yaml"]);
   });
 
@@ -79,7 +83,7 @@ describe("image deploys", () => {
     await deploy(deps, { manifestText: IMG("1") });
     await deleteApp(deps, "shop");
     expect(calls.some((c) => c[0] === "runuser" && c.includes("system") && c.includes("reset"))).toBe(true);
-    expect(calls).toContainEqual(["loginctl", "disable-linger", "shop"]);
+    expect(calls).toContainEqual(["rm", "-rf", "/run/freighter-shop"]);
   });
 });
 

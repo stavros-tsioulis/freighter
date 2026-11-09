@@ -98,7 +98,7 @@ describe("renderUnit for image services", () => {
     "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1.2\n    port: 3000\n    containerPort: 8080\n    resources:\n      memory: 512M\n      cpu: 1\n    volumes:\n      uploads: /var/uploads\nenvironment:\n  NODE_ENV: production\nsecrets:\n  - DB_URL\n",
   );
   const run = (extra: Partial<Parameters<typeof renderUnit>[0]> = {}) =>
-    renderUnit({ app: "shop", service: "web", def: img.services.web!, environment: img.environment, secrets: img.secrets, port: 21000, uid: 1001, loopback: true, ...extra });
+    renderUnit({ app: "shop", service: "web", def: img.services.web!, environment: img.environment, secrets: img.secrets, port: 21000, loopback: true, ...extra });
 
   it("runs podman with the pinned digest, forwarding the environment by name", () => {
     const digest = `ghcr.io/org/shop@sha256:${"b".repeat(64)}`;
@@ -127,9 +127,13 @@ describe("renderUnit for image services", () => {
   it("refuses image references that could break out of the unit file", () => {
     for (const image of ["a b", 'a"b', "a;b", "a$b", "a%b"]) expect(() => run({ image })).toThrow(/illegal image/);
   });
-  it("points rootless Podman at the user's own runtime directory, and needs to know the uid", () => {
-    expect(run({ uid: 4242 })).toContain("Environment=XDG_RUNTIME_DIR=/run/user/4242");
-    expect(() => run({ uid: undefined })).toThrow(/user id/);
+  it("gives rootless Podman a runtime directory of its own, made by the unit, with no login session needed", () => {
+    const out = run();
+    expect(out).toContain("RuntimeDirectory=freighter-shop");
+    expect(out).toContain("RuntimeDirectoryMode=0700");
+    expect(out).toContain("RuntimeDirectoryPreserve=yes");
+    expect(out).toContain("Environment=XDG_RUNTIME_DIR=/run/freighter-shop");
+    expect(out).not.toContain("/run/user");
   });
   it("leaves command services untouched", () => {
     expect(render("web")).toBe(WEB);

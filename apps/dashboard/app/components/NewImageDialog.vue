@@ -7,7 +7,7 @@ const emit = defineEmits<{ back: [] }>();
 const { data: servers } = useServers();
 const { data: apps } = useApps();
 const { can } = useSession();
-const { data: registries } = useRegistries(() => can('admin'));
+const { data: registries } = useRegistries(() => can('deployer'));
 const notify = useNotify();
 const deploy = useDeployImages();
 
@@ -15,6 +15,8 @@ const blank = (): SettingsForm => ({ ...emptyForm(), services: [newService("web"
 const name = ref("");
 const server = ref("");
 const form = ref<SettingsForm>(blank());
+const loginFor = ref<string | null>(null);
+const loginOpen = computed({ get: () => loginFor.value !== null, set: (v: boolean) => { if (!v) loginFor.value = null; } });
 const deploymentId = ref<string | null>(null);
 const finished = ref<"success" | "failed" | null>(null);
 
@@ -27,12 +29,13 @@ const target = computed(() => servers.value?.find((s) => s.name === (pinned.valu
 
 const nameError = computed(() => (name.value && !IDENT_RE.test(name.value) ? "Lowercase letters, digits and single hyphens, starting with a letter." : ""));
 const images = computed(() => form.value.services.filter((s) => s.kind === "image" && s.image.trim()).map((s) => s.image.trim()));
-const imagesValid = computed(() => form.value.services.every((s) => s.kind === "image" && (!s.image.trim() || IMAGE_RE.test(s.image.trim()))));
-const mixed = computed(() => form.value.services.some((s) => s.kind === "command"));
+const imagesValid = computed(() => form.value.services.every((s) => !s.image.trim() || IMAGE_RE.test(s.image.trim())));
 const hosts = computed(() => [...new Set(images.value.map(imageHost))]);
-const withLogin = computed(() => hosts.value.filter((h) => registries.value?.some((r) => r.host === h)));
-/** Only admins can see which logins exist; for others the hint stays general. */
-const knowsLogins = computed(() => can('admin'));
+/** Per registry the images come from: the logins saved for it, and (when there are several) the one picked for this app. */
+const loginsOf = (host: string) => (registries.value ?? []).filter((r) => r.host === host).map((r) => r.username);
+const chosen = ref<Record<string, string>>({});
+const needsChoice = computed(() => hosts.value.filter((h) => loginsOf(h).length > 1 && !chosen.value[h]));
+const chosenLogins = computed(() => Object.fromEntries(hosts.value.flatMap((h) => (chosen.value[h] && loginsOf(h).includes(chosen.value[h]!) ? [[h, chosen.value[h]!]] : []))));
 const podmanProblem = computed(() => {
   const h = target.value?.host;
   if (!h || target.value?.status === "offline") return "";
@@ -41,7 +44,7 @@ const podmanProblem = computed(() => {
 });
 
 const ready = computed(
-  () => IDENT_RE.test(name.value) && hasService(form.value) && imagesValid.value && !mixed.value && choices.value.length > 0 && !podmanProblem.value && !deploy.isPending.value && !deploymentId.value,
+  () => IDENT_RE.test(name.value) && hasService(form.value) && imagesValid.value && !needsChoice.value.length && choices.value.length > 0 && !podmanProblem.value && !deploy.isPending.value && !deploymentId.value,
 );
 
 watch(visible, (v) => {
@@ -49,6 +52,7 @@ watch(visible, (v) => {
   name.value = "";
   server.value = first.value;
   form.value = blank();
+  chosen.value = {};
   deploymentId.value = null;
   finished.value = null;
   deploy.reset();
@@ -56,11 +60,17 @@ watch(visible, (v) => {
 
 async function start() {
   try {
-    const r = await deploy.mutateAsync({ name: name.value, settings: toSettings(form.value), server: pinned.value ? undefined : server.value || undefined });
+    const r = await deploy.mutateAsync({ name: name.value, settings: toSettings(form.value), server: pinned.value ? undefined : server.value || undefined, logins: chosenLogins.value });
     deploymentId.value = r.id;
   } catch (e) {
     notify.fail("Could not start the deployment", e);
   }
+}
+/** Back to the form with everything still filled in, e.g. after adding a registry login for a failed pull. */
+function tryAgain() {
+  deploymentId.value = null;
+  finished.value = null;
+  deploy.reset();
 }
 async function openApp() {
   visible.value = false;
@@ -89,19 +99,24 @@ async function openApp() {
       </div>
       <Message v-if="podmanProblem" severity="warn" size="small" :closable="false">{{ podmanProblem }}</Message>
 
-      <ManifestForm v-model="form" :app-name="IDENT_RE.test(name) ? name : ''" hide-build />
+      <ManifestForm v-model="form" :app-name="IDENT_RE.test(name) ? name : ''" hide-build images-only />
 
-      <Message v-if="mixed" severity="warn" size="small" :closable="false">Every service must run an image here. To mix in a command service, upload an archive instead.</Message>
-      <Message v-if="hosts.length && !knowsLogins" severity="secondary" size="small" :closable="false">Pulling from {{ hosts.join(", ") }}. Private images need a registry login, which an admin can add.</Message>
-      <Message v-else-if="hosts.length" severity="secondary" size="small" :closable="false">
-        <template v-if="withLogin.length === hosts.length">Pulling with the saved login for {{ hosts.join(", ") }}.</template>
-        <template v-else>
-          Pulling from {{ hosts.join(", ") }} without a login{{ withLogin.length ? ` (saved for ${withLogin.join(", ")})` : "" }}. That works for public images.
-          <NuxtLink to="/settings/registries" class="underline" @click="visible = false">Add a registry login</NuxtLink> for private ones.
-        </template>
-      </Message>
+      <div v-if="hosts.length" class="flex flex-col gap-2 rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] px-4 py-3" aria-label="Registry logins">
+        <div v-for="h in hosts" :key="h" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <code>{{ h }}</code>
+          <template v-if="loginsOf(h).length > 1">
+            <label :for="`login-${h}`" class="text-muted-color">Pull with</label>
+            <Select :input-id="`login-${h}`" v-model="chosen[h]" :options="loginsOf(h)" placeholder="Choose a login" size="small" class="w-48" :invalid="!chosen[h]" />
+          </template>
+          <template v-else-if="loginsOf(h).length === 1"><Tag :value="`login saved: ${loginsOf(h)[0]}`" severity="success" /><span class="text-muted-color">Used for the pull.</span></template>
+          <span v-else class="text-muted-color">{{ can('admin') ? "No login: fine for public images." : "No login: public images only. Private ones need an admin to add a login." }}</span>
+          <Button v-if="can('admin')" :label="loginsOf(h).length ? 'Add another login' : 'Add login for a private image'" icon="pi pi-key" size="small" text class="ml-auto" @click="loginFor = h" />
+        </div>
+      </div>
     </div>
     <DeploymentStatus v-else :id="deploymentId" @finished="finished = $event" />
+
+    <RegistryLoginDialog v-model:visible="loginOpen" :host="loginFor ?? undefined" />
 
     <template #footer>
       <template v-if="!deploymentId">
@@ -111,6 +126,7 @@ async function openApp() {
       </template>
       <template v-else>
         <Button label="Close" severity="secondary" text @click="visible = false" />
+        <Button v-if="finished === 'failed'" label="Back to the form" icon="pi pi-arrow-left" severity="secondary" @click="tryAgain" />
         <Button label="Open app" icon="pi pi-arrow-right" :disabled="finished === 'failed'" @click="openApp" />
       </template>
     </template>

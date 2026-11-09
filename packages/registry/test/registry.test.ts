@@ -13,11 +13,11 @@ describe("registry", () => {
   it("migrates once and is reopenable", async () => {
     const path = join(await mkdtemp(join(tmpdir(), "freighter-db-")), "sub", "r.db");
     const a = openRegistry(path);
-    expect(a.schemaVersion()).toBe(10);
+    expect(a.schemaVersion()).toBe(11);
     a.tokens.create({ name: "x", role: "admin" });
     a.close();
     const b = openRegistry(path);
-    expect(b.schemaVersion()).toBe(10);
+    expect(b.schemaVersion()).toBe(11);
     expect(b.tokens.list()).toHaveLength(1);
   });
 
@@ -97,7 +97,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(10);
+    expect(r.schemaVersion()).toBe(11);
     expect(r.apps.get("shop")?.status).toBe("deployed");
     r.metrics.add([{ app: "shop", service: "web", unit: "u", active: "active", memoryBytes: 1, cpuNanos: 2, restarts: 0 }]);
     expect(r.metrics.series("shop", "")).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(10);
+    expect(r.schemaVersion()).toBe(11);
     expect(r.apps.get("shop")?.server).toBe("local");
     expect(r.servers.list().map((s) => [s.name, s.kind, s.status, s.appCount])).toEqual([["local", "local", "online", 1]]);
   });
@@ -213,7 +213,7 @@ describe("registry", () => {
     old.exec("INSERT INTO deployments (id, app, action, status, source, created_at) VALUES ('d1', 'shop', 'deploy', 'success', 'api', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(10);
+    expect(r.schemaVersion()).toBe(11);
     expect(r.deployments.get("d1")).toMatchObject({ trigger: "upload", commitSha: null });
   });
 
@@ -256,7 +256,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(10);
+    expect(r.schemaVersion()).toBe(11);
     expect(r.gitLinks.get("shop")).toMatchObject({ repository: "git@github.com:a/b.git", sshKeyId: null });
   });
 
@@ -314,7 +314,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(10);
+    expect(r.schemaVersion()).toBe(11);
     expect(r.gitLinks.get("shop")).toMatchObject({ branch: "main", sshKeyId: null });
     expect(r.sshKeys.list()).toEqual([]);
   });
@@ -373,19 +373,71 @@ describe("forgetting an app", () => {
 });
 
 describe("registry credentials", () => {
-  it("keeps the password sealed, replaces a login in place and forgets it on removal", () => {
+  it("keeps passwords sealed, replaces a login in place and forgets it on removal", () => {
     const r = mem();
     const row = r.registryCredentials.set({ host: "ghcr.io", username: "me", password: "s3cret-token" });
     expect(JSON.stringify(row)).not.toContain("s3cret-token");
     expect(JSON.stringify(r.registryCredentials.list())).not.toContain("s3cret-token");
-    expect(r.registryCredentials.password("ghcr.io")).toEqual({ username: "me", password: "s3cret-token" });
+    expect(r.registryCredentials.secret("ghcr.io", "me")).toEqual({ username: "me", password: "s3cret-token" });
 
-    r.registryCredentials.set({ host: "ghcr.io", username: "you", password: "other" });
+    r.registryCredentials.set({ host: "ghcr.io", username: "me", password: "other" });
     expect(r.registryCredentials.list()).toHaveLength(1);
-    expect(r.registryCredentials.password("ghcr.io")).toEqual({ username: "you", password: "other" });
+    expect(r.registryCredentials.secret("ghcr.io", "me")?.password).toBe("other");
 
-    expect(r.registryCredentials.remove("ghcr.io")).toBe(true);
-    expect(r.registryCredentials.remove("ghcr.io")).toBe(false);
-    expect(r.registryCredentials.password("ghcr.io")).toBeNull();
+    expect(r.registryCredentials.remove("ghcr.io", "me")).toBe(true);
+    expect(r.registryCredentials.remove("ghcr.io", "me")).toBe(false);
+    expect(r.registryCredentials.secret("ghcr.io", "me")).toBeNull();
+  });
+
+  it("allows several logins per host and picks one per app", () => {
+    const r = mem();
+    const c = r.registryCredentials;
+    expect(c.resolve("shop", "ghcr.io")).toBeNull();
+    c.set({ host: "ghcr.io", username: "alice", password: "pa" });
+    expect(c.resolve("shop", "ghcr.io")).toEqual({ username: "alice", password: "pa" }); // the only one is the default
+    c.set({ host: "ghcr.io", username: "bob", password: "pb" });
+    c.set({ host: "docker.io", username: "carol", password: "pc" });
+    expect(c.list().map((x) => `${x.host}/${x.username}`)).toEqual(["docker.io/carol", "ghcr.io/alice", "ghcr.io/bob"]);
+    expect(c.resolve("shop", "ghcr.io")).toEqual({ ambiguous: ["alice", "bob"] }); // two, and no choice: don't guess
+
+    expect(c.setAppChoice("shop", "ghcr.io", "bob")).toBe(true);
+    expect(c.setAppChoice("shop", "ghcr.io", "nobody")).toBe(false);
+    expect(c.resolve("shop", "ghcr.io")).toEqual({ username: "bob", password: "pb" });
+    expect(c.resolve("blog", "ghcr.io")).toEqual({ ambiguous: ["alice", "bob"] }); // per app
+    expect(c.appChoices("shop")).toEqual({ "ghcr.io": "bob" });
+
+    c.setAppChoice("shop", "ghcr.io", null);
+    expect(c.resolve("shop", "ghcr.io")).toEqual({ ambiguous: ["alice", "bob"] });
+  });
+
+  it("falls back when the chosen login is deleted, and forgets choices with the app", () => {
+    const r = mem();
+    const c = r.registryCredentials;
+    c.set({ host: "ghcr.io", username: "alice", password: "pa" });
+    c.set({ host: "ghcr.io", username: "bob", password: "pb" });
+    c.setAppChoice("shop", "ghcr.io", "bob");
+    c.remove("ghcr.io", "bob");
+    expect(c.appChoices("shop")).toEqual({});
+    expect(c.resolve("shop", "ghcr.io")).toEqual({ username: "alice", password: "pa" });
+    c.setAppChoice("shop", "ghcr.io", "alice");
+    r.apps.upsert({ name: "shop", server: "local", manifestText: null, currentRelease: null, previousRelease: null, status: "undeployed" });
+    r.apps.remove("shop");
+    expect(c.appChoices("shop")).toEqual({});
+  });
+
+  it("migrates single logins from before, keeping their secrets", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "freighter-db-"));
+    const secrets = createSecretBox(join(dir, "key"));
+    const path = join(dir, "v10.db");
+    const old = new DatabaseSync(path);
+    old.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+    for (const m of migrations.slice(0, 10)) old.exec(m);
+    old.exec("INSERT INTO meta VALUES ('schema_version', '10')");
+    old.prepare("INSERT INTO registry_credentials VALUES (?, ?, ?, NULL, 'x', 'x')").run("ghcr.io", "me", secrets.seal("legacy-pw"));
+    old.close();
+    const r = openRegistry(path, { secrets });
+    expect(r.schemaVersion()).toBe(11);
+    expect(r.registryCredentials.secret("ghcr.io", "me")).toEqual({ username: "me", password: "legacy-pw" });
+    expect(r.registryCredentials.resolve("shop", "ghcr.io")).toEqual({ username: "me", password: "legacy-pw" });
   });
 });

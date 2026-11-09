@@ -181,11 +181,22 @@ export interface Registry {
   };
   /** Logins for container registries. The password is only returned by `password()`, to be handed to the agent that pulls. */
   registryCredentials: {
-    /** Add or replace the login for a registry host. */
+    /** Add a login for a registry host, or replace the password of the one with that user name. A host can have several. */
     set(c: { host: string; username: string; password: string; createdBy?: string | null }): RegistryCredentialRow;
     list(): RegistryCredentialRow[];
-    password(host: string): { username: string; password: string } | null;
-    remove(host: string): boolean;
+    /** The secret of one login. */
+    secret(host: string, username: string): { username: string; password: string } | null;
+    /** Delete one login; any app that was set to use it goes back to the default for the host. */
+    remove(host: string, username: string): boolean;
+    /** Which login each app pulls with, per host: app -> host -> user name. */
+    appChoices(app: string): Record<string, string>;
+    /** Pull with this login (or, with null, the host's default) for an app's images from `host`. False if there is no such login. */
+    setAppChoice(app: string, host: string, username: string | null): boolean;
+    /**
+     * The login an app pulls from `host` with: the one chosen for it, else the host's only login. `ambiguous` lists the
+     * user names when there are several and none was chosen; null when the host has no login.
+     */
+    resolve(app: string, host: string): { username: string; password: string } | { ambiguous: string[] } | null;
   };
   /** Control-plane settings saved from the dashboard: key -> JSON value. */
   settings: {
@@ -347,18 +358,40 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
       set(c) {
         const t = now();
         run(
-          `INSERT INTO registry_credentials (host, username, secret_enc, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)
-           ON CONFLICT(host) DO UPDATE SET username = excluded.username, secret_enc = excluded.secret_enc, updated_at = excluded.updated_at`,
-          c.host, c.username, box.seal(c.password), c.createdBy ?? null, t, t,
+          `INSERT INTO registry_credentials (id, host, username, secret_enc, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(host, username) DO UPDATE SET secret_enc = excluded.secret_enc, updated_at = excluded.updated_at`,
+          `reg_${randomBytes(6).toString("hex")}`, c.host, c.username, box.seal(c.password), c.createdBy ?? null, t, t,
         );
-        return registryCredentialFrom(one("SELECT * FROM registry_credentials WHERE host = ?", c.host)!);
+        return registryCredentialFrom(one("SELECT * FROM registry_credentials WHERE host = ? AND username = ?", c.host, c.username)!);
       },
-      list: () => all("SELECT * FROM registry_credentials ORDER BY host").map(registryCredentialFrom),
-      password(host) {
-        const r = one("SELECT username, secret_enc FROM registry_credentials WHERE host = ?", host);
+      list: () => all("SELECT * FROM registry_credentials ORDER BY host, username").map(registryCredentialFrom),
+      secret(host, username) {
+        const r = one("SELECT username, secret_enc FROM registry_credentials WHERE host = ? AND username = ?", host, username);
         return r ? { username: r.username as string, password: box.open(r.secret_enc as string) } : null;
       },
-      remove: (host) => Number(run("DELETE FROM registry_credentials WHERE host = ?", host).changes) > 0,
+      remove: (host, username) => Number(run("DELETE FROM registry_credentials WHERE host = ? AND username = ?", host, username).changes) > 0,
+      appChoices: (app) =>
+        Object.fromEntries(
+          all("SELECT l.host, c.username FROM app_registry_logins l JOIN registry_credentials c ON c.id = l.credential_id WHERE l.app = ?", app).map((r) => [r.host as string, r.username as string]),
+        ),
+      setAppChoice(app, host, username) {
+        if (username === null) {
+          run("DELETE FROM app_registry_logins WHERE app = ? AND host = ?", app, host);
+          return true;
+        }
+        const c = one("SELECT id FROM registry_credentials WHERE host = ? AND username = ?", host, username);
+        if (!c) return false;
+        run("INSERT INTO app_registry_logins (app, host, credential_id) VALUES (?, ?, ?) ON CONFLICT(app, host) DO UPDATE SET credential_id = excluded.credential_id", app, host, c.id as string);
+        return true;
+      },
+      resolve(app, host) {
+        const chosen = one("SELECT c.username, c.secret_enc FROM app_registry_logins l JOIN registry_credentials c ON c.id = l.credential_id WHERE l.app = ? AND l.host = ?", app, host);
+        if (chosen) return { username: chosen.username as string, password: box.open(chosen.secret_enc as string) };
+        const rows = all("SELECT username, secret_enc FROM registry_credentials WHERE host = ? ORDER BY username", host);
+        if (rows.length === 0) return null;
+        if (rows.length > 1) return { ambiguous: rows.map((r) => r.username as string) };
+        return { username: rows[0]!.username as string, password: box.open(rows[0]!.secret_enc as string) };
+      },
     },
 
     settings: {
@@ -480,6 +513,7 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
       },
       list: () => all("SELECT * FROM apps ORDER BY name").map(appFrom),
       remove(name) {
+        run("DELETE FROM app_registry_logins WHERE app = ?", name);
         run("DELETE FROM pending_domains WHERE app = ?", name);
         run("DELETE FROM git_links WHERE app = ?", name);
         run("DELETE FROM deployments WHERE app = ?", name);

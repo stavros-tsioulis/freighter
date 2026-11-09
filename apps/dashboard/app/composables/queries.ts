@@ -643,9 +643,9 @@ const refreshApps = (qc: ReturnType<typeof useQueryClient>) => {
 export function useDeployImages() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (v: { name: string; settings: AppSettings; server?: string }) => {
+    mutationFn: async (v: { name: string; settings: AppSettings; server?: string; /** host -> user name, where a registry has several logins */ logins?: Record<string, string> }) => {
       const { text } = await api<{ text: string }>("/manifest/render", { method: "POST", body: { name: v.name, settings: v.settings } });
-      return api<{ id: string }>(`/apps/${v.name}/image-deployments`, { method: "POST", body: { manifest: text }, query: v.server ? { server: v.server } : undefined });
+      return api<{ id: string }>(`/apps/${v.name}/image-deployments`, { method: "POST", body: { manifest: text, ...(v.logins && Object.keys(v.logins).length ? { logins: v.logins } : {}) }, query: v.server ? { server: v.server } : undefined });
     },
     onSuccess: () => refreshApps(qc),
   });
@@ -691,11 +691,22 @@ export function useRemoveRegistry() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (host: string) => api(`/registries/${encodeURIComponent(host)}`, { method: "DELETE" }),
+    mutationFn: (v: { host: string; username: string }) => api(`/registries/${encodeURIComponent(v.host)}`, { method: "DELETE", query: { username: v.username } }),
     onSuccess: () => {
       notify.ok("Registry login deleted");
       void qc.invalidateQueries({ queryKey: ["registries"] });
     },
     onError: (e) => notify.fail("Could not delete the login", e),
+  });
+}
+
+/** Pull an app's images from `host` with this login (null: the registry's default). Remembered for the app, including for redeploys. */
+export function useChooseLogin(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { host: string; username: string | null }) => api(`/apps/${toValue(app)}/registry-logins/${encodeURIComponent(v.host)}`, { method: "PUT", body: { username: v.username } }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["app"] }),
+    onError: (e) => notify.fail("Could not choose the login", e),
   });
 }

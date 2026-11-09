@@ -23,6 +23,8 @@ export interface AppRow {
   manifestText?: string | null;
   /** service -> image reference, for services that run an image. */
   images?: Record<string, string>;
+  /** host -> user name of the registry login chosen for this app, where it has chosen one. */
+  registryLogins?: Record<string, string>;
   currentRelease: string | null;
   previousRelease: string | null;
   status: "deployed" | "undeployed" | "missing" | "unknown";

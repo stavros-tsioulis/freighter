@@ -1,5 +1,5 @@
 import type { Service } from "@freighter/manifest";
-import { containerHome, containerName, defaultLayout, envFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
+import { containerHome, containerName, containerRuntimeDir, containerRuntimeName, defaultLayout, envFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
 import { assertIdent } from "./names.ts";
 import { splitCommand, toExecStart } from "./exec.ts";
 
@@ -28,8 +28,6 @@ export interface RenderInput {
    * Defaults to `def.image`.
    */
   image?: string;
-  /** Image services: the numeric id of the unit's user (rootless Podman keeps its runtime state in /run/user/<uid>). */
-  uid?: number;
   /** Image services: names of the manifest's secrets, forwarded from the unit's environment into the container. */
   secrets?: string[];
 }
@@ -76,8 +74,6 @@ function renderImageUnit(input: RenderInput): string {
   const user = assertIdent("user", input.user ?? app);
   const port = input.port ?? def.port;
   const name = containerName(app, service, instance);
-  const uid = input.uid;
-  if (uid === undefined || !Number.isInteger(uid) || uid < 0) throw new Error(`service ${service}: the user id of ${user} is needed to render an image unit`);
 
   const unit = [
     line("Description", `Freighter ${app}/${service}${instance ? ` (${instance})` : ""}`),
@@ -94,9 +90,13 @@ function renderImageUnit(input: RenderInput): string {
     line("Group", user),
     line("WorkingDirectory", sharedDir(layout, app)),
     // Rootless Podman keeps its image store and runtime state under HOME / XDG_RUNTIME_DIR (the user has no real home).
+    // The runtime directory is the unit's own (kept between starts, shared by the releases of one app), so no login
+    // session (linger, systemd-logind, user@.service) is needed to make /run/user/<uid> exist.
     line("Environment", `HOME=${containerHome(layout, app)}`),
-    // (not %U: in a system unit that is the manager's uid, root)
-    line("Environment", `XDG_RUNTIME_DIR=/run/user/${uid}`),
+    line("RuntimeDirectory", containerRuntimeName(app)),
+    line("RuntimeDirectoryMode", "0700"),
+    line("RuntimeDirectoryPreserve", "yes"),
+    line("Environment", `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`),
     // The container runs in this unit's cgroup (--cgroups=no-conmon), so the limits below bound the whole container.
     line("Delegate", "yes"),
     line("ExecStart", toExecStart(podmanRunArgv(input, port))),

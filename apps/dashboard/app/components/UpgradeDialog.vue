@@ -15,8 +15,20 @@ const custom = ref(false);
 const u = computed(() => view.value?.upgrade ?? null);
 const active = computed(() => upgradeActive(u.value));
 const short = (s: string | null | undefined) => (s ? s.slice(0, 12) : "an unknown version");
-// While a new run is being started the previous run's result and log must not show: the screen is empty until the new one reports.
-const finished = computed(() => (u.value && !active.value && !start.isPending.value ? u.value.state : null));
+// A run that was already over when the dialog opened is history: its result and log stay hidden, so the dialog opens
+// cleared. A run in progress (Follow it) or any run started from here shows as usual, and the same goes for the moment
+// of starting one: the screen stays empty until the new run reports.
+const runKey = (i: typeof u.value) => (i ? `${i.startedAt}|${i.updatedAt}|${i.state}` : null);
+const staleKey = ref<string | null>(null);
+let looked = false;
+watch(view, (v) => {
+  if (looked || !v) return;
+  looked = true;
+  const i = v.upgrade;
+  if (i && !upgradeActive(i)) staleKey.value = runKey(i);
+}, { immediate: true });
+const stale = computed(() => staleKey.value !== null && runKey(u.value) === staleKey.value);
+const finished = computed(() => (u.value && !active.value && !stale.value && !start.isPending.value ? u.value.state : null));
 const validRef = computed(() => !custom.value || !ref_.value.trim() || /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/.test(ref_.value.trim()) && !ref_.value.includes(".."));
 
 // The server's agent restarts partway through: while it is away the poll fails, which is expected, not an error to show.
@@ -97,7 +109,7 @@ async function go() {
           <Message v-if="away" severity="secondary" size="small">The agent is restarting. This page keeps checking.</Message>
         </template>
 
-        <pre v-if="view.log && !start.isPending.value" ref="box" class="terminal max-h-72" tabindex="0" aria-label="Upgrade log">{{ view.log }}</pre>
+        <pre v-if="view.log && !stale && !start.isPending.value" ref="box" class="terminal max-h-72" tabindex="0" aria-label="Upgrade log">{{ view.log }}</pre>
       </template>
     </div>
     <template #footer>

@@ -21,6 +21,6 @@ export const unit = defineCommand({
       const m = parseManifest(readManifestText(args.file));
       const def = m.services[args.service];
       if (!def) throw new Error(`unknown service "${args.service}" (have: ${Object.keys(m.services).join(", ")})`);
-      process.stdout.write(renderUnit({ app: m.name, service: args.service, def, environment: m.environment, secrets: m.secrets, uid: 1000 }));
+      process.stdout.write(renderUnit({ app: m.name, service: args.service, def, environment: m.environment, secrets: m.secrets }));
     }),
 });

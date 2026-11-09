@@ -209,7 +209,8 @@ describe("freighter push", () => {
   });
 
   it("redeploys an app and manages registry logins (admin only)", async () => {
-    const { url, token, registry } = await startApi(ok, "admin");
+    let n = 0; // every real deploy writes its own history entry
+    const { url, token, registry } = await startApi(() => ({ ...ok(), historyAt: `2026-11-06T10:00:0${++n}.000Z` }), "admin");
     const env = { FREIGHTER_TOKEN: token };
     registry.apps.upsert({ name: "hello", server: "local", manifestText: "name: hello\nservices:\n  web:\n    image: nginx\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
     expect((await runAsync(["redeploy", "hello", "--url", url], env)).stdout).toContain("deployed hello as r1");
@@ -219,7 +220,22 @@ describe("freighter push", () => {
     const list = await runAsync(["registry", "list", "--url", url], env);
     expect(list.stdout).toContain("ghcr.io  me");
     expect(list.stdout).not.toContain("s3cret");
-    expect(registry.registryCredentials.password("ghcr.io")?.password).toBe("s3cret");
+    expect(registry.registryCredentials.secret("ghcr.io", "me")?.password).toBe("s3cret");
+
+    // a second account on the same registry: the app is told which one to pull with, and removal has to say which
+    await runAsync(["registry", "add", "ghcr.io", "--username", "you", "--password", "pw2", "--url", url], env);
+    expect((await runAsync(["registry", "list", "--url", url], env)).stdout).toMatch(/ghcr\.io {2}me[\s\S]*ghcr\.io {2}you/);
+    const dir = mkdtempSync(join(tmpdir(), "freighter-img-"));
+    const file = join(dir, "app.yaml");
+    writeFileSync(file, "name: hello\nservices:\n  web:\n    image: ghcr.io/acme/hello:1\n");
+    const ambiguous = await runAsync(["push", file, "--url", url], env);
+    expect(ambiguous.status).toBe(1);
+    expect(ambiguous.stderr).toMatch(/several logins \(me, you\)/);
+    expect((await runAsync(["push", file, "--login", "ghcr.io=you", "--url", url], env)).stdout).toContain("deployed hello as r1");
+    expect(registry.registryCredentials.appChoices("hello")).toEqual({ "ghcr.io": "you" });
+    expect((await runAsync(["push", file, "--login", "ghcr.io", "--url", url], env)).stderr).toContain("--login takes host=username");
+    expect((await runAsync(["registry", "remove", "ghcr.io", "--url", url], env)).stderr).toMatch(/several logins/);
+    expect((await runAsync(["registry", "remove", "ghcr.io", "--username", "you", "--url", url], env)).stdout).toContain("removed the login for ghcr.io (you)");
     expect((await runAsync(["registry", "remove", "ghcr.io", "--url", url], env)).stdout).toContain("removed the login for ghcr.io");
   });
 

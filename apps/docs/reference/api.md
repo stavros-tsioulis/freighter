@@ -59,9 +59,12 @@ Apps whose services all use [`image:`](/deploy/images) have nothing to upload.
 | `POST /apps/:app/image-deployments[?server=NAME]` | `{"manifest": "<app.yaml text>"}`. The server pulls the images. Returns `202 {id}`. `400` if a service runs a command. | deployer |
 | `POST /apps/:app/images` | `{"images": {"web": "ghcr.io/acme/shop:1.5"}}`. Runs another image for those services and keeps the rest of the current `app.yaml`. Returns `202 {id}`. | deployer |
 | `POST /apps/:app/redeploy` | Pull the images of the app's current `app.yaml` again. Returns `202 {id}`. `404` for an app that was never deployed. | deployer |
-| `GET /registries` | registry hosts with a saved login (never the password) | admin |
-| `PUT /registries/:host` | `{username, password}`. Saves or replaces a login, stored encrypted. | admin |
-| `DELETE /registries/:host` | | admin |
+| `GET /registries` | saved logins: host and user name (never the password) | deployer |
+| `PUT /registries/:host` | `{username, password}`. Adds a login, or replaces the password of the one with that user name. A host can have several. Stored encrypted. | admin |
+| `DELETE /registries/:host[?username=]` | `username` is required when the host has several logins | admin |
+| `PUT /apps/:app/registry-logins/:host` | `{"username": "alice"}`, or `null` for the host's default. Which login the app pulls its images from that host with. | deployer |
+
+An image deployment may carry `"logins": {"ghcr.io": "alice"}` next to `manifest`; the choice is saved for the app. With several logins for a registry and no choice, `image-deployments`, `redeploy` and `images` answer `409 login_required`. `GET /apps/:app` shows the choices as `registryLogins`.
 
 The deployment fails with a reason if the server has no Podman or its agent predates images.
 

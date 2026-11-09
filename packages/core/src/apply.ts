@@ -5,7 +5,7 @@ import { renderUnit, unitName } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { assertHostnamesFree, readDomains } from "./domains.ts";
-import { readImages, uidOf } from "./image.ts";
+import { readImages } from "./image.ts";
 import { allocatePort } from "./ports.ts";
 import { activate, releaseDir } from "./releases.ts";
 import { allStates, readState, routesFrom, writeState, type AppState, type RoutedService } from "./state.ts";
@@ -82,9 +82,8 @@ export async function liveTargets(d: Deps, app: string, manifest: Manifest): Pro
   return targets;
 }
 
-function render(d: Deps, app: string, manifest: Manifest, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, uid: number | undefined, port?: number) {
+function render(d: Deps, app: string, manifest: Manifest, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, port?: number) {
   return renderUnit({
-    uid,
     image: images[service],
     secrets: manifest.secrets,
     app,
@@ -103,11 +102,10 @@ function render(d: Deps, app: string, manifest: Manifest, service: string, id: s
 async function restoreInPlace(d: Deps, app: string, previous: string, domains: readonly Domain[]): Promise<void> {
   const manifest = await loadReleaseManifest(d, app, previous);
   const images = await readImages(d, app, previous);
-  const uid = Object.keys(images).length > 0 ? Number(await uidOf(d, app)) : undefined;
   const state = await readState(d, app);
   const keep = new Set(Object.values(state.routed).map((r) => r.unit));
   for (const p of plannedUnits(app, manifest, previous, domains).filter((p) => !p.routed)) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, previous, p, images, uid));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, previous, p, images));
     await d.systemd.enable(p.unit);
     await d.systemd.restart(p.unit);
     keep.add(p.unit);
@@ -132,7 +130,6 @@ export async function goLive(
   const log = opts.log ?? noLog;
   const manifest = await loadReleaseManifest(d, app, id);
   const images = await readImages(d, app, id);
-  const uid = Object.keys(images).length > 0 ? Number(await uidOf(d, app)) : undefined;
   const domains = await readDomains(d, app);
   const plan = plannedUnits(app, manifest, id, domains);
   await assertHostnamesFree(d, app, domains);
@@ -165,7 +162,7 @@ export async function goLive(
   };
 
   for (const p of plan) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, id, p, images, uid, targets[p.service]!.port));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, p.service, id, p, images, targets[p.service]!.port));
     await d.systemd.enable(p.unit);
   }
   for (const p of plan) {

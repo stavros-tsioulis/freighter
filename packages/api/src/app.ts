@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { IDENT_RE, domainSchema, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { IDENT_RE, domainSchema, imageHost, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { AgentError, ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
 import { isRole, type GitLinkRow, type PendingDomainRow, type Role } from "@freighter/registry";
@@ -235,7 +235,7 @@ export function createApi(ctx: ApiContext): Api {
     const name = appParam(event);
     const a = ctx.registry.apps.get(name);
     if (!a) throw new ApiError(404, "not_found", `unknown app "${name}"`);
-    return { ...a, images: imagesOf(a.manifestText), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
+    return { ...a, images: imagesOf(a.manifestText), registryLogins: ctx.registry.registryCredentials.appChoices(name), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
   }));
 
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
@@ -445,7 +445,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   // An app whose services are all images has nothing to upload: the server pulls them. `manifest` is the text of app.yaml.
-  const queueImageDeploy = (event: H3Event, who: Principal, name: string, manifestText: string, trigger: "manual" | "upload") => {
+  const queueImageDeploy = (event: H3Event, who: Principal, name: string, manifestText: string, trigger: "manual" | "upload", logins: Record<string, string> = {}) => {
     let manifest;
     try {
       manifest = parseManifest(manifestText);
@@ -463,6 +463,15 @@ export function createApi(ctx: ApiContext): Api {
     const target = ctx.registry.servers.get(server);
     if (!target) throw new ApiError(404, "not_found", `unknown server "${server}"`);
     if (target.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${server}" has not been enrolled yet`);
+    // Logins chosen in the form stick to the app, so a redeploy pulls with the same ones. Several logins for a registry
+    // and no choice would be a guess, so that is refused here rather than failing after the deployment was queued.
+    for (const [host, username] of Object.entries(logins)) {
+      if (!ctx.registry.registryCredentials.setAppChoice(name, host, username)) throw new ApiError(400, "bad_request", `no login "${username}" for "${host}"`);
+    }
+    for (const host of new Set(Object.values(imageServices(manifest)).map(imageHost))) {
+      const c = ctx.registry.registryCredentials.resolve(name, host);
+      if (c && "ambiguous" in c) throw new ApiError(409, "login_required", `${host} has several logins (${c.ambiguous.join(", ")}); choose which ${name} pulls with`);
+    }
     const id = randomUUID();
     ctx.registry.apps.ensure(name, server);
     ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger });
@@ -473,8 +482,8 @@ export function createApi(ctx: ApiContext): Api {
   };
 
   router.post("/v1/apps/:app/image-deployments", route("deployer", async (event, who) => {
-    const { manifest } = await body(event, z.object({ manifest: z.string().min(1).max(262_144) }));
-    return queueImageDeploy(event, who, appParam(event), manifest, "manual");
+    const { manifest, logins } = await body(event, z.object({ manifest: z.string().min(1).max(262_144), logins: z.record(z.string(), z.string().min(1)).optional() }));
+    return queueImageDeploy(event, who, appParam(event), manifest, "manual", logins);
   }));
 
   // Pull the app's images again (a moved tag, a fixed image) and release the result, keeping the app's current app.yaml.
@@ -628,7 +637,8 @@ export function createApi(ctx: ApiContext): Api {
 
   // ---- container registries: logins used when pulling the images of image services ----
   const registryHost = z.string().toLowerCase().regex(/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d{1,5})?$/, "expected a registry host such as ghcr.io");
-  router.get("/v1/registries", route("admin", () => ({ registries: ctx.registry.registryCredentials.list() })));
+  // Names only (never the secret): deployers need them to choose which login an app pulls with.
+  router.get("/v1/registries", route("deployer", () => ({ registries: ctx.registry.registryCredentials.list() })));
 
   router.put("/v1/registries/:host", route("admin", async (event, who) => {
     const host = registryHost.parse(getRouterParam(event, "host"));
@@ -638,11 +648,27 @@ export function createApi(ctx: ApiContext): Api {
     return row;
   }));
 
+  // `?username=` says which login when a registry has several.
   router.delete("/v1/registries/:host", route("admin", (event, who) => {
     const host = registryHost.parse(getRouterParam(event, "host"));
-    if (!ctx.registry.registryCredentials.remove(host)) throw new ApiError(404, "not_found", `no login for "${host}"`);
-    audit(who, "registry.remove", undefined, { host });
+    const mine = ctx.registry.registryCredentials.list().filter((c) => c.host === host);
+    if (mine.length === 0) throw new ApiError(404, "not_found", `no login for "${host}"`);
+    const asked = getQuery(event).username;
+    const username = typeof asked === "string" && asked ? asked : mine.length === 1 ? mine[0]!.username : undefined;
+    if (username === undefined) throw new ApiError(400, "bad_request", `${host} has several logins (${mine.map((c) => c.username).join(", ")}); say which with ?username=`);
+    if (!ctx.registry.registryCredentials.remove(host, username)) throw new ApiError(404, "not_found", `no login "${username}" for "${host}"`);
+    audit(who, "registry.remove", undefined, { host, username });
     return { ok: true };
+  }));
+
+  // Which login an app pulls its images from `host` with (null: the registry's default, i.e. its only login).
+  router.put("/v1/apps/:app/registry-logins/:host", route("deployer", async (event, who) => {
+    const name = appParam(event);
+    const host = registryHost.parse(getRouterParam(event, "host"));
+    const { username } = await body(event, z.object({ username: z.string().min(1).max(255).nullable() }));
+    if (!ctx.registry.registryCredentials.setAppChoice(name, host, username)) throw new ApiError(404, "not_found", `no login "${username}" for "${host}"`);
+    audit(who, "registry.choose", name, { host, username });
+    return { registryLogins: ctx.registry.registryCredentials.appChoices(name) };
   }));
 
   // ---- git: link a repository, deploy from it, receive push webhooks ----
