@@ -174,7 +174,6 @@ async function remove() {
               </section>
               <section class="flex flex-col gap-3" aria-labelledby="danger-h">
                 <h3 id="danger-h" class="font-display font-semibold text-[1.35rem] leading-tight">Delete</h3>
-                <p class="text-sm text-muted-color">{{ storage.backend.kind === "local" ? "The files on this server's disk are deleted with it." : "Files on the remote system are not touched." }}</p>
                 <Button label="Delete storage" icon="pi pi-trash" severity="danger" outlined size="small" class="self-start" @click="showDelete = true" />
               </section>
             </div>

@@ -341,8 +341,8 @@ export function useStartUpgrade() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean }) =>
-      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.containers ? { containers: true } : v.ref ? { ref: v.ref } : {} }),
+    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean }) =>
+      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.containers ? { containers: true } : v.storage ? { storage: true } : v.ref ? { ref: v.ref } : {} }),
     onSuccess: (r, v) => {
       // The response already describes the new run: show it at once instead of the previous run until the next poll.
       qc.setQueryData(["server-upgrade", v.server], r);

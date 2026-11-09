@@ -49,6 +49,7 @@ const stateText = computed(() => {
 // ---- controls ----
 const showUpgrade = ref(false);
 const showContainers = ref(false);
+const showStorage = ref(false);
 const checkNow = useCheckServer();
 const restart = useRestartService();
 function askRestart() {
@@ -131,6 +132,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
             <Fact label="Memory used" :title="`${memUsed} of ${formatBytes(s.host.memTotal)}`">{{ memUsed }}<span class="text-muted-color font-normal"> of {{ formatBytes(s.host.memTotal) }}</span></Fact>
             <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
             <Fact label="Container images" :title="s.host.containers?.available ? `Podman ${s.host.containers.version ?? ''}` : 'Install with --with-containers to deploy images here'">{{ !s.host.containers ? "Agent too old" : s.host.containers.available ? `Podman ${s.host.containers.version ?? ""}`.trim() : "Podman not installed" }}</Fact>
+            <Fact label="S3 storage" :title="s.host.storage?.available ? `rclone ${s.host.storage.version ?? ''}` : 'Install with --with-storage to serve storages here'">{{ !s.host.storage ? "Agent too old" : s.host.storage.available ? `rclone ${s.host.storage.version ?? ""}`.trim() : "rclone not installed" }}</Fact>
           </template>
           <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
           <Fact label="Added">{{ date(s.createdAt) }}</Fact>
@@ -179,6 +181,25 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
             <div v-else-if="s.host.containers && !remote" class="flex flex-col gap-1 text-sm">
               <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
               <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-containers</pre>
+            </div>
+          </template>
+        </div>
+
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="S3 storage">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 class="font-medium">S3 storage</h3>
+            <Tag v-if="s.host?.storage?.available" :value="`rclone ${s.host.storage.version ?? ''}`.trim()" severity="success" />
+            <Tag v-else-if="s.host" :value="s.host.storage ? 'rclone not installed' : 'Agent too old'" severity="warn" />
+          </div>
+          <template v-if="s.host && !s.host.storage?.available">
+            <p v-if="!s.host.storage" class="text-sm text-muted-color">This agent predates storage support. Upgrade it first.</p>
+            <div v-else-if="remote && s.status === 'online'" class="flex flex-wrap items-center gap-3">
+              <Button label="Add storage support…" icon="pi pi-database" size="small" :disabled="upgrading" @click="showStorage = true" />
+              <small v-if="upgrading" class="text-muted-color">An upgrade is running; wait for it to finish.</small>
+            </div>
+            <div v-else-if="!remote" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
+              <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-storage</pre>
             </div>
           </template>
         </div>
@@ -246,6 +267,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
 
     <UpgradeDialog v-if="showUpgrade" v-model="showUpgrade" :server="name" />
     <UpgradeDialog v-if="showContainers" v-model="showContainers" :server="name" containers />
+    <UpgradeDialog v-if="showStorage" v-model="showStorage" :server="name" storage />
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>

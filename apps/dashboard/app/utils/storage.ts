@@ -1,10 +1,10 @@
 import type { StorageBackend, StorageRow, StorageSecrets } from "~/types";
 
 export type StorageKind = StorageBackend["kind"];
-export const KINDS: { kind: StorageKind; label: string; icon: string; text: string }[] = [
-  { kind: "local", label: "Local disk", icon: "pi pi-hdd", text: "Kept on the server, persisted by Freighter" },
-  { kind: "sftp", label: "SFTP", icon: "pi pi-lock", text: "Any SSH server" },
-  { kind: "smb", label: "SMB", icon: "pi pi-share-alt", text: "A Windows or NAS share" },
+export const KINDS: { kind: StorageKind; label: string; icon: string }[] = [
+  { kind: "local", label: "Local disk", icon: "pi pi-hdd" },
+  { kind: "sftp", label: "SFTP", icon: "pi pi-lock" },
+  { kind: "smb", label: "SMB", icon: "pi pi-share-alt" },
 ];
 
 export function emptyBackend(kind: StorageKind): StorageBackend {

@@ -103,6 +103,8 @@ export interface HostStatus {
   diskFreeBytes: number | null;
   /** Whether the server can run image services (Podman installed). Absent on agents that predate images. */
   containers?: { available: boolean; version?: string };
+  /** Whether the server can serve S3 storages (rclone installed). Absent on agents that predate storage. */
+  storage?: { available: boolean; version?: string };
 }
 export interface ServerRow {
   name: string;

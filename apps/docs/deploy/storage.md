@@ -56,7 +56,7 @@ The server needs **rclone 1.65 or newer**, which distributions rarely ship. The 
 curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --role agent --with-storage
 ```
 
-Re-run it on an existing server to add storage support (use the same `--role` and options as before). Servers without it refuse to create a storage and say so.
+On a remote server, use **Servers → the server → S3 storage → Add storage support** instead; it runs the same installer and keeps everything else as it is. Servers without rclone refuse to create a storage and say so.
 
 ## Limits
 

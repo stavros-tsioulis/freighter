@@ -22,7 +22,6 @@ const tone = (s: { activeState: string }) => (s.activeState === "failed" ? "fail
 <template>
   <div class="flex flex-col gap-8">
     <PageHeader title="Storage">
-      S3-compatible buckets, on this server's disk or in front of an SFTP or SMB share.
       <template #actions>
         <Button v-if="can('admin')" label="New storage" icon="pi pi-plus" size="small" @click="showNew = true" />
       </template>
@@ -31,8 +30,7 @@ const tone = (s: { activeState: string }) => (s.activeState === "failed" ? "fail
     <Skeleton v-if="isLoading" height="9rem" />
     <div v-else-if="!(storages ?? []).length" class="rounded-[var(--p-border-radius-lg)] border border-dashed border-[var(--p-surface-300)] dark:border-[var(--p-surface-700)] px-6 py-10 sm:px-10 max-w-3xl">
       <h2 class="font-display font-semibold text-2xl">No storage yet</h2>
-      <p class="mt-1.5 text-muted-color max-w-[56ch]">Create one, give it a domain, and point apps at it with <code>@storage:name.url</code>.</p>
-      <div class="mt-5"><Button v-if="can('admin')" label="New storage" icon="pi pi-plus" @click="showNew = true" /></div>
+      <div class="mt-4"><Button v-if="can('admin')" label="New storage" icon="pi pi-plus" @click="showNew = true" /></div>
     </div>
     <ul v-else class="grid gap-4 grid-cols-[repeat(auto-fill,minmax(20rem,1fr))]">
       <li v-for="s in storages" :key="s.name" class="card" :data-bad="s.activeState === 'failed' || undefined">

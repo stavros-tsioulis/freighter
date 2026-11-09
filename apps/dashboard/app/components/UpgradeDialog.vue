@@ -2,8 +2,12 @@
 import { useQueryClient } from "@tanstack/vue-query";
 import { upgradeActive } from "~/composables/queries";
 
-/** `containers`: install Podman (the installer's --with-containers) at the version that is installed, instead of upgrading. */
-const props = defineProps<{ server: string; containers?: boolean }>();
+/**
+ * `containers`: install Podman (the installer's --with-containers) at the version that is installed, instead of upgrading.
+ * `storage`: likewise for rclone (--with-storage), which serves S3 storages.
+ */
+const props = defineProps<{ server: string; containers?: boolean; storage?: boolean }>();
+const adding = computed(() => (props.containers ? "container" : props.storage ? "storage" : null));
 const visible = defineModel<boolean>({ required: true });
 const qc = useQueryClient();
 
@@ -47,12 +51,12 @@ watch(finished, (f) => {
 });
 
 async function go() {
-  await start.mutateAsync(props.containers ? { server: props.server, containers: true } : { server: props.server, ref: custom.value && ref_.value.trim() ? ref_.value.trim() : undefined }).catch(() => null);
+  await start.mutateAsync(props.containers ? { server: props.server, containers: true } : props.storage ? { server: props.server, storage: true } : { server: props.server, ref: custom.value && ref_.value.trim() ? ref_.value.trim() : undefined }).catch(() => null);
 }
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal :header="containers ? `Add container support to ${server}` : `Upgrade ${server}`" :style="{ width: '44rem' }" :closable="!start.isPending.value">
+  <Dialog v-model:visible="visible" modal :header="adding ? `Add ${adding} support to ${server}` : `Upgrade ${server}`" :style="{ width: '44rem' }" :closable="!start.isPending.value">
     <div class="flex flex-col gap-4">
       <Skeleton v-if="!view && !error" height="6rem" />
       <Message v-else-if="error && !active" severity="error" size="small">{{ (error as Error).message }}</Message>
@@ -62,7 +66,7 @@ async function go() {
         <template v-if="!u || !active">
           <Message v-if="finished === 'done'" severity="success" size="small">{{ u?.message }}</Message>
           <Message v-else-if="finished === 'rolled-back'" severity="warn" size="small">
-            {{ containers ? "Adding container support" : "The upgrade" }} didn't work out, and {{ server }} is back on {{ short(u?.from) }}. {{ u?.message }}
+            {{ adding ? `Adding ${adding} support` : "The upgrade" }} didn't work out, and {{ server }} is back on {{ short(u?.from) }}. {{ u?.message }}
           </Message>
           <Message v-else-if="finished === 'failed'" severity="error" size="small">{{ u?.message }}</Message>
 
@@ -73,6 +77,14 @@ async function go() {
               <li>Apps keep running. The agent is unavailable for a short while while it restarts.</li>
               <li>If this dashboard can't reach the agent afterwards, or the install fails, the server puts the previous agent back on its own. Packages that were installed stay.</li>
               <li>Don't deploy to {{ server }} meanwhile.</li>
+            </ul>
+          </div>
+          <div v-else-if="storage" class="flex flex-col gap-2 text-sm">
+            <p><b>{{ server }}</b> runs <code>{{ short(view.commit) }}</code>. This installs rclone, which serves S3 storages. The version of Freighter doesn't change.</p>
+            <ul class="list-disc pl-5 text-muted-color flex flex-col gap-1">
+              <li>Freighter's installer runs again on the server, which takes a few minutes. It needs internet access.</li>
+              <li>Apps keep running. The agent is unavailable for a short while while it restarts.</li>
+              <li>If the install fails or this dashboard can't reach the agent afterwards, the previous agent is put back.</li>
             </ul>
           </div>
           <div v-else class="flex flex-col gap-2 text-sm">
@@ -116,9 +128,9 @@ async function go() {
       <Button :label="active ? 'Close (it keeps going)' : 'Close'" severity="secondary" text @click="visible = false" />
       <Button
         v-if="view?.supported && !active"
-        :label="finished ? 'Try again' : containers ? 'Add container support' : 'Upgrade'"
-        :icon="containers ? 'pi pi-box' : 'pi pi-arrow-up'"
-        :disabled="!containers && (!validRef || (!custom && !view.target) || (!custom && !!view && !view.outdated && !finished))"
+        :label="finished ? 'Try again' : adding ? `Add ${adding} support` : 'Upgrade'"
+        :icon="containers ? 'pi pi-box' : storage ? 'pi pi-database' : 'pi pi-arrow-up'"
+        :disabled="!adding && (!validRef || (!custom && !view.target) || (!custom && !!view && !view.outdated && !finished))"
         :loading="start.isPending.value"
         @click="go"
       />

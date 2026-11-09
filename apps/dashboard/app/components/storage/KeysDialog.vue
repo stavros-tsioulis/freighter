@@ -16,7 +16,7 @@ async function copy(text: string, what: string) {
 <template>
   <Dialog v-model:visible="visible" modal :header="rotated ? 'New secret key' : `${name} is being created`" :style="{ width: '34rem' }">
     <div class="flex flex-col gap-4">
-      <Message severity="warn" size="small" :closable="false">The secret key is shown once. Apps get it by connecting to the storage.</Message>
+      <Message severity="warn" size="small" :closable="false">The secret key is shown once.</Message>
       <div class="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-2 text-sm">
         <span class="text-muted-color">Access key</span>
         <code class="break-all">{{ accessKey }}</code>

@@ -64,6 +64,8 @@ export interface UpgradeScriptOptions {
   confirmSeconds: number;
   /** Stay on the installed version (ignore `ref`) and add Podman: the installer runs with `--with-containers`. */
   withContainers?: boolean;
+  /** Stay on the installed version and add rclone, for S3 storages: the installer runs with `--with-storage`. */
+  withStorage?: boolean;
 }
 
 /**
@@ -87,6 +89,7 @@ MAIN=${q(o.haproxyMain)}
 RELOAD=${q(o.haproxyReload.map(q).join(" "))}
 CONFIRM_SECONDS=${Math.max(1, Math.floor(o.confirmSeconds))}
 WITH_CONTAINERS=${o.withContainers ? 1 : 0}
+WITH_STORAGE=${o.withStorage ? 1 : 0}
 UNIT_DIR=\${FREIGHTER_UNIT_DIR:-/etc/systemd/system}
 POLL=\${FREIGHTER_POLL_SECONDS:-2}
 
@@ -123,8 +126,8 @@ printf '%s\\n' "$REF" >"$STATE/ref"
 set_state running "Backing up the current version"
 FROM=$(git -C "$DIR" rev-parse HEAD) || { set_state failed "$DIR is not a git checkout"; exit 1; }
 printf '%s\\n' "$FROM" >"$STATE/from"
-# Adding container support does not change the version: re-run the installer for the commit that is installed.
-if [ "$WITH_CONTAINERS" = 1 ]; then REF=$FROM; printf '%s\\n' "$REF" >"$STATE/ref"; fi
+# Adding container or storage support does not change the version: re-run the installer for the commit that is installed.
+if [ "$WITH_CONTAINERS" = 1 ] || [ "$WITH_STORAGE" = 1 ]; then REF=$FROM; printf '%s\\n' "$REF" >"$STATE/ref"; fi
 rm -rf "$STATE/backup"; mkdir -p "$STATE/backup/units"
 cp -a "$DIR/apps/agent/dist" "$STATE/backup/agent-dist" && cp -a "$DIR/apps/cli/dist" "$STATE/backup/cli-dist" \\
   || { set_state failed "Could not back up the current version, so nothing was changed"; exit 1; }
@@ -156,12 +159,17 @@ fi
 TO=$(git -C "$DIR" rev-parse FETCH_HEAD) && printf '%s\\n' "$TO" >"$STATE/to"
 git -C "$DIR" show FETCH_HEAD:infra/install.sh >"$STATE/install.sh" || { set_state failed "$REF has no infra/install.sh, so nothing was changed"; exit 1; }
 
-if [ "$WITH_CONTAINERS" = 1 ]; then
+set --
+if [ "$WITH_CONTAINERS" = 1 ]; then set -- "$@" --with-containers; fi
+if [ "$WITH_STORAGE" = 1 ]; then set -- "$@" --with-storage; fi
+if [ "$WITH_CONTAINERS" = 1 ] && [ "$WITH_STORAGE" = 1 ]; then
+  set_state running "Adding container and storage support: installing Podman and rclone, and re-running the installer for $(printf '%s' "$TO" | cut -c1-12) (a few minutes)"
+elif [ "$WITH_CONTAINERS" = 1 ]; then
   set_state running "Adding container support: installing Podman and re-running the installer for $(printf '%s' "$TO" | cut -c1-12) (a few minutes)"
-  set -- --with-containers
+elif [ "$WITH_STORAGE" = 1 ]; then
+  set_state running "Adding storage support: installing rclone and re-running the installer for $(printf '%s' "$TO" | cut -c1-12) (a few minutes)"
 else
   set_state running "Installing $(printf '%s' "$TO" | cut -c1-12) (this builds Freighter on the server and takes a few minutes)"
-  set --
 fi
 if ! sh "$STATE/install.sh" --role agent --ref "$REF" --dir "$DIR" --haproxy "$MODE" "$@"; then
   rollback "The installer failed"
@@ -175,7 +183,9 @@ while [ ! -e "$STATE/confirmed" ] && [ "$i" -lt "$CONFIRM_SECONDS" ]; do
   i=$((i + POLL))
 done
 if [ -e "$STATE/confirmed" ]; then
-  if [ "$WITH_CONTAINERS" = 1 ]; then set_state done "Container support added: Podman is installed and the agent restarted"
+  if [ "$WITH_CONTAINERS" = 1 ] && [ "$WITH_STORAGE" = 1 ]; then set_state done "Container and storage support added: Podman and rclone are installed and the agent restarted"
+  elif [ "$WITH_CONTAINERS" = 1 ]; then set_state done "Container support added: Podman is installed and the agent restarted"
+  elif [ "$WITH_STORAGE" = 1 ]; then set_state done "Storage support added: rclone is installed and the agent restarted"
   else set_state done "Upgraded from $(printf '%s' "$FROM" | cut -c1-12) to $(printf '%s' "$TO" | cut -c1-12)"; fi
   exit 0
 fi
@@ -222,7 +232,7 @@ export async function upgradeStatus(d: Deps, commit: string | null): Promise<Upg
 }
 
 /** Start upgrading to `ref`. Returns as soon as the upgrade is running on its own. */
-export async function startUpgrade(d: Deps, ref: string, commit: string | null, opts: { withContainers?: boolean } = {}): Promise<void> {
+export async function startUpgrade(d: Deps, ref: string, commit: string | null, opts: { withContainers?: boolean; withStorage?: boolean } = {}): Promise<void> {
   const reason = unsupported(d);
   if (reason) throw new UpgradeError(reason);
   if (!validRef(ref)) throw new UpgradeError(`invalid ref "${ref}"`);
@@ -244,6 +254,7 @@ export async function startUpgrade(d: Deps, ref: string, commit: string | null, 
       haproxyReload: d.config.haproxy.reloadCommand,
       confirmSeconds: 180,
       withContainers: opts.withContainers,
+      withStorage: opts.withStorage,
     }),
     { mode: 0o700 },
   );

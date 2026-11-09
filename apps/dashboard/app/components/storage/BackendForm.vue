@@ -91,7 +91,7 @@ const canTest = computed(() => {
 
     <Message v-if="pending" severity="warn" :closable="false" class="col-span-6">
       <div class="flex flex-col gap-2">
-        <span>{{ remote.host }} presents this {{ pending.type }} key. Trust it only if it matches the server's.</span>
+        <span>{{ remote.host }} presents this {{ pending.type }} key:</span>
         <code class="break-all">{{ pending.fingerprint }}</code>
         <Button label="Trust this key and test" size="small" class="self-start" @click="trust" />
       </div>

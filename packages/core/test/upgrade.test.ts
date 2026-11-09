@@ -46,11 +46,11 @@ async function server(installer: { good: string; bad: string }, installed = "#!/
 
   const t = await makeDeps({ config: { agent: { upgradeDir: `${root}/state` } } });
   t.deps.installDir = dir;
-  const run = (ref: string, confirmSeconds = 30, withContainers = false) => {
+  const run = (ref: string, confirmSeconds = 30, withContainers = false, withStorage = false) => {
     mkdirSync(`${root}/state`, { recursive: true });
     writeFileSync(
       `${root}/upgrade.sh`,
-      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds, withContainers }),
+      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds, withContainers, withStorage }),
     );
     const child = spawn("sh", [`${root}/upgrade.sh`], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FREIGHTER_UNIT_DIR: units, FREIGHTER_POLL_SECONDS: "1" },
@@ -80,7 +80,7 @@ describe("renderUpgradeScript", () => {
     execFileSync("sh", ["-n"], { input: script });
     expect(script).toContain(`DIR='/o'\\''pt'`);
     expect(script).toContain('--haproxy "$MODE"');
-    execFileSync("sh", ["-n"], { input: renderUpgradeScript({ stateDir: "/s", installDir: "/opt", ref: "main", haproxy: "existing", haproxyMain: "/m", haproxyReload: ["x"], confirmSeconds: 1, withContainers: true }) });
+    execFileSync("sh", ["-n"], { input: renderUpgradeScript({ stateDir: "/s", installDir: "/opt", ref: "main", haproxy: "existing", haproxyMain: "/m", haproxyReload: ["x"], confirmSeconds: 1, withContainers: true, withStorage: true }) });
     expect(script).toContain("WITH_CONTAINERS=0");
   });
   it("accepts branches, tags and commits, and nothing that could be an option or a path trick", () => {
@@ -128,6 +128,25 @@ describe("the upgrade script on a fake server", () => {
     expect(s.read("state/to")).toBe(s.old);
     expect(git(s.dir, "rev-parse", "HEAD")).toBe(s.old);
     expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-containers`);
+  });
+
+  it("adds storage support the same way, with --with-storage, alone or together with containers", async () => {
+    const s = await server({ good: installs("NEW"), bad: installs("NEW") }, `#!/bin/sh\necho "$@" >"$(dirname "$0")/args.log"\n`);
+    const done = s.run("good", 30, false, true);
+    await s.waitState("verifying");
+    writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+    expect(await done).toBe(0);
+    expect(s.read("state/message")).toMatch(/Storage support added/);
+    expect(s.read("state/ref")).toBe(s.old);
+    expect(git(s.dir, "rev-parse", "HEAD")).toBe(s.old);
+    expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-storage`);
+
+    const both = s.run("good", 30, true, true);
+    await s.waitState("verifying");
+    writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+    expect(await both).toBe(0);
+    expect(s.read("state/message")).toMatch(/Container and storage support added/);
+    expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-containers --with-storage`);
   });
 
   it("rolls back when the new installer fails halfway", async () => {

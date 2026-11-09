@@ -348,6 +348,25 @@ describe("upgrading a remote server", () => {
     expect(local.json.error.message).toMatch(/--with-containers/);
   });
 
+  it("adds storage support the same way, and refuses an agent or server that can't", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] });
+    const old = await upgrade(t, { storage: true });
+    expect(old.status).toBe(409);
+    expect(old.json.error.message).toMatch(/predates storage support/);
+    expect(agent.calls.some((c) => c.op === "upgrade.start")).toBe(false);
+    expect((await upgrade(t, { storage: true }, "local")).json.error.message).toMatch(/--with-storage/);
+
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images", "storage.install"] });
+    const r = await upgrade(t, { storage: true, ref: "ignored" });
+    expect(r.status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ withStorage: true });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-storage", detail: { server: "vps-1" } });
+  });
+
   it("refuses what can't work, with the reason", async () => {
     const t = await makeApi();
     expect((await upgrade(t, {}, "local")).status).toBe(400);

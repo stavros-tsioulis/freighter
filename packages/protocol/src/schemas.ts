@@ -105,6 +105,8 @@ export const ops = {
       diskFreeBytes: z.number().nullable(),
       /** Whether this host can run image services (Podman installed) and which version. Absent on agents without image support. */
       containers: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
+      /** Whether this host can serve S3 storages (a new enough rclone is installed). Absent on agents that predate storage. */
+      storage: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
     }),
   },
   /** Header line only; `size` raw bytes follow on the same connection (see framing.ts). */
@@ -180,6 +182,8 @@ export const ops = {
        * to `ref`. Agents with the "containers.install" capability only.
        */
       withContainers: z.boolean().optional(),
+      /** Likewise with `--with-storage` (rclone, for S3 storages). Agents with the "storage.install" capability only. */
+      withStorage: z.boolean().optional(),
     }),
     result: z.object({ started: z.literal(true) }),
   },

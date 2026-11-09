@@ -101,15 +101,15 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "connections", "variables", "reapply", ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "connections", "variables", "reapply", ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
     async "upgrade.status"() {
       return upgradeStatus(d, await currentCommit());
     },
-    async "upgrade.start"({ ref, withContainers }) {
-      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers });
+    async "upgrade.start"({ ref, withContainers, withStorage }) {
+      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers, withStorage });
       return { started: true as const };
     },
     async "upgrade.check"({ ref }) {
@@ -126,7 +126,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d) };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d) };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });

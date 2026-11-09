@@ -57,7 +57,6 @@ async function submit() {
         >
           <i :class="k.icon" aria-hidden="true" />
           <span class="font-medium">{{ k.label }}</span>
-          <span class="text-xs text-muted-color">{{ k.text }}</span>
         </button>
       </div>
 

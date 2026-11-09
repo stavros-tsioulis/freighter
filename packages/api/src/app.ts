@@ -1326,15 +1326,15 @@ export function createApi(ctx: ApiContext): Api {
   router.post("/v1/servers/:name/upgrade", route("admin", async (event, who) => {
     const name = sName(event);
     needServer(name);
-    const { ref, containers } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional() }));
+    const { ref, containers, storage } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional() }));
     let view;
     try {
-      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers });
+      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage });
     } catch (e) {
       if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
       throw e;
     }
-    audit(who, containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers ? {} : { ref: ref ?? view.target }), from: view.commit });
+    audit(who, storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage ? {} : { ref: ref ?? view.target }), from: view.commit });
     setResponseStatus(event, 202);
     return view;
   }));
