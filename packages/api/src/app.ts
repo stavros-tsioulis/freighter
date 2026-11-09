@@ -314,6 +314,36 @@ export function createApi(ctx: ApiContext): Api {
   }));
   router.delete("/v1/apps/:app/services/:service/variables/:key", route("admin", (event, who) => variableChange(event, who, { remove: [envKey.parse(getRouterParam(event, "key"))] })));
 
+  // The app's configuration: what app.yaml described when the app started, and the dashboard and CLI keep from then on.
+  router.get("/v1/apps/:app/config", route("viewer", async (event) => {
+    const name = appParam(event);
+    const row = ctx.registry.apps.get(name);
+    if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
+    let text: string | null = row.manifestText ?? null;
+    try {
+      text = (await ctx.agents.forServer(row.server).call("app.config.get", { app: name })).manifestText ?? text;
+    } catch {
+      // an agent from before configuration was kept separately: the manifest of the current release is it
+    }
+    if (!text) return { text: null, settings: null };
+    const { name: _name, source: _source, ...settings } = parseManifest(text, { legacy: true });
+    return { text, settings };
+  }));
+  router.put("/v1/apps/:app/config", route("admin", async (event, who) => {
+    const name = userAppParam(event);
+    const { settings } = await body(event, z.object({ settings: settingsSchema }));
+    if (Object.keys(settings.services ?? {}).length === 0) throw new ApiError(422, "no_manifest", "define at least one service");
+    checkSettings(name, settings);
+    const text = renderManifest(name, settings as never);
+    const server = serverOf(event, name);
+    await pushConnections(ctx, server, name);
+    const r = await ctx.agents.forServer(server).call("app.config.set", { app: name, manifestText: text }, { timeoutMs: 30 * 60_000 });
+    audit(who, "config.set", name, { server });
+    await syncApp(ctx, server, name).catch(() => {});
+    void jobs.cascade({ app: name }).catch(() => {});
+    return { ok: true, redeployed: r.deploy !== null };
+  }));
+
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
   // Typing the name is required of API clients too, so a stray DELETE can't do it.
   router.delete("/v1/apps/:app", route("admin", async (event, who) => {
@@ -533,7 +563,7 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   // An app whose services are all images has nothing to upload: the server pulls them. `manifest` is the text of app.yaml.
-  const queueImageDeploy = (event: H3Event, who: Principal, name: string, manifestText: string, trigger: "manual" | "upload", logins: Record<string, string> = {}) => {
+  const queueImageDeploy = (event: H3Event, who: Principal, name: string, manifestText: string, trigger: "manual" | "upload", logins: Record<string, string> = {}, replaceConfig = false) => {
     let manifest;
     try {
       manifest = parseManifest(manifestText);
@@ -564,14 +594,14 @@ export function createApi(ctx: ApiContext): Api {
     ctx.registry.apps.ensure(name, server);
     ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger });
     audit(who, "deploy.queued", name, { deployment: id, server, images: Object.values(imageServices(manifest)) });
-    jobs.enqueueImageDeploy({ id, app: name, server, manifestText });
+    jobs.enqueueImageDeploy({ id, app: name, server, manifestText, replaceConfig });
     setResponseStatus(event, 202);
     return { id, status: "queued" };
   };
 
   router.post("/v1/apps/:app/image-deployments", route("deployer", async (event, who) => {
-    const { manifest, logins } = await body(event, z.object({ manifest: z.string().min(1).max(262_144), logins: z.record(z.string(), z.string().min(1)).optional() }));
-    return queueImageDeploy(event, who, userAppParam(event), manifest, "manual", logins);
+    const { manifest, logins, replaceConfig } = await body(event, z.object({ manifest: z.string().min(1).max(262_144), logins: z.record(z.string(), z.string().min(1)).optional(), replaceConfig: z.boolean().optional() }));
+    return queueImageDeploy(event, who, userAppParam(event), manifest, "manual", logins, replaceConfig);
   }));
 
   // Pull the app's images again (a moved tag, a fixed image) and release the result, keeping the app's current app.yaml.
@@ -609,7 +639,7 @@ export function createApi(ctx: ApiContext): Api {
       if (e instanceof z.ZodError) throw e;
       throw new ApiError(400, "bad_request", e instanceof Error ? e.message.split("\n")[0]! : String(e));
     }
-    return queueImageDeploy(event, who, name, manifestText, "manual");
+    return queueImageDeploy(event, who, name, manifestText, "manual", {}, true);
   }));
 
   router.post("/v1/apps/:app/rollback", route("deployer", async (event, who) => {
@@ -1215,8 +1245,10 @@ export function createApi(ctx: ApiContext): Api {
     const seen = await ctx.agents.forServer(server).call("git.inspect", { repository: b.repository.trim(), branch: b.branch, subpath: b.subpath || undefined, auth }, { timeoutMs: 120_000 });
     let name: string;
     if (seen.hasManifest) {
+      // app.yaml names the app and fills the form in; the settings the form sends (if any) are what the app starts from
       if (!seen.valid || !seen.appName) throw new ApiError(422, "invalid_manifest", seen.error ?? "app.yaml is invalid");
-      name = seen.appName; // the file in the repository is the source of truth
+      name = seen.appName;
+      if (b.settings) checkSettings(name, b.settings);
     } else {
       if (!b.appName) throw new ApiError(422, "no_manifest", "the repository has no app.yaml: give the app a name and its settings");
       if (!b.settings || Object.keys(b.settings.services ?? {}).length === 0) throw new ApiError(422, "no_manifest", "the repository has no app.yaml: define at least one service");
@@ -1233,7 +1265,7 @@ export function createApi(ctx: ApiContext): Api {
     const link = ctx.registry.gitLinks.upsert({
       app: name, provider: b.provider, repository: b.repository.trim(), branch: b.branch, subpath: b.subpath, autoDeploy: b.autoDeploy,
       webhookSecret: secret, publicKey: key.publicKey, keyFingerprint: key.fingerprint, sshKeyId,
-      settings: seen.hasManifest ? (b.settings ?? null) : b.settings!,
+      settings: b.settings ?? null,
     });
     const r = queueGitDeploy(name, link, "manual", who.id, false);
     audit(who, "git.link", name, { repository: link.repository, branch: link.branch, server, deployment: r.id });

@@ -164,7 +164,7 @@ describe("host-level checks", () => {
     const h = await makeDeps();
     await deploy(h.deps, { ...routed(), source: await artifact() });
     const noWorker = routedManifest().replace("  worker:\n    command: node worker.mjs\n", "");
-    const r = await deploy(h.deps, { manifestText: noWorker, source: await artifact() });
+    const r = await deploy(h.deps, { manifestText: noWorker, config: "replace", source: await artifact() });
     expect(r.removed).toContain("freighter-shop--worker.service");
     expect(h.unitFiles()).not.toContain("freighter-shop--worker.service");
   });

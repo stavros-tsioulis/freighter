@@ -71,11 +71,11 @@ Whatever the commands leave in the checkout (build output, `node_modules`) is wh
 
 ### No `app.yaml` in the repository?
 
-`app.yaml` is the source of truth: when the file exists at the deployed commit, it is used and nothing else matters. When it does not, Freighter falls back to **settings you enter in the dashboard** (services, environment, secret names, build commands, release retention: everything `app.yaml` can define except the name). They are stored with the repository link, rendered into the same `app.yaml` text (the form shows it as a live preview), validated by the same parser, and deployed through the same health-gated engine.
+`app.yaml` is an init file. A new app starts from the **settings** the dashboard form sends (filled in from the repository's `app.yaml` when it has one; services, environment, secret names, build commands, release retention: everything `app.yaml` can define except the name), or else from the file itself. The result is the app's configuration, kept on its server. Later deploys don't read the repository's `app.yaml`: the configuration is changed on the app's *Settings* tab or with `freighter config set`, validated by the same parser, and deployed through the same health-gated engine.
 
-- **New app:** in *Deploy from Git*, if the branch has no `app.yaml` the dialog asks for an app name and shows the form.
-- **Existing app:** *Source* tab → *Settings without an app.yaml*. *Deploy latest* applies a saved change. The tab says when the repository's own `app.yaml` is taking precedence.
-- **API:** `settings` on `PUT/PATCH /v1/apps/:app/git` (`null` clears it), `appName` + `settings` on `POST /v1/git/deployments`, `POST /v1/manifest/render` for the preview.
+- **New app:** in *Deploy from Git* the form is filled from `app.yaml`; with no file the dialog asks for an app name.
+- **Existing app:** *Settings* tab → *Save and redeploy*.
+- **API:** `settings` on `POST /v1/git/deployments`, `GET/PUT /v1/apps/:app/config`, `POST /v1/manifest/render` for the preview.
 - Secret *values* are never part of the form; set them on the Environment tab.
 
 ## What a build can and cannot do

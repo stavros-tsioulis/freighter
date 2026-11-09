@@ -31,7 +31,8 @@ describe("end to end: push webhook -> API -> agent -> fetch, sandboxed build, de
     };
 
     const build = (cmd: string) => `build:\n  commands:\n    - ${cmd}\n`;
-    const repo = await makeRepo({ "app.yaml": APP_YAML("shop", "") + build("echo v1 > VERSION"), "server.mjs": "//\n" });
+    // the build is part of the app's configuration (taken from app.yaml at the first deploy); what it does depends on files
+    const repo = await makeRepo({ "app.yaml": APP_YAML("shop", "") + build("echo compiling && grep -q ok flag.txt && cp version.txt VERSION"), "flag.txt": "ok\n", "version.txt": "v1\n", "server.mjs": "//\n" });
 
     // admin links the repository
     const linked = await call("/v1/apps/shop/git", { method: "PUT", headers: admin, body: JSON.stringify({ repository: repo.url, branch: "main", provider: "github" }) });
@@ -66,17 +67,17 @@ describe("end to end: push webhook -> API -> agent -> fetch, sandboxed build, de
     expect(registry.apps.get("shop")?.currentRelease).toBe(d1.releaseId);
 
     // a commit whose build fails: the running release is untouched, the log says why
-    const bad = await repo.commit({ "app.yaml": APP_YAML("shop", "") + build("echo compiling && exit 4") }, "break the build");
+    const bad = await repo.commit({ "flag.txt": "nope\n" }, "break the build");
     const p2 = await push(bad);
     await api.jobs.idle();
     const d2 = registry.deployments.get(p2.json.id)!;
-    expect(d2).toMatchObject({ status: "failed", error: "build failed with exit code 4", releaseId: null });
+    expect(d2).toMatchObject({ status: "failed", error: "build failed with exit code 1", releaseId: null });
     expect((await call(`/v1/deployments/${p2.json.id}/log`, { headers: admin })).json.text).toContain("compiling");
     expect(registry.apps.get("shop")?.currentRelease).toBe(d1.releaseId);
     expect(readFileSync(`${host.deps.layout.appsRoot}/shop/current/VERSION`, "utf8")).toBe("v1\n");
 
     // fix it: deploys again, with the new commit recorded
-    const fixed = await repo.commit({ "app.yaml": APP_YAML("shop", "") + build("echo v2 > VERSION") }, "fix the build");
+    const fixed = await repo.commit({ "flag.txt": "ok\n", "version.txt": "v2\n" }, "fix the build");
     const p3 = await push(fixed);
     await api.jobs.idle();
     expect(registry.deployments.get(p3.json.id)).toMatchObject({ status: "success", commitSha: fixed, commitSubject: "fix the build", previousRelease: d1.releaseId });

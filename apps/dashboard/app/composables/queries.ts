@@ -491,6 +491,24 @@ export function useSaveGitLink(app: MaybeRef<string>) {
   });
 }
 
+/** The app's configuration: what app.yaml described when the app started, and what is kept (and edited) from then on. */
+export const useAppSettings = (app: MaybeRef<string>) =>
+  useQuery({ queryKey: ["config", app], queryFn: () => api<{ text: string | null; settings: AppSettings | null }>(`/apps/${toValue(app)}/config`), retry: false });
+
+/** Replace the configuration; a deployed app is redeployed with it. */
+export function useSaveConfig(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (settings: AppSettings) => api<{ ok: boolean; redeployed: boolean }>(`/apps/${toValue(app)}/config`, { method: "PUT", body: { settings } }),
+    onSuccess: (r) => {
+      notify.ok("Settings saved", r.redeployed ? "Redeployed with them" : undefined);
+      for (const key of ["config", "app", "apps", "variables", "graph", "deployments"]) void qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (e) => notify.fail("Could not save the settings", e),
+  });
+}
+
 export function usePatchGitLink(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();

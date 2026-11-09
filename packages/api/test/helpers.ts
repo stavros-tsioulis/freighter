@@ -53,6 +53,8 @@ export function fakeAgent() {
     "app.reapply": () => ({ changed: false, deploy: null }),
     "app.delete": ({ app }: { app: string }) => ({ app, units: [], hostnames: [] }),
     "variables.set": () => ({ variables: {}, deploy: null }),
+    "app.config.get": () => ({ manifestText: null }),
+    "app.config.set": () => ({ deploy: null }),
     "git.check": () => ({ sha: "a".repeat(40) }),
     "git.deploy": () => ({
       skipped: false,

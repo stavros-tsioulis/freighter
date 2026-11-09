@@ -6,7 +6,7 @@ A named unit of deployment, such as `shop`. The name is lowercase letters, digit
 
 ### Service
 
-One long-running process of an app, declared under `services:` in `app.yaml`: `web`, `worker`, `scheduler`. Each service becomes a systemd unit named `freighter-<app>--<service>.service`. Routed services get one unit per release, `freighter-<app>--<service>--<release>.service`, so two releases can run side by side during a switch.
+One long-running process of an app, declared under `services:` in the app's configuration (`app.yaml` starts it): `web`, `worker`, `scheduler`. Each service becomes a systemd unit named `freighter-<app>--<service>.service`. Routed services get one unit per release, `freighter-<app>--<service>--<release>.service`, so two releases can run side by side during a switch.
 
 ### Release
 
@@ -30,7 +30,7 @@ A service that a domain points at is **routed**. It listens on `$PORT` (Freighte
 
 ### Secret
 
-An environment variable whose value is set separately from `app.yaml`, for example `DATABASE_URL`. `app.yaml` lists the names. Values are set with the dashboard, API or CLI, are stored only on the app's server, and can never be read back.
+An environment variable whose value is set separately from `app.yaml`, for example `DATABASE_URL`. The app's configuration lists the names. Values are set with the dashboard, API or CLI, are stored only on the app's server, and can never be read back.
 
 ### Storage
 

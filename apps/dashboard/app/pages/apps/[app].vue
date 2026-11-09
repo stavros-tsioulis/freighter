@@ -10,7 +10,7 @@ const { data: app, isLoading, error } = useApp(name);
 useHead({ title: computed(() => `${name.value} - Freighter`) });
 
 // The open tab lives in the URL, so reloads and shared links land on the same tab.
-const TABS = ["services", "domains", "deployments", "source", "logs", "env"] as const;
+const TABS = ["services", "domains", "deployments", "source", "logs", "env", "settings"] as const;
 const tab = computed({
   // "image" was a tab of its own; images are now what the Source tab shows, so old links still land there.
   get: () => (route.query.tab === "image" ? "source" : TABS.includes(route.query.tab as never) ? String(route.query.tab) : "services"),
@@ -80,6 +80,7 @@ const servicesLabel = computed(() => {
           <Tab value="source">Source</Tab>
           <Tab value="logs">Logs</Tab>
           <Tab value="env">Variables</Tab>
+          <Tab value="settings">Settings</Tab>
         </TabList>
         <TabPanels>
           <TabPanel value="services"><AppServicesTab :app="app" /></TabPanel>
@@ -88,6 +89,7 @@ const servicesLabel = computed(() => {
           <TabPanel value="source"><AppSourceTab :app="app" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab :app="app" /></TabPanel>
           <TabPanel value="env"><AppEnvTab :app="app" /></TabPanel>
+          <TabPanel value="settings"><AppSettingsTab :app="app" /></TabPanel>
         </TabPanels>
       </Tabs>
     </template>

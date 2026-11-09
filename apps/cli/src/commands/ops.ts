@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { appStatus, controlApp, listEnvNames, listReleases, resolveServiceUnit, rollback as runRollback, setEnv } from "@freighter/core";
+import { appStatus, controlApp, listEnvNames, getConfig, listReleases, resolveServiceUnit, setConfig, rollback as runRollback, setEnv } from "@freighter/core";
 import { defineCommand } from "citty";
-import { common, depsFrom, guard } from "../common.ts";
+import { common, depsFrom, fileArg, guard, readManifestText } from "../common.ts";
 
 export const releases = defineCommand({
   meta: { name: "releases", description: "List releases of an app" },
@@ -119,4 +119,31 @@ const envList = defineCommand({
 export const env = defineCommand({
   meta: { name: "env", description: "Manage a service's secrets" },
   subCommands: { set: envSet, list: envList },
+});
+
+const configShow = defineCommand({
+  meta: { name: "show", description: "Print an app's configuration (what app.yaml described at its first deploy, and edits since)" },
+  args: { app: { type: "positional", required: true }, ...common },
+  run: ({ args }) =>
+    guard(async () => {
+      const text = await getConfig(await depsFrom(args), args.app);
+      if (text === null) throw new Error(`app "${args.app}" has no configuration yet: deploy it first`);
+      process.stdout.write(text);
+    }),
+});
+
+const configSet = defineCommand({
+  meta: { name: "set", description: "Replace an app's configuration with an app.yaml and redeploy the current release with it" },
+  args: { app: { type: "positional", required: true }, ...fileArg, ...common },
+  run: ({ args }) =>
+    guard(async () => {
+      const deps = await depsFrom(args);
+      const r = await setConfig(deps, args.app, readManifestText(args.file), { skipVerify: deps.dev });
+      console.log(r.deploy ? `configured ${args.app}; release ${r.deploy.releaseId} is live` : `saved the configuration of ${args.app}; its first deploy will use it`);
+    }),
+});
+
+export const config = defineCommand({
+  meta: { name: "config", description: "An app's configuration. app.yaml only starts it; from the first deploy on it is changed here or in the dashboard" },
+  subCommands: { show: configShow, set: configSet },
 });

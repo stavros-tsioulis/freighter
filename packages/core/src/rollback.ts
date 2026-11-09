@@ -1,8 +1,10 @@
 import type { Deps } from "./deps.ts";
 import { goLive } from "./apply.ts";
+import { writeConfig } from "./appconfig.ts";
 import { readHistory, recordHistory } from "./history.ts";
 import { withLock } from "./lock.ts";
-import { currentRelease, listReleaseIds } from "./releases.ts";
+import { currentRelease, listReleaseIds, releaseDir } from "./releases.ts";
+import { readFile } from "node:fs/promises";
 import { describeFailures } from "./verify.ts";
 
 export interface RollbackOptions {
@@ -48,6 +50,8 @@ export async function rollback(d: Deps, app: string, opts: RollbackOptions = {})
       result: live.ok ? "success" : "failed",
       reason: live.ok ? undefined : live.failures.map((f) => `${f.service}: ${f.reason}`).join("; "),
     });
+    // The configuration goes back with the release, so the next deploy builds on what is running.
+    if (live.ok) await writeConfig(d, app, await readFile(`${releaseDir(d, app, target)}/app.yaml`, "utf8"));
     if (!live.ok) throw new Error(`rollback to ${target} failed; ${current} is still current:\n${describeFailures(live.failures)}`);
     return { app, from: current, to: target, verified: !opts.skipVerify, historyAt: entry.at };
   });

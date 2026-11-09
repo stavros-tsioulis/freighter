@@ -11,11 +11,11 @@ import { redeploy, registry } from "./commands/registry.ts";
 import { server } from "./commands/server.ts";
 import { token } from "./commands/token.ts";
 import { unit, validate } from "./commands/manifest.ts";
-import { env, logs, releases, restart, rollback, start, status, stop } from "./commands/ops.ts";
+import { config, env, logs, releases, restart, rollback, start, status, stop } from "./commands/ops.ts";
 
 const main = defineCommand({
   meta: { name: "freighter", description: "Containerless app deployment on systemd" },
-  subCommands: { app, validate, unit, deploy, rollback, releases, status, logs, start, stop, restart, env, domain, haproxy, certs, token, push, redeploy, registry, server, git, "ssh-key": sshKey },
+  subCommands: { app, validate, unit, deploy, rollback, releases, status, logs, start, stop, restart, env, config, domain, haproxy, certs, token, push, redeploy, registry, server, git, "ssh-key": sshKey },
 });
 
 await runMain(main);

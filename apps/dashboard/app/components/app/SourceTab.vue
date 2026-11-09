@@ -2,7 +2,7 @@
 import type { AppRow } from "~/types";
 import { timeAgo } from "~/utils/format";
 import { validateRepoUrl } from "~/utils/validation";
-import { emptyForm, fromSettings, hasService, toSettings } from "~/utils/settings";
+import { emptyForm, hasService, toSettings } from "~/utils/settings";
 
 const props = defineProps<{ app: AppRow }>();
 const { can } = useSession();
@@ -41,22 +41,9 @@ const urlOk = computed(() => repository.value.trim() !== "" && !repoError.value)
 const newInspect = useInspect(repository, newBranch, sshKeyId, () => urlOk.value, () => props.app.server, subpath);
 const newInfo = computed(() => (urlOk.value && newBranch.value ? newInspect.data.value : undefined));
 const newForm = ref(emptyForm());
-const manualNew = computed(() => newInfo.value?.hasManifest === false);
+// An app that is already deployed has its configuration; only a new one needs settings when the repository has no app.yaml.
+const manualNew = computed(() => newInfo.value?.hasManifest === false && !props.app.currentRelease);
 const valid = computed(() => urlOk.value && !!newBranch.value && (!manualNew.value || hasService(newForm.value)));
-
-// ---- linked: settings used while the repository has no app.yaml ----
-const linkInspect = useInspect(() => link.value?.repository ?? "", () => link.value?.branch ?? null, () => link.value?.sshKeyId ?? null, () => !!link.value, () => props.app.server, () => link.value?.subpath ?? "");
-const hasFile = computed(() => linkInspect.data.value?.hasManifest === true);
-const settingsForm = ref(emptyForm());
-const dirty = ref(false);
-watch(() => link.value?.settings, (s) => { settingsForm.value = fromSettings(s); dirty.value = false; }, { immediate: true });
-watch(settingsForm, () => { dirty.value = true; }, { deep: true });
-async function saveSettings() {
-  await patch.mutateAsync({ settings: toSettings(settingsForm.value) }).then(() => { dirty.value = false; }).catch(() => {});
-}
-async function clearSettings() {
-  await patch.mutateAsync({ settings: null }).catch(() => {});
-}
 
 const secret = ref<string | undefined>();
 const showSetup = ref(false);
@@ -120,7 +107,7 @@ function ask(header: string, message: string, label: string, run: () => void) {
       <template v-if="newBranch && urlOk">
         <Message v-if="manualNew" severity="info" size="small">No <code>app.yaml</code> in this repository. Describe the app below.</Message>
         <Message v-else-if="newInfo?.valid && newInfo.appName !== app.name" severity="warn" size="small">The repository’s <code>app.yaml</code> is for “{{ newInfo.appName }}”, not “{{ app.name }}”.</Message>
-        <Message v-else-if="newInfo?.valid" severity="success" size="small">Using <code>app.yaml</code> from the repository.</Message>
+        <Message v-else-if="newInfo?.valid" severity="success" size="small">{{ app.currentRelease ? "This app keeps its own settings; app.yaml is not read again." : "The app starts from app.yaml." }}</Message>
         <Message v-else-if="newInfo" severity="warn" size="small">{{ newInfo.error }}</Message>
         <ManifestForm v-if="manualNew" v-model="newForm" :app-name="app.name" />
       </template>
@@ -158,21 +145,6 @@ function ask(header: string, message: string, label: string, run: () => void) {
         <Button label="Unlink" icon="pi pi-trash" severity="danger" text @click="ask('Unlink the repository?', 'Pushes stop deploying this app. Existing releases keep running.', 'Unlink', () => actions.unlink.mutate())" />
       </template>
     </div>
-
-    <section class="flex flex-col gap-3 max-w-3xl border-t border-[var(--fr-line)] pt-4">
-      <div>
-        <h3 class="font-medium">Settings without an app.yaml</h3>
-        <p class="text-sm text-muted-color">
-          <template v-if="hasFile">The repository’s <code>app.yaml</code> is in use; these settings are ignored.</template>
-          <template v-else>Used because the repository has no <code>app.yaml</code>.</template>
-        </p>
-      </div>
-      <ManifestForm v-model="settingsForm" :app-name="app.name" :disabled="!can('admin')" />
-      <div v-if="can('admin')" class="flex gap-2">
-        <Button label="Save settings" icon="pi pi-save" :disabled="!dirty || !hasService(settingsForm)" :loading="patch.isPending.value" @click="saveSettings" />
-        <Button v-if="link.settings" label="Clear" severity="secondary" text :disabled="patch.isPending.value" @click="clearSettings" />
-      </div>
-    </section>
   </div>
 
   <Dialog v-model:visible="showSetup" modal header="Connect the repository" :style="{ width: '44rem' }">

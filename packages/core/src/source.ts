@@ -7,6 +7,7 @@ import { deploy, type DeployResult } from "./deploy.ts";
 import { commitInfo, exportTree, fetchMirror, readFileAt, type CommitInfo, type GitAuth } from "./git.ts";
 import type { SourceMeta } from "./history.ts";
 import { currentLink } from "./releases.ts";
+import { readConfig } from "./appconfig.ts";
 
 export class BuildFailedError extends Error {
   constructor(
@@ -28,7 +29,7 @@ export interface GitDeployOptions {
   /** Do nothing if the branch head is already what is deployed (webhook retries, repeated triggers). */
   skipIfUnchanged?: boolean;
   skipVerify?: boolean;
-  /** Used only when the repository has no app.yaml; a file in the repository always wins. */
+  /** The configuration to start the app with when it has none yet, instead of the repository's app.yaml. */
   fallbackManifest?: string;
   /** An imported SSH key to use instead of the app's own deploy key. */
   auth?: GitAuth;
@@ -105,17 +106,24 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
     await exportTree(d, o.app, sha, subpath, src);
     await d.run("chown", ["-R", `${user}:${user}`, buildRoot]);
 
+    // The app's own configuration comes first; the settings given with the link (the form filled in when it was
+    // created) and the repository's app.yaml only start an app that has none.
     let manifestText: string;
-    try {
-      manifestText = await readFile(`${src}/app.yaml`, "utf8");
-    } catch {
-      if (!o.fallbackManifest) {
+    const stored = await readConfig(d, o.app);
+    if (stored) {
+      manifestText = stored;
+      await log("==> using the configuration kept in Freighter (app.yaml in the repository is only read for a new app)");
+    } else if (o.fallbackManifest) {
+      manifestText = o.fallbackManifest;
+      await log("==> using the settings entered in Freighter as the app's configuration");
+    } else {
+      try {
+        manifestText = await readFile(`${src}/app.yaml`, "utf8");
+      } catch {
         throw new Error(`app.yaml not found at ${subpath ? `${subpath}/` : "the root of the repository"}, and no settings are configured in Freighter for this app`);
       }
-      manifestText = o.fallbackManifest;
-      await log("==> no app.yaml in the repository; using the settings configured in Freighter");
     }
-    const manifest = parseManifest(manifestText);
+    const manifest = parseManifest(manifestText, { legacy: stored !== null });
     if (manifest.name !== o.app) throw new Error(`app.yaml is for "${manifest.name}" but this app is "${o.app}"`);
 
     let buildSeconds = 0;
@@ -134,7 +142,7 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
 
     await log("==> deploying");
     const meta: SourceMeta = { type: "git", sha, ref: `refs/heads/${branch}`, subject: commit.subject, author: commit.author };
-    const result = await deploy(d, { manifestText, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log });
+    const result = await deploy(d, { manifestText, legacy: stored !== null, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log });
     await log(`==> deployed ${result.releaseId}`);
     return { skipped: false, commit, deploy: result, buildSeconds };
   } catch (e) {
@@ -154,6 +162,8 @@ export interface InspectResult {
   appName: string | null;
   error: string | null;
   buildCommands: string[];
+  /** What app.yaml says, as the form for the app's settings (everything except the name): to start the app from. */
+  settings: Record<string, unknown> | null;
 }
 
 const INSPECT_PREFIX = "_inspect-";
@@ -171,12 +181,12 @@ export async function inspectRepo(d: Deps, o: { repository: string; branch: stri
   const sha = await fetchMirror(d, scope, o.repository, o.branch, o.auth);
   const commit = await commitInfo(d, scope, sha);
   const text = await readFileAt(d, scope, sha, subpath ? `${subpath}/app.yaml` : "app.yaml");
-  if (text === null) return { sha, commit, hasManifest: false, valid: false, appName: null, error: "app.yaml not found", buildCommands: [] };
+  if (text === null) return { sha, commit, hasManifest: false, valid: false, appName: null, error: "app.yaml not found", buildCommands: [], settings: null };
   try {
     const m = parseManifest(text);
-    return { sha, commit, hasManifest: true, valid: true, appName: m.name, error: null, buildCommands: m.build?.commands ?? [] };
+    return { sha, commit, hasManifest: true, valid: true, appName: m.name, error: null, buildCommands: m.build?.commands ?? [], settings: (({ name: _n, source: _s, ...rest }) => rest)(m) };
   } catch (e) {
-    return { sha, commit, hasManifest: true, valid: false, appName: null, error: e instanceof Error ? e.message : String(e), buildCommands: [] };
+    return { sha, commit, hasManifest: true, valid: false, appName: null, error: e instanceof Error ? e.message : String(e), buildCommands: [], settings: null };
   }
 }
 

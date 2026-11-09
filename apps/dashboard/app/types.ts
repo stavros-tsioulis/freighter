@@ -196,6 +196,8 @@ export interface Inspect {
   appName: string | null;
   error: string | null;
   buildCommands: string[];
+  /** What app.yaml says, to fill the settings form in. */
+  settings: AppSettings | null;
 }
 export interface DeployFromGit {
   app: string;

@@ -36,6 +36,21 @@ describe("freighter cli", () => {
     expect(run("env", "set", "hello", "web", "A=1", "--prefix", prefix).status).toBe(0);
     expect(run("env", "list", "hello", "web", "--prefix", prefix).stdout).toBe("A\n");
   });
+  it("keeps the configuration from the first deploy, and changes it with `config set`", () => {
+    const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
+    expect(run("config", "show", "hello", "--prefix", prefix).stderr).toMatch(/no configuration yet/);
+    expect(run("deploy", hello, "-f", `${hello}/app.yaml`, "--prefix", prefix).status).toBe(0);
+    expect(run("config", "show", "hello", "--prefix", prefix).stdout).toContain("GREETING: hello");
+    const other = join(mkdtempSync(join(tmpdir(), "freighter-cli-")), "app.yaml");
+    writeFileSync(other, readFileSync(`${hello}/app.yaml`, "utf8").replace("GREETING: hello", "GREETING: changed"));
+    const again = run("deploy", hello, "-f", other, "--prefix", prefix);
+    expect(again.status).toBe(0);
+    expect(run("config", "show", "hello", "--prefix", prefix).stdout).toContain("GREETING: hello");
+    const set = run("config", "set", "hello", "-f", other, "--prefix", prefix);
+    expect(set.status).toBe(0);
+    expect(set.stdout).toMatch(/configured hello; release r\d{8}-\d{6}/);
+    expect(run("config", "show", "hello", "--prefix", prefix).stdout).toContain("GREETING: changed");
+  });
   it("lists releases and rolls back", () => {
     const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));
     const deploy = () => run("deploy", hello, "-f", `${hello}/app.yaml`, "--prefix", prefix);

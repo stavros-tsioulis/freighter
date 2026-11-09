@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { BuildFailedError, buildLogChunk, buildLogPath, currentRelease, gitDeploy, readHistory, sandboxArgs, type Deps } from "../src/index.ts";
+import { BuildFailedError, setConfig, buildLogChunk, buildLogPath, currentRelease, gitDeploy, readHistory, sandboxArgs, type Deps } from "../src/index.ts";
 import { APP_YAML, makeRepo } from "./gitrepo.ts";
 import { makeDeps } from "./helpers.ts";
 
@@ -60,20 +60,22 @@ describe("gitDeploy", () => {
   });
 
   it("does not touch the running release when the build fails, and keeps the log", async () => {
-    const t = await setup();
-    const ok = await t.run();
+    const t = await setup({ "app.yaml": APP_YAML("shop", "") + "build:\n  commands:\n    - echo compiling\n    - exit 3\n", "server.mjs": "//\n" });
+    const ok = await t.run({ fallbackManifest: APP_YAML("shop", "") });
     if (ok.skipped) throw new Error("unexpected");
-    await t.repo.commit({ "app.yaml": APP_YAML("shop", "") + "build:\n  commands:\n    - echo compiling\n    - exit 3\n" }, "break the build");
+    await t.repo.commit({ "BREAK": "x" }, "break the build");
+    await setConfig(t.deps, "shop", APP_YAML("shop", "") + "build:\n  commands:\n    - echo compiling\n    - test ! -f BREAK\n", { skipVerify: true });
+    const running = await currentRelease(t.deps, "shop");
 
     const buildId = id();
     const err = await t.run({ buildId }).catch((e) => e);
     expect(err).toBeInstanceOf(BuildFailedError);
-    expect(err.message).toBe("build failed with exit code 3");
+    expect(err.message).toBe("build failed with exit code 1");
     expect(err.logTail).toContain("compiling");
-    expect(await currentRelease(t.deps, "shop")).toBe(ok.deploy.releaseId); // still the old release
-    expect(await readdir(`${t.deps.layout.appsRoot}/shop/releases`)).toHaveLength(1);
+    expect(await currentRelease(t.deps, "shop")).toBe(running); // still the old release
+    expect(await readdir(`${t.deps.layout.appsRoot}/shop/releases`)).toHaveLength(2);
     expect(existsSync(`${t.deps.config.git.buildDir}/${buildId}`)).toBe(false);
-    expect(await readFile(buildLogPath(t.deps, buildId), "utf8")).toContain("build failed with exit code 3");
+    expect(await readFile(buildLogPath(t.deps, buildId), "utf8")).toContain("build failed with exit code 1");
   });
 
   it("stops a build that runs past its time limit", async () => {
@@ -100,21 +102,32 @@ describe("gitDeploy", () => {
     for (const t of [other, none, bad]) expect(await readdir(t.deps.config.git.buildDir).then((f) => f.filter((x) => !x.endsWith(".log") && x !== "cache"))).toEqual([]);
   });
 
-  it("uses the settings configured in Freighter only when the repository has no app.yaml", async () => {
+  it("starts a new app from the settings entered in Freighter, or else from app.yaml, and then keeps its own configuration", async () => {
     const fallback = APP_YAML("shop", "") + BUILD;
     const none = await setup({ "server.mjs": "// v1\n" });
-    const r = await none.run({ fallbackManifest: fallback });
+    const buildId = id();
+    const r = await none.run({ buildId, fallbackManifest: fallback });
     expect(r.skipped).toBe(false);
     if (!r.skipped) {
       expect(existsSync(`${releaseOf(none.deps, r.deploy.releaseId)}/BUILT`)).toBe(true); // its build commands ran
-      expect(await readFile(buildLogPath(none.deps, "00000000-0000-4000-8000-" + String(n).padStart(12, "0")), "utf8")).toMatch(/using the settings configured in Freighter/);
+      expect(await readFile(buildLogPath(none.deps, buildId), "utf8")).toMatch(/settings entered in Freighter/);
     }
-    // a file in the repository wins over the stored settings
+    // the form's values win over the file in the repository, which only fills the form in
     const has = await setup({ "app.yaml": APP_YAML("shop"), "server.mjs": "//\n" });
     const r2 = await has.run({ fallbackManifest: fallback });
-    if (!r2.skipped) expect(existsSync(`${releaseOf(has.deps, r2.deploy.releaseId)}/BUILT`)).toBe(false);
-    // the fallback is still held to the app's name
-    await expect(none.run({ fallbackManifest: APP_YAML("blog") })).rejects.toThrow(/is for "blog" but this app is "shop"/);
+    if (!r2.skipped) expect(existsSync(`${releaseOf(has.deps, r2.deploy.releaseId)}/BUILT`)).toBe(true);
+    // without them the file starts the app
+    const file = await setup({ "app.yaml": APP_YAML("shop", "") + BUILD, "server.mjs": "//\n" });
+    const r3 = await file.run();
+    if (!r3.skipped) expect(existsSync(`${releaseOf(file.deps, r3.deploy.releaseId)}/BUILT`)).toBe(true);
+    // afterwards the repository's app.yaml (here a different one) and the settings given with the link are not read
+    await file.repo.commit({ "app.yaml": APP_YAML("shop"), "server.mjs": "// v2\n" }, "drop the build");
+    const buildId2 = id();
+    const r4 = await file.run({ buildId: buildId2, fallbackManifest: APP_YAML("shop", "") });
+    if (!r4.skipped) expect(existsSync(`${releaseOf(file.deps, r4.deploy.releaseId)}/BUILT`)).toBe(true);
+    expect(await readFile(buildLogPath(file.deps, buildId2), "utf8")).toMatch(/configuration kept in Freighter/);
+    // the settings are held to the app's name
+    await expect((await setup({ "server.mjs": "//\n" })).run({ fallbackManifest: APP_YAML("blog") })).rejects.toThrow(/is for "blog" but this app is "shop"/);
   });
 
   it("deploys a subdirectory of a monorepo", async () => {

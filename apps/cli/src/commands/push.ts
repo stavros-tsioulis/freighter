@@ -56,12 +56,12 @@ export function imageManifest(name: string, image: string, port?: number): strin
 }
 
 /** Queue an image deployment (nothing to upload) and, unless told not to, wait for it. */
-export async function pushImages(base: string, token: string, app: string, manifest: string, opts: { server?: string; wait: boolean; logins?: Record<string, string> }): Promise<void> {
+export async function pushImages(base: string, token: string, app: string, manifest: string, opts: { server?: string; wait: boolean; logins?: Record<string, string>; replaceConfig?: boolean }): Promise<void> {
   const query = opts.server ? `?server=${encodeURIComponent(opts.server)}` : "";
   const res = await fetch(`${base}/api/v1/apps/${app}/image-deployments${query}`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({ manifest, ...(opts.logins ? { logins: opts.logins } : {}) }),
+    body: JSON.stringify({ manifest, ...(opts.logins ? { logins: opts.logins } : {}), ...(opts.replaceConfig ? { replaceConfig: true } : {}) }),
   });
   const json = (await res.json().catch(() => ({}))) as { id?: string; error?: { message?: string } };
   if (res.status !== 202 || !json.id) throw new Error(`deploy failed (${res.status}): ${json.error?.message ?? res.statusText}`);
@@ -99,7 +99,7 @@ export const push = defineCommand({
         if (!args.name) throw new Error("--image needs --name (the app's name)");
         const port = args.port === undefined ? undefined : Number(args.port);
         if (port !== undefined && !(Number.isInteger(port) && port > 0 && port < 65536)) throw new Error(`invalid --port "${args.port}"`);
-        return pushImages(base, token, args.name, imageManifest(args.name, args.image, port), { server: args.server, wait: args.wait, logins });
+        return pushImages(base, token, args.name, imageManifest(args.name, args.image, port), { server: args.server, wait: args.wait, logins, replaceConfig: true }); // flags say what to run, now
       }
       if (!args.source) throw new Error("nothing to deploy: pass a directory, an artifact, an app.yaml or --image");
       if (/\.ya?ml$/.test(args.source)) {

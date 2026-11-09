@@ -72,6 +72,20 @@ freighter env set <app> <service> KEY            # value read from stdin
 freighter env list <app> <service>               # names only
 ```
 
+### config
+
+An app's configuration: what its `app.yaml` said at the first deploy, and every change since.
+
+```sh
+freighter config show <app>             # prints it
+freighter config set <app> -f app.yaml  # replaces it and redeploys the current release with it
+```
+
+On the server, as root. `freighter push --image` also replaces the configuration, because the flags say what to run.
+
+```sh
+```
+
 ### domain
 
 ```sh

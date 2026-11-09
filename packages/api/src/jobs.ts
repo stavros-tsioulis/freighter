@@ -25,7 +25,7 @@ export interface GitJob {
 export interface Jobs {
   enqueueDeploy(job: { id: string; app: string; server: string; artifactPath: string; manifestText: string }): void;
   /** Deploy an app made only of image services: the agent pulls the images, so there is no artifact. */
-  enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string }): void;
+  enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string; replaceConfig?: boolean }): void;
   enqueueRollback(job: { id: string; app: string; server: string; release?: string }): void;
   enqueueGit(job: GitJob): void;
   /** Create or update the endpoint that serves a storage, from what the registry holds for it. */
@@ -163,7 +163,7 @@ export function createJobs(ctx: ApiContext): Jobs {
       );
     },
 
-    enqueueImageDeploy({ id, app, server, manifestText }) {
+    enqueueImageDeploy({ id, app, server, manifestText, replaceConfig }) {
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
@@ -178,7 +178,7 @@ export function createJobs(ctx: ApiContext): Jobs {
             if (c && "ambiguous" in c) throw new Error(`${app} has no login chosen for ${host}, which has several (${c.ambiguous.join(", ")}). Choose one and deploy again.`);
             return c ? [{ host, ...c }] : [];
           });
-          const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuth.length ? registryAuth : undefined, logId: id }, { timeoutMs: 30 * 60_000 });
+          const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuth.length ? registryAuth : undefined, logId: id, replaceConfig }, { timeoutMs: 30 * 60_000 });
           ctx.registry.deployments.update(id, {
             status: "success",
             releaseId: r.releaseId,

@@ -171,10 +171,17 @@ describe("branches, inspect and one-step deployments", () => {
       expect(t.registry.gitLinks.get("storefront")).toBeUndefined();
     });
 
-    it("ignores the settings when the repository has an app.yaml", async () => {
+    it("names the app from app.yaml, but starts it from the settings the form sends", async () => {
       const t = await makeApi();
+      let sent: string | undefined;
+      const original = t.handlers["git.deploy"]!;
+      t.handlers["git.deploy"] = (a: any) => ((sent = a.fallbackManifest), original(a as never));
       const r = await t.request("/v1/git/deployments", { method: "POST", token: t.tokens.admin, json: { repository: REPO, branch: "main", appName: "other", settings } });
       expect(r.json.app).toBe("shop");
+      await t.api.jobs.idle();
+      expect(sent).toMatch(/node server.js/);
+      const bad = await t.request("/v1/git/deployments", { method: "POST", token: t.tokens.admin, json: { repository: REPO, branch: "main", settings: { services: { web: { command: "x", secrets: ["lower"] } } } } });
+      expect(bad.status).toBe(400);
     });
 
     it("edits and clears settings on a linked app, and previews the app.yaml", async () => {

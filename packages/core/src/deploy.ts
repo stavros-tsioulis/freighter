@@ -12,6 +12,7 @@ import { withLock } from "./lock.ts";
 import { allocateReleaseId, currentRelease, newReleaseId, pruneReleases, releaseDir, stageEmptyRelease, stageRelease } from "./releases.ts";
 import { describeFailures, verifyRelease } from "./verify.ts";
 import { loadReleaseManifest } from "./apply.ts";
+import { readConfig, sameConfig, writeConfig } from "./appconfig.ts";
 
 export interface DeployOptions {
   manifestText: string;
@@ -31,6 +32,11 @@ export interface DeployOptions {
    * fails, the previous domains are restored along with the previous release.
    */
   domains?: DomainInput[];
+  /**
+   * What an `app.yaml` here means for an app that already has a configuration. By default it is left alone (the first
+   * deploy takes it as the configuration, later ones ignore it); `replace` makes it the new configuration.
+   */
+  config?: "keep" | "replace";
   /** The manifest may be written the old way (shared `environment` and `secrets`); set when redeploying a release that was. */
   legacy?: boolean;
   /** Where to write what the deploy is doing (the dashboard shows it as the deployment's log). */
@@ -66,8 +72,12 @@ export class DeployFailedError extends Error {
 
 export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult> {
   if (!d.isRoot) throw new Error("deploy must run as root (or use --prefix for a dry local run)");
-  const manifest = parseManifest(opts.manifestText, { legacy: opts.legacy });
-  const app = manifest.name;
+  const incoming = parseManifest(opts.manifestText, { legacy: opts.legacy });
+  const app = incoming.name;
+  // The configuration the app already has wins over the file it is deployed with.
+  const stored = opts.config === "replace" ? null : await readConfig(d, app);
+  const manifest = stored ? parseManifest(stored, { legacy: true }) : incoming;
+  const manifestText = stored ?? opts.manifestText;
 
   const hasImages = Object.keys(imageServices(manifest)).length > 0;
   if (hasImages && !(await containersAvailable(d)).available) throw new Error(NO_CONTAINERS_MESSAGE);
@@ -88,6 +98,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
 
   const routed = routedServices(domains);
   const warnings: string[] = routingWarnings(manifest, domains);
+  if (stored && !sameConfig(incoming, manifest)) warnings.push("app.yaml was not applied: this app's configuration is managed in Freighter (its Settings tab, or `freighter config set`)");
   if (manifest.build && !opts.meta) warnings.push("build commands only run for git deployments; this artifact is deployed as is");
   for (const [name, s] of Object.entries(manifest.services)) {
     if (s.replicas > 1) warnings.push(`service ${name}: replicas > 1 is not supported yet; running one instance`);
@@ -122,7 +133,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     await log(`==> staging release ${releaseId}${previous ? ` (current is ${previous})` : " (the first one)"}`);
     if (opts.source === undefined) await stageEmptyRelease(d, app, releaseId);
     else await stageRelease(d, app, opts.source, releaseId, { move: opts.moveSource });
-    await writeFile(`${releaseDir(d, app, releaseId)}/app.yaml`, opts.manifestText);
+    await writeFile(`${releaseDir(d, app, releaseId)}/app.yaml`, manifestText);
     if (opts.meta) await writeFile(`${releaseDir(d, app, releaseId)}/.freighter-source.json`, JSON.stringify(opts.meta));
 
     const changesDomains = opts.domains !== undefined;
@@ -145,6 +156,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
 
     if (live.ok) {
       await log(`==> release ${releaseId} is live`);
+      if (!stored) await writeConfig(d, app, manifestText);
       const entry = await recordHistory(d, app, { action: "deploy", release: releaseId, previous, result: "success", source: opts.meta });
       result.historyAt = entry.at;
       result.units = live.units;

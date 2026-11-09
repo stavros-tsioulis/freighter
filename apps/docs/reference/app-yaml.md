@@ -1,6 +1,8 @@
 # app.yaml
 
-`app.yaml` describes one app. It sits at the root of an uploaded archive, or in the repository (at the subdirectory you chose) for Git deploys. Check one with `freighter validate -f app.yaml`.
+`app.yaml` describes one app, and **starts** it: the first deploy reads it and the values become the app's configuration, kept on its server. After that Freighter doesn't read `app.yaml` again. A later deploy that carries a different file still deploys, with a warning that the file wasn't applied. From then on you change the configuration in the dashboard (the app's **Settings** tab) or with [`freighter config`](/reference/cli#config), and the current release is redeployed with it.
+
+It sits at the root of an uploaded archive, or in the repository (at the subdirectory you chose) for Git deploys. In the dashboard, a Git deploy fills the settings form in from it, so you can adjust the values before the first deploy. Check a file with `freighter validate -f app.yaml`.
 
 ## Complete example
 

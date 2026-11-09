@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { IDENT_RE, validateRepoUrl } from "~/utils/validation";
-import { emptyForm, hasService, toSettings } from "~/utils/settings";
+import { emptyForm, fromSettings, hasService, toSettings } from "~/utils/settings";
 
 const visible = defineModel<boolean>("visible", { required: true });
 const emit = defineEmits<{ back: [] }>();
@@ -14,7 +14,7 @@ const branch = ref<string | null>(null);
 const server = ref("");
 const result = ref<{ app: string; deploymentId: string; webhookSecret: string; webhookUrl: string } | null>(null);
 const showSetup = ref(false);
-// Only used when the repository has no app.yaml.
+// The name, when the repository has no app.yaml (otherwise app.yaml names the app).
 const appName = ref("");
 const form = ref(emptyForm());
 
@@ -30,7 +30,16 @@ const nameError = computed(() => (appName.value && !IDENT_RE.test(appName.value)
 const ready = computed(
   () =>
     urlOk.value && !!branch.value && !deploy.isPending.value && choices.value.length > 0 &&
-    (info.value?.valid === true || (manual.value && IDENT_RE.test(appName.value) && hasService(form.value))),
+    ((info.value?.valid === true && hasService(form.value)) || (manual.value && IDENT_RE.test(appName.value) && hasService(form.value))),
+);
+// app.yaml fills the form in; after that the form is what counts.
+watch(
+  () => (info.value ? `${info.value.sha}:${info.value.valid}` : ""),
+  () => {
+    const i = info.value;
+    if (i?.valid && i.settings) form.value = fromSettings(i.settings);
+    else if (i && !i.hasManifest) form.value = emptyForm();
+  },
 );
 
 watch(visible, (v) => {
@@ -48,7 +57,7 @@ watch(visible, (v) => {
 
 async function start() {
   try {
-    const r = await deploy.mutateAsync({ repository: repository.value.trim(), branch: branch.value!, sshKeyId: sshKeyId.value, server: server.value, ...(manual.value ? { appName: appName.value, settings: toSettings(form.value) } : {}) });
+    const r = await deploy.mutateAsync({ repository: repository.value.trim(), branch: branch.value!, sshKeyId: sshKeyId.value, server: server.value, settings: toSettings(form.value), ...(manual.value ? { appName: appName.value } : {}) });
     result.value = { app: r.app, deploymentId: r.deployment.id, webhookSecret: r.webhookSecret, webhookUrl: r.link.webhookUrl };
   } catch (e) {
     notify.fail("Could not start the deployment", e);
@@ -61,7 +70,7 @@ async function openApp() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal header="Deploy from Git" :style="{ width: manual ? '48rem' : '40rem' }" :closable="!deploy.isPending.value">
+  <Dialog v-model:visible="visible" modal header="Deploy from Git" :style="{ width: manual || info?.valid ? '48rem' : '40rem' }" :closable="!deploy.isPending.value">
     <div v-if="!result" class="flex flex-col gap-4">
       <Message v-if="!choices.length" severity="warn" :closable="false">
         This control server runs no apps of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline" @click="visible = false">Add a server</NuxtLink> first.
@@ -85,19 +94,19 @@ async function openApp() {
           Will deploy as <b>{{ info.appName }}</b> from <code>{{ info.sha.slice(0, 7) }}</code> “{{ info.commit.subject }}”{{ info.buildCommands.length ? `, building with ${info.buildCommands.length} command${info.buildCommands.length === 1 ? "" : "s"}` : "" }}.
         </Message>
         <Message v-else-if="manual" severity="info" size="small">
-          No <code>app.yaml</code> at <code>{{ info?.sha.slice(0, 7) }}</code>. Describe the app below instead; if you add an <code>app.yaml</code> later, the file takes over.
+          No <code>app.yaml</code> at <code>{{ info?.sha.slice(0, 7) }}</code>. Describe the app below.
         </Message>
         <Message v-else-if="info" severity="warn" size="small">{{ info.error }}</Message>
         <Message v-else-if="inspect.error.value" severity="error" size="small">{{ inspect.error.value.message }}</Message>
       </div>
 
-      <template v-if="manual">
-        <div class="flex flex-col gap-1">
+      <template v-if="manual || info?.valid">
+        <div v-if="manual" class="flex flex-col gap-1">
           <label for="ng-name" class="text-sm font-medium">App name</label>
           <InputText id="ng-name" v-model="appName" placeholder="shop" :invalid="!!nameError" autocomplete="off" />
           <small v-if="nameError" class="text-red-500">{{ nameError }}</small>
         </div>
-        <ManifestForm v-model="form" :app-name="IDENT_RE.test(appName) ? appName : ''" />
+        <ManifestForm v-model="form" :app-name="manual ? (IDENT_RE.test(appName) ? appName : '') : (info?.appName ?? '')" />
       </template>
     </div>
 

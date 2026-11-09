@@ -9,6 +9,7 @@ const appName = computed(() => props.app.name);
 const { data: series } = useMetrics(appName, minutes);
 const control = useControl(appName);
 const confirm = useConfirm();
+const adding = ref(false);
 
 const ranges = [
   { label: "15 min", value: 15 },
@@ -51,7 +52,8 @@ const url = (host: string) => `https://${host}`;
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <span class="text-sm text-muted-color">Memory and CPU over the last</span>
+      <Button v-if="can('admin')" label="Add service" icon="pi pi-plus" size="small" severity="secondary" @click="adding = true" />
+      <span class="text-sm text-muted-color ml-auto">Memory and CPU over the last</span>
       <SelectButton v-model="minutes" :options="ranges" option-label="label" option-value="value" :allow-empty="false" size="small" aria-label="Metrics range" />
     </div>
     <DataTable scrollable :value="rows" data-key="name">
@@ -103,5 +105,6 @@ const url = (host: string) => `https://${host}`;
         </template>
       </Column>
     </DataTable>
+  <AppAddServiceDialog v-model:visible="adding" :app="app" />
   </div>
 </template>

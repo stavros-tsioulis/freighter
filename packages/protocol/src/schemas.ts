@@ -143,6 +143,8 @@ export const ops = {
       logId: z.string().optional(),
       /** Replace the app's domains with this deploy (kept only if the release goes live). Omitted: keep them. */
       domains: z.array(domain).max(200).optional(),
+      /** Make this app.yaml the app's configuration, replacing the one it has. Omitted: an app that has one keeps it. */
+      replaceConfig: z.boolean().optional(),
     }),
     result: deployResult,
   },
@@ -268,6 +270,8 @@ export const ops = {
       appName: z.string().nullable(),
       error: z.string().nullable(),
       buildCommands: z.array(z.string()),
+      /** What app.yaml says, as settings (everything but the name), to start a new app from. */
+      settings: z.record(z.string(), z.unknown()).nullable().default(null),
     }),
   },
   "git.check": { args: z.object({ app, ...repoArgs }), result: z.object({ sha: z.string() }) },
@@ -287,6 +291,12 @@ export const ops = {
   "build.log": {
     args: z.object({ id: z.string().regex(/^[0-9a-f-]{8,64}$/), from: z.number().int().min(0).default(0) }),
     result: z.object({ text: z.string(), next: z.number(), done: z.boolean() }),
+  },
+  /** The app's configuration (what app.yaml described when it started): the text, or null before its first deploy. Agents with "app.config" only. */
+  "app.config.get": { args: z.object({ app }), result: z.object({ manifestText: z.string().nullable() }) },
+  "app.config.set": {
+    args: z.object({ app, manifestText: z.string().min(1).max(262_144), logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
+    result: z.object({ deploy: deployResult.nullable() }),
   },
   /** Variables added on the server, per service, on top of each service's `environment:` in app.yaml. Agents with the "variables" capability only. */
   "variables.get": { args: z.object({ app }), result: z.object({ variables: z.record(ident, z.record(envKey, z.string())) }) },

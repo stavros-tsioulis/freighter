@@ -37,6 +37,8 @@ import {
   testStorage,
   storageAvailable,
   readVariables,
+  getConfig,
+  setConfig,
   setVariables,
   listApps,
   listEnvNames,
@@ -101,7 +103,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "connections", "variables", "reapply", ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "connections", "variables", "reapply", "app.config", ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -141,15 +143,26 @@ export function createHandlers(d: Deps): Handlers {
     async "app.history"({ app, limit }) {
       return { entries: (await readHistory(d, app)).slice(-limit) };
     },
-    async "app.deploy"({ artifact, manifestText, skipVerify, domains, registryAuth, logId }) {
+    async "app.deploy"({ artifact, manifestText, skipVerify, domains, registryAuth, logId, replaceConfig }) {
       const source = artifact === undefined ? undefined : await checkArtifact(d, artifact);
       const log = logId ? await openDeployLog(d, logId) : undefined;
       return toDeployResult(
-        await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains, registryAuth, log }).catch(async (e: unknown) => {
+        await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains, registryAuth, log, config: replaceConfig ? "replace" : "keep" }).catch(async (e: unknown) => {
           await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
           throw e;
         }),
       );
+    },
+    async "app.config.get"({ app }) {
+      return { manifestText: await getConfig(d, app) };
+    },
+    async "app.config.set"({ app, manifestText, logId }) {
+      const log = logId ? await openDeployLog(d, logId) : undefined;
+      const r = await setConfig(d, app, manifestText, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
+        throw e;
+      });
+      return { deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
     async "connections.set"({ app, server, peers }) {
       await writeConnections(d, app, { server, peers });

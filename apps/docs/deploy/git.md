@@ -40,15 +40,17 @@ In the dashboard, on **Apps**, choose **Deploy**, then **Git repository**:
 freighter git add git@github.com:acme/shop.git --branch main --key work-github
 ```
 
-An existing app can be linked from its **Source** tab, or with `freighter git link shop --repo … --key …`. Its `app.yaml` must carry the app's name. The branch, key and auto-deploy setting can be changed later on the same tab.
+An existing app can be linked from its **Source** tab, or with `freighter git link shop --repo … --key …`. The branch, key and auto-deploy setting can be changed later on the same tab.
 
 ### Monorepos
 
 Set a **subdirectory** (`--subpath apps/web`). Freighter reads `app.yaml` from there, and that directory becomes the release.
 
-### No app.yaml in the repository
+### app.yaml starts the app
 
-If the branch has no `app.yaml`, the dashboard asks for an app name and shows a form for everything `app.yaml` can hold: services, environment, secret names, build commands and limits, release retention. It shows the equivalent `app.yaml` as you type, and the settings are stored with the repository link. An `app.yaml` committed later always wins. Edit the settings on the **Source** tab under *Settings without an app.yaml*, then **Deploy latest** to apply them.
+When you deploy a branch for a new app, the dashboard fills a form with what its `app.yaml` says: services, environment, secret names, build commands and limits, release retention. Change what you like; the form is what the app starts with. A branch without an `app.yaml` works too: give the app a name and fill the form in.
+
+After the first deploy the repository's `app.yaml` is not read again, so a push that changes it still deploys the new commit, with a warning that the file wasn't applied. Change the app's configuration on its **Settings** tab (or with `freighter config set`); saving redeploys the current release with it, and later builds use its build commands.
 
 ## Deploy on push
 

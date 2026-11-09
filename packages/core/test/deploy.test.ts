@@ -63,7 +63,7 @@ describe("deploy", () => {
     await deploy(deps, { manifestText: other, source: await artifact() });
     await deploy(deps, { manifestText: MANIFEST, source: await artifact() });
     const slim = MANIFEST.replace(/  worker:\n    command: node worker.mjs\n    environment:\n      GREETING: hi\n/, "");
-    const r = await deploy(deps, { manifestText: slim, source: await artifact() });
+    const r = await deploy(deps, { manifestText: slim, config: "replace", source: await artifact() });
     expect(r.removed).toEqual(["freighter-hello--worker.service"]);
     expect((await readdir(deps.layout.unitDir)).sort()).toEqual([
       "freighter-hello--web.service",
