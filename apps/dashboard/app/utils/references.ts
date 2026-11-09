@@ -14,6 +14,8 @@ export const STORAGE_ATTRS: Record<string, string> = {
   secretKey: "credential",
 };
 
+export const VOLUME_ATTRS: Record<string, string> = { path: "where the service sees it" };
+
 /** What a connection in this app's environment can point at. */
 export interface ReferenceSources {
   /** The services of the app itself. */
@@ -23,6 +25,8 @@ export interface ReferenceSources {
   /** The other apps of the project. */
   peers: { app: string; services: string[] }[];
   storages: string[];
+  /** The app's volumes (`shared` is always there and is not listed). */
+  volumes: string[];
 }
 
 export interface Suggestion {
@@ -64,6 +68,8 @@ export function suggest(query: string, src: ReferenceSources): Suggestion[] {
       ...src.services.map((s) => ({ insert: `${s}.`, label: s, name: s, detail: "service", more: true })),
       ...src.peers.flatMap((p) => p.services.map((s) => ({ insert: `${p.app}/${s}.`, label: `${p.app}/${s}`, name: s, detail: "service of another app", more: true }))),
       ...src.storages.map((n) => ({ insert: `storage:${n}.`, label: `storage:${n}`, name: n, detail: "S3 storage", more: true })),
+      { insert: "volume:shared.", label: "volume:shared", name: "shared", detail: "the app's shared directory", more: true },
+      ...src.volumes.map((n) => ({ insert: `volume:${n}.`, label: `volume:${n}`, name: n, detail: "volume", more: true })),
     ];
     return rank(targets, query, (t) => t.name);
   }
@@ -71,7 +77,9 @@ export function suggest(query: string, src: ReferenceSources): Suggestion[] {
   const typed = query.slice(dot + 1);
   const attrs: { attr: string; detail: string }[] = target.startsWith("storage:")
     ? Object.entries(STORAGE_ATTRS).map(([attr, detail]) => ({ attr, detail }))
-    : [
+    : target.startsWith("volume:")
+      ? Object.entries(VOLUME_ATTRS).map(([attr, detail]) => ({ attr, detail }))
+      : [
         ...Object.entries(SERVICE_ATTRS).map(([attr, detail]) => ({ attr, detail })),
         ...(src.env[target] ?? []).map((attr) => ({ attr, detail: "variable" })),
       ];

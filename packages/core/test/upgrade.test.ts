@@ -46,11 +46,11 @@ async function server(installer: { good: string; bad: string }, installed = "#!/
 
   const t = await makeDeps({ config: { agent: { upgradeDir: `${root}/state` } } });
   t.deps.installDir = dir;
-  const run = (ref: string, confirmSeconds = 30, withContainers = false, withStorage = false) => {
+  const run = (ref: string, confirmSeconds = 30, withContainers = false, withStorage = false, withMounts = false) => {
     mkdirSync(`${root}/state`, { recursive: true });
     writeFileSync(
       `${root}/upgrade.sh`,
-      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds, withContainers, withStorage }),
+      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds, withContainers, withStorage, withMounts }),
     );
     const child = spawn("sh", [`${root}/upgrade.sh`], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FREIGHTER_UNIT_DIR: units, FREIGHTER_POLL_SECONDS: "1" },
@@ -147,6 +147,22 @@ describe("the upgrade script on a fake server", () => {
     expect(await both).toBe(0);
     expect(s.read("state/message")).toMatch(/Container and storage support added/);
     expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-containers --with-storage`);
+  });
+
+  it("adds mount support with --with-mounts, and names every piece when several are added", async () => {
+    const s = await server({ good: installs("NEW"), bad: installs("NEW") }, `#!/bin/sh\necho "$@" >"$(dirname "$0")/args.log"\n`);
+    const alone = s.run("good", 30, false, false, true);
+    await s.waitState("verifying");
+    writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+    expect(await alone).toBe(0);
+    expect(s.read("state/message")).toBe("Mount support added: cifs-utils and nfs-common are installed and the agent restarted");
+    expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-mounts`);
+
+    const all = s.run("good", 30, true, true, true);
+    await s.waitState("verifying");
+    writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+    expect(await all).toBe(0);
+    expect(s.read("state/message")).toBe("Container, storage and mount support added: Podman, rclone, cifs-utils and nfs-common are installed and the agent restarted");
   });
 
   it("rolls back when the new installer fails halfway", async () => {

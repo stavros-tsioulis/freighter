@@ -63,3 +63,24 @@ describe("storage references", () => {
     expect(() => parseManifest('name: a\nservices:\n  web:\n    command: x\n    environment:\n      S3: "@storage:anything.url"\n')).not.toThrow();
   });
 });
+
+describe("volume references", () => {
+  it("finds @volume:name.path", async () => {
+    const { findReferences } = await import("../src/index.ts");
+    expect(findReferences("dir=@volume:uploads.path/x")).toEqual([{ volume: "uploads", attr: "path", text: "@volume:uploads.path" }]);
+    expect(findReferences("@volume:shared.path")[0]).toMatchObject({ volume: "shared" });
+    expect(findReferences("@volume:uploads.nope")).toEqual([]);
+    expect(findReferences("me@volume:uploads.path")).toEqual([]);
+  });
+  it("accepts the app's own volumes and shared, and rejects ones it doesn't have", () => {
+    const svc = (env: string) => `name: a\nservices:\n  web:\n    command: x\n    volumes:\n      up: /data/up\n    environment:\n      D: "${env}"\n`;
+    expect(() => parseManifest(svc("@volume:up.path"))).not.toThrow();
+    expect(() => parseManifest(svc("@volume:shared.path"))).not.toThrow();
+    expect(() => parseManifest(svc("@volume:nope.path"))).toThrow(/no volume .{1,3}nope/);
+  });
+  it("is not a connection between services", async () => {
+    const { connectionEdges } = await import("../src/index.ts");
+    const m = parseManifest('name: a\nservices:\n  web:\n    command: x\n    environment:\n      D: "@volume:shared.path"\n');
+    expect(connectionEdges(m)).toEqual([]);
+  });
+});

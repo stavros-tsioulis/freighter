@@ -1,6 +1,7 @@
 import type { Service } from "@freighter/manifest";
 import { containerHome, containerName, containerRuntimeDir, containerRuntimeName, defaultLayout, envFile, refsEnvFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
 import { assertIdent } from "./names.ts";
+import type { Volume } from "@freighter/manifest";
 import { splitCommand, toExecStart } from "./exec.ts";
 
 export interface RenderInput {
@@ -35,6 +36,8 @@ export interface RenderInput {
   containerPort?: number;
   /** Image services: names of the manifest's secrets, forwarded from the unit's environment into the container. */
   secrets?: string[];
+  /** Names of the attached volumes that live on another machine: the unit waits for their mounts. */
+  remoteVolumes?: string[];
   /** Names of environment values that hold credentials from connections: read from the app's root-only refs file, not written here. */
   refSecrets?: string[];
 }
@@ -75,6 +78,12 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   return argv;
 }
 
+/** The unit starts after the mounts of the remote volumes it uses, and stops if they go away. */
+function mountDeps(input: RenderInput, layout: Layout): string[] {
+  const names = (input.remoteVolumes ?? []).filter((n) => n in (input.def.volumes ?? {})).sort();
+  return names.length ? [line("RequiresMountsFor", names.map((n) => volumeDir(layout, input.app, assertIdent("volume", n))).join(" "))] : [];
+}
+
 function renderImageUnit(input: RenderInput): string {
   const { app, service, def, instance } = input;
   const layout = input.layout ?? defaultLayout;
@@ -90,6 +99,7 @@ function renderImageUnit(input: RenderInput): string {
     line("Wants", "network-online.target"),
     line("StartLimitIntervalSec", 60),
     line("StartLimitBurst", 5),
+    ...mountDeps(input, layout),
   ];
   const svc = [
     line("Type", "simple"),
@@ -144,6 +154,7 @@ export function renderUnit(input: RenderInput): string {
     line("Wants", "network-online.target"),
     line("StartLimitIntervalSec", 60),
     line("StartLimitBurst", 5),
+    ...mountDeps(input, layout),
   ];
 
   const svc = [
@@ -181,10 +192,57 @@ export function renderUnit(input: RenderInput): string {
     line("ProtectControlGroups", "true"),
     line("RestrictSUIDSGID", "true"),
     line("LockPersonality", "true"),
-    line("ReadWritePaths", sharedDir(layout, app)),
+    line("ReadWritePaths", [sharedDir(layout, app), ...Object.values(def.volumes ?? {}).sort()].join(" ")),
   );
+  // Each volume the service attaches shows up at the path it asked for.
+  for (const [name, path] of Object.entries(def.volumes ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+    svc.push(line("BindPaths", `${volumeDir(layout, app, assertIdent("volume", name))}:${path}`));
+  }
 
   const install = [line("WantedBy", "multi-user.target")];
 
   return `[Unit]\n${unit.join("\n")}\n\n[Service]\n${svc.join("\n")}\n\n[Install]\n${install.join("\n")}\n`;
+}
+
+const mountEscape = (v: string) => v.replace(/\\/g, "\\\\");
+
+/** Where the credentials of a remote volume are kept (root-only; read by mount.cifs). */
+export const volumeCredentialsFile = (layout: Layout, app: string, name: string) => `${layout.envDir}/${app}/volumes/${name}.cred`;
+
+/** The mount unit that puts a remote volume on the folder a service's volume points at. Files appear owned by the app's user. */
+export function renderMountUnit(input: { app: string; name: string; volume: Volume; layout?: Layout; user?: string }): string {
+  const layout = input.layout ?? defaultLayout;
+  const user = assertIdent("user", input.user ?? input.app);
+  const where = volumeDir(layout, input.app, assertIdent("volume", input.name));
+  const v = input.volume;
+  let what: string;
+  let type: string;
+  let options: string[];
+  if (v.type === "smb") {
+    what = `//${v.host}/${v.share}${v.path ? `/${v.path.replace(/^\/+|\/+$/g, "")}` : ""}`;
+    type = "cifs";
+    options = [`credentials=${volumeCredentialsFile(layout, input.app, input.name)}`, `uid=${user}`, `gid=${user}`, "file_mode=0660", "dir_mode=0770", "soft", "serverino", ...(v.port ? [`port=${v.port}`] : [])];
+  } else {
+    what = `${v.host}:${v.export}`;
+    type = "nfs";
+    options = [`vers=${v.version}`, "soft", "timeo=100", "retrans=2"];
+  }
+  return [
+    "[Unit]",
+    line("Description", `Freighter volume ${input.app}/${input.name}`),
+    line("X-Freighter-App", input.app),
+    line("After", "network-online.target"),
+    line("Wants", "network-online.target"),
+    "",
+    "[Mount]",
+    line("What", mountEscape(what)),
+    line("Where", where),
+    line("Type", type),
+    line("Options", options.join(",")),
+    line("TimeoutSec", 30),
+    "",
+    "[Install]",
+    line("WantedBy", "multi-user.target"),
+    "",
+  ].join("\n");
 }

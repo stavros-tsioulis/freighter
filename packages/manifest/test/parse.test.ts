@@ -101,7 +101,22 @@ describe("image services", () => {
   });
   it("rejects image fields on command services", () => {
     expect(() => parseManifest(svc("    command: x\n    containerPort: 80\n"))).toThrow(/image services/);
-    expect(() => parseManifest(svc("    command: x\n    volumes:\n      d: /d\n"))).toThrow(/image services/);
+  });
+  it("lets command services bind volumes, but not over system directories", () => {
+    expect(parseManifest(svc("    command: x\n    volumes:\n      d: /data/d\n")).services.web!.volumes).toEqual({ d: "/data/d" });
+    for (const path of ["/etc/x", "/proc", "/srv/apps/a/shared", "/usr/lib"]) {
+      expect(() => parseManifest(svc(`    command: x\n    volumes:\n      d: ${path}\n`))).toThrow(/system directory/);
+    }
+    expect(() => parseManifest(svc("    command: x\n    volumes:\n      shared: /d\n"))).toThrow(/shared directory/);
+  });
+  it("declares remote volumes, strictly because they end up in unit files", () => {
+    const ok = parseManifest(`${svc("    command: x\n")}volumes:\n  media:\n    type: smb\n    host: nas.lan\n    share: media\n    user: svc\n  arch:\n    type: nfs\n    host: 10.0.0.5\n    export: /exports/a\n`);
+    expect(ok.volumes.media).toMatchObject({ type: "smb", host: "nas.lan" });
+    expect(ok.volumes.arch).toMatchObject({ type: "nfs", version: "4" });
+    const bad = (extra: string) => () => parseManifest(`${svc("    command: x\n")}volumes:\n  v:\n    type: smb\n    host: nas.lan\n    share: media\n    user: svc\n${extra}`);
+    expect(bad("    path: ../up\n")).toThrow();
+    expect(() => parseManifest(`${svc("    command: x\n")}volumes:\n  v:\n    type: smb\n    host: "a b"\n    share: m\n    user: u\n`)).toThrow();
+    expect(() => parseManifest(`${svc("    command: x\n")}volumes:\n  shared:\n    type: nfs\n    host: h\n    export: /e\n`)).toThrow(/shared directory/);
   });
   it("rejects image references that could escape a unit file", () => {
     for (const image of ['"nginx --privileged"', '"a;b"', '"a\\nb"', "Nginx", "'-v /:/host'"]) {

@@ -2,10 +2,10 @@
 import { referenceAt, suggest, type Suggestion } from "~/utils/references";
 
 /** A text input for an environment value. Typing `@` lists what it can connect to, filtered by what follows. */
-const props = defineProps<{ app: string; ownServices?: string[]; id?: string; placeholder?: string; ariaLabel?: string }>();
+const props = defineProps<{ app: string; ownServices?: string[]; ownVolumes?: string[]; id?: string; placeholder?: string; ariaLabel?: string }>();
 const model = defineModel<string>({ required: true });
 
-const sources = useReferenceSources(computed(() => props.app), computed(() => props.ownServices));
+const sources = useReferenceSources(computed(() => props.app), computed(() => props.ownServices), computed(() => props.ownVolumes));
 const input = ref<{ $el: HTMLInputElement } | null>(null);
 const el = () => input.value?.$el;
 

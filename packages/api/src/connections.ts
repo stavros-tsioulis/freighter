@@ -1,4 +1,4 @@
-import { parseManifest, storageApp, type AppFacts, type Connections, type Manifest, type StorageFacts } from "@freighter/manifest";
+import { parseManifest, storageApp, volumePaths, type AppFacts, type Connections, type Manifest, type StorageFacts } from "@freighter/manifest";
 import type { ApiContext } from "./context.ts";
 
 /**
@@ -90,6 +90,8 @@ export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts 
     services: Object.keys(manifest.services),
     domains,
     ports: Object.fromEntries(ctx.registry.services.list(app).map((s) => [s.name, s.port ?? undefined])),
+    // the default layout: this is only for showing what a value resolves to
+    volumePaths: volumePaths(manifest, `/srv/apps/${app}/shared`),
     environment: withStored(manifest, stored),
     fromFile: Object.fromEntries(Object.entries(manifest.services).map(([name, def]) => [name, def.environment])),
     stored,

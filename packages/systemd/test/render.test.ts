@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseManifest } from "@freighter/manifest";
-import { renderUnit } from "../src/index.ts";
+import { escapePath, mountUnitName, renderMountUnit, renderUnit } from "../src/index.ts";
 
 const manifest = parseManifest(readFileSync(new URL("../../../examples/app.yaml", import.meta.url), "utf8"));
 const render = (service: string) => renderUnit({ app: manifest.name, service, def: manifest.services[service]!, environment: manifest.services[service]!.environment });
@@ -142,5 +142,36 @@ describe("renderUnit for image services", () => {
   });
   it("leaves command services untouched", () => {
     expect(render("web")).toBe(WEB);
+  });
+});
+
+describe("volumes", () => {
+  const vols = parseManifest("name: shop\nservices:\n  web:\n    command: node x.js\n    volumes:\n      media: /data/media\n      cache: /data/cache\n");
+  const def = vols.services.web!;
+
+  it("binds each volume of a command service where it asked, writable, and waits for remote ones", () => {
+    const out = renderUnit({ app: "shop", service: "web", def, remoteVolumes: ["media", "other"] });
+    expect(out).toContain("BindPaths=/srv/apps/shop/shared/volumes/cache:/data/cache");
+    expect(out).toContain("BindPaths=/srv/apps/shop/shared/volumes/media:/data/media");
+    expect(out).toContain("ReadWritePaths=/srv/apps/shop/shared /data/cache /data/media");
+    expect(out).toContain("RequiresMountsFor=/srv/apps/shop/shared/volumes/media\n"); // only the attached remote one
+    expect(renderUnit({ app: "shop", service: "web", def })).not.toContain("RequiresMountsFor");
+  });
+
+  it("names a mount unit after its path", () => {
+    expect(escapePath("/srv/apps/my-app/shared/volumes/media")).toBe("srv-apps-my\\x2dapp-shared-volumes-media");
+    expect(mountUnitName("/srv/apps/shop/shared/volumes/a.b")).toBe("srv-apps-shop-shared-volumes-a.b.mount");
+  });
+
+  it("mounts SMB as the app's user from a root-only credentials file, and NFS with timeouts", () => {
+    const smb = renderMountUnit({ app: "shop", name: "media", volume: { type: "smb", host: "nas.lan", share: "media", path: "up/", user: "svc", domain: "WG" } });
+    expect(smb).toContain("What=//nas.lan/media/up");
+    expect(smb).toContain("Where=/srv/apps/shop/shared/volumes/media");
+    expect(smb).toContain("Type=cifs");
+    expect(smb).toContain("Options=credentials=/etc/freighter/apps/shop/volumes/media.cred,uid=shop,gid=shop,file_mode=0660,dir_mode=0770,soft,serverino");
+    expect(smb).not.toMatch(/password/i);
+    const nfs = renderMountUnit({ app: "shop", name: "arch", volume: { type: "nfs", host: "10.0.0.5", export: "/exports/a", version: "4.1" } });
+    expect(nfs).toContain("What=10.0.0.5:/exports/a");
+    expect(nfs).toContain("Options=vers=4.1,soft,timeo=100,retrans=2");
   });
 });

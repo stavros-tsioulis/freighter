@@ -24,6 +24,7 @@ async function submit() {
     <Skeleton v-if="isLoading" height="12rem" />
     <Message v-else-if="error" severity="error">{{ error.message }}</Message>
     <template v-else>
+      <AppVolumesPanel :app="app" />
       <ManifestForm v-model="form" :app-name="app.name" :disabled="!can('admin')" />
       <div v-if="can('admin')" class="flex gap-2">
         <Button label="Save and redeploy" icon="pi pi-save" :disabled="!dirty || !hasService(form)" :loading="save.isPending.value" @click="submit" />

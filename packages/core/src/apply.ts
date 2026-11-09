@@ -1,7 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { ensureChallengeToken, renderHostnameMap, renderHttpsMap, renderBackends } from "@freighter/haproxy";
-import { parseManifest, routedServices, type Connections, type Domain, type Manifest } from "@freighter/manifest";
-import { renderUnit, unitName } from "@freighter/systemd";
+import { parseManifest, routedServices, volumePaths, type Connections, type Domain, type Manifest } from "@freighter/manifest";
+import { renderUnit, sharedDir, unitName } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { assertHostnamesFree, readDomains } from "./domains.ts";
@@ -11,6 +11,7 @@ import { readConnections } from "./connections.ts";
 import { readVariables, type Variables } from "./variables.ts";
 import { resolveEnvironmentSplit } from "./references.ts";
 import { writeRefsEnv } from "./env.ts";
+import { retireMounts, syncVolumes } from "./volumes.ts";
 import { hashResolved, writeResolvedHash } from "./reapply.ts";
 import { activate, releaseDir } from "./releases.ts";
 import { allStates, readState, routesFrom, writeState, type AppState, type RoutedService } from "./state.ts";
@@ -105,6 +106,7 @@ export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: read
     domains: [...domains],
     ports: Object.fromEntries(Object.entries(targets).map(([s, t]) => [s, t.port])),
     environment: Object.fromEntries(Object.entries(manifest.services).map(([s, def]) => [s, def.environment])),
+    volumePaths: volumePaths(manifest, sharedDir(d.layout, manifest.name)),
   };
   return Object.fromEntries(Object.keys(manifest.services).map((service) => [service, resolveEnvironmentSplit(self, service, conn.peers, conn.storages)]));
 }
@@ -129,6 +131,7 @@ function render(d: Deps, app: string, manifest: Manifest, env: Record<string, Re
     loopback: unit.routed,
     environment: env[service]!.plain,
     refSecrets: Object.keys(env[service]!.secret),
+    remoteVolumes: Object.keys(manifest.volumes),
   });
 }
 
@@ -190,6 +193,7 @@ export async function goLive(
   const conn = opts.connections ?? (await readConnections(d, app));
   const environment = resolveAppEnvironment(d, withVariables(manifest, await readVariables(d, app)), domains, targets, conn);
   await writeRefsEnvs(d, app, environment);
+  await syncVolumes(d, app, manifest);
 
   const created: string[] = [];
   const failWith = async (failures: VerifyFailure[]): Promise<GoLiveResult> => {
@@ -258,6 +262,7 @@ export async function goLive(
   await writeState(d, app, state);
   await activate(d, app, id);
   await writeResolvedHash(d, app, hashResolved(environment));
+  await retireMounts(d, app, Object.keys(manifest.volumes));
 
   const oldInstances = Object.values(oldState.routed).filter((r) => !(r.unit in Object.fromEntries(plan.map((p) => [p.unit, 1]))));
   if (oldInstances.length > 0) {

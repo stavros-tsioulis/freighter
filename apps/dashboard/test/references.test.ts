@@ -6,6 +6,7 @@ const src: ReferenceSources = {
   env: { api: ["REGION", "MODE"] },
   peers: [{ app: "billing", services: ["api", "ledger"] }],
   storages: ["uploads"],
+  volumes: ["media"],
 };
 
 describe("referenceAt", () => {
@@ -26,8 +27,8 @@ describe("referenceAt", () => {
 describe("suggest", () => {
   const labels = (q: string) => suggest(q, src).map((s) => s.label);
   it("offers services, other apps' services and storages, filtered by what is typed", () => {
-    expect(labels("")).toEqual(["web", "api", "billing/api", "billing/ledger", "storage:uploads"]);
-    expect(labels("a")).toEqual(["api", "billing/api", "storage:uploads"]); // best matches first, then the rest that contain it
+    expect(labels("")).toEqual(["web", "api", "billing/api", "billing/ledger", "storage:uploads", "volume:shared", "volume:media"]);
+    expect(labels("a")).toEqual(["api", "billing/api", "storage:uploads", "volume:shared", "volume:media"]); // best matches first, then the rest that contain it
     expect(labels("led")).toEqual(["billing/ledger"]);
     expect(labels("stor")).toEqual(["storage:uploads"]);
     expect(labels("zzz")).toEqual([]);
@@ -39,6 +40,12 @@ describe("suggest", () => {
     expect(labels("api.reg")).toEqual(["REGION"]);
     expect(suggest("api.u", src)[0]).toMatchObject({ insert: "api.url", more: false });
     expect(labels("billing/api.")).toEqual(["domain", "url", "internal", "port"]);
+  });
+  it("offers the shared directory and the app's volumes, then their path", () => {
+    expect(labels("vol")).toEqual(["volume:shared", "volume:media"]);
+    expect(labels("med")).toEqual(["volume:media"]);
+    expect(suggest("volume:media", src)[0]).toMatchObject({ insert: "volume:media.", more: true });
+    expect(suggest("volume:media.", src)).toEqual([{ insert: "volume:media.path", label: "path", detail: expect.any(String), more: false }]);
   });
   it("knows the attributes of a storage", () => {
     expect(labels("storage:uploads.")).toEqual(["url", "domain", "internal", "region", "accessKey", "secretKey"]);

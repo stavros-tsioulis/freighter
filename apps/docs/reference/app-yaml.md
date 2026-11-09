@@ -54,7 +54,7 @@ releases:
 | `releases.keep` | integer, 2 or more | `5` | How many releases to keep on disk. The current and previous ones are always kept. |
 | `source` | object | none | `type: git`, `repository`, `branch` (default `main`). Accepted for documentation only: the repository link set in Freighter is what's used. |
 
-`environment:` and `secrets:` belong to each [service](#services), not to the app. `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
+`environment:` and `secrets:` belong to each [service](#services), not to the app. The app-level `volumes:` map declares [remote volumes](/deploy/volumes#remote-volumes) (SMB, NFS). `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
 
 ## services
 
@@ -65,7 +65,7 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `command` | string | one of `command` / `image` | What to run, from the release directory. It's split like a shell command line but not run through a shell, so use `sh -c '…'` if you need pipes or variable expansion. Relative programs are looked up on `PATH`. |
 | `image` | image reference | one of `command` / `image` | Run this container image with Podman instead of a command: `nginx`, `ghcr.io/org/app:1.2`, `registry:5000/team/app@sha256:…`. See [Deploy images](/deploy/images). |
 | `containerPort` | integer | the port the image declares | Images only: the port the image listens on inside the container. Freighter publishes it on the service's port (`127.0.0.1` only) and also sets `$PORT`. When you leave it out, the port the image declares with `EXPOSE` is used if there is exactly one (Grafana: 3000, nginx: 80). An image that declares several or none is published onto the service's own port, as if it honoured `$PORT`, and the deployment log says so: set `containerPort` then. |
-| `volumes` | map of name to absolute path | none | Images only: persistent directories, kept in `/srv/apps/<app>/shared/volumes/<name>` and mounted at that path in the container. |
+| `volumes` | map of name to absolute path | none | Folders of the app, kept in `/srv/apps/<app>/shared/volumes/<name>`, that the service sees at that path (inside the container for images, bound into the unit for commands, not under system directories). See [volumes](/deploy/volumes). |
 | `port` | integer | none | The port the service listens on, passed as `$PORT`. Ignored for routed services, which get an allocated port. |
 | `resources.memory` | `<n>K`, `<n>M` or `<n>G` | unlimited | Hard memory limit (`MemoryMax`). The service is killed and restarted if it goes over. |
 | `resources.cpu` | number, up to 64 | unlimited | CPU limit in cores (`CPUQuota`). `0.5` is half a core, `2` is two cores. |

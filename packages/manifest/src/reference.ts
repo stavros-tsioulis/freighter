@@ -13,9 +13,16 @@ export type StorageAttr = (typeof STORAGE_ATTRS)[number];
 /** Storage attributes whose values are credentials: they never go into a (world-readable) unit file. */
 export const SECRET_STORAGE_ATTRS: readonly string[] = ["accessKey", "secretKey"];
 
+/** Volume attributes: where it is, as the service that asks sees it. */
+export const VOLUME_ATTRS = ["path"] as const;
+export type VolumeAttr = (typeof VOLUME_ATTRS)[number];
+/** The volume that is the app's whole shared directory. */
+export const SHARED_VOLUME = "shared";
+
 /** `@[app/]service.attr`: a service of this app or of another one. */
 export interface ServiceReference {
   storage?: undefined;
+  volume?: undefined;
   /** The app that owns the service; absent for a service of the same app. */
   app?: string;
   service: string;
@@ -27,17 +34,28 @@ export interface ServiceReference {
 /** `@storage:name.attr`: an S3 storage. Storages are global, so there is no app. */
 export interface StorageReference {
   storage: string;
+  volume?: undefined;
   app?: undefined;
   service?: undefined;
   attr: StorageAttr;
   text: string;
 }
-export type Reference = ServiceReference | StorageReference;
+/** `@volume:name.path`: a volume of this app (or `shared`, its shared directory). Volumes belong to one app, so there is no app part. */
+export interface VolumeReference {
+  volume: string;
+  storage?: undefined;
+  app?: undefined;
+  service?: undefined;
+  attr: VolumeAttr;
+  text: string;
+}
+export type Reference = ServiceReference | StorageReference | VolumeReference;
 
 const IDENT = "[a-z][a-z0-9]*(?:-[a-z0-9]+)*";
 // `@@` | `@` (`storage:` name `.` attr | [app `/`] service `.` attr). The attr must end the identifier, so `@api.url_x` is not `@api.url`.
 const PATTERN =
   `@@|(?<![A-Za-z0-9_.+-])@(?:storage:(?<st>${IDENT})\\.(?<sattr>${STORAGE_ATTRS.join("|")})` +
+  `|volume:(?<vol>${IDENT})\\.(?<vattr>${VOLUME_ATTRS.join("|")})` +
   `|(?:(?<app>${IDENT})/)?(?<svc>${IDENT})\\.(?<attr>domain|url|internal|port|[A-Z_][A-Z0-9_]*))(?![A-Za-z0-9_])`;
 
 export const isEnvAttr = (attr: string): boolean => !(REFERENCE_ATTRS as readonly string[]).includes(attr) && attr !== "PORT";
@@ -45,6 +63,7 @@ export const isEnvAttr = (attr: string): boolean => !(REFERENCE_ATTRS as readonl
 function toReference(m: { 0: string; groups?: Record<string, string | undefined> }): Reference {
   const g = m.groups!;
   if (g.st !== undefined) return { storage: g.st, attr: g.sattr as StorageAttr, text: m[0] };
+  if (g.vol !== undefined) return { volume: g.vol, attr: g.vattr as VolumeAttr, text: m[0] };
   return { app: g.app, service: g.svc!, attr: g.attr!, text: m[0] };
 }
 
@@ -82,7 +101,7 @@ export function connectionEdges(m: EnvOwners): ConnectionEdge[] {
   for (const [service, def] of Object.entries(m.services)) {
     for (const [key, value] of Object.entries(def.environment)) {
       for (const ref of findReferences(value)) {
-        if (ref.storage !== undefined) continue;
+        if (ref.storage !== undefined || ref.volume !== undefined) continue;
         const to = { app: ref.app ?? m.name, service: ref.service };
         if (to.app === m.name && to.service === service) continue;
         out.set(`${service}>${to.app}/${to.service}.${ref.attr}:${key}`, { from: { app: m.name, service }, to, attr: ref.attr, key });
@@ -119,6 +138,24 @@ export function referencedStorages(values: Iterable<string>): string[] {
   const out = new Set<string>();
   for (const v of values) for (const r of findReferences(v)) if (r.storage !== undefined) out.add(r.storage);
   return [...out].sort();
+}
+
+/**
+ * Where each service sees each volume: a command service sees `shared`, the app's folders (at the host path unless it
+ * binds them elsewhere) and, at the path it asked for, the ones it attaches; an image sees only what it attaches (at the
+ * path inside its container). `shared` is the app's shared directory on the host.
+ */
+export function volumePaths(
+  m: { services: Record<string, { image?: string; volumes?: Record<string, string> }>; volumes?: Record<string, unknown> },
+  shared: string,
+): Record<string, Record<string, string>> {
+  const names = new Set([...Object.keys(m.volumes ?? {}), ...Object.values(m.services).flatMap((s) => Object.keys(s.volumes ?? {}))]);
+  return Object.fromEntries(
+    Object.entries(m.services).map(([service, def]) => {
+      const own: Record<string, string> = def.image === undefined ? { [SHARED_VOLUME]: shared, ...Object.fromEntries([...names].map((n) => [n, `${shared}/volumes/${n}`])) } : {};
+      return [service, { ...own, ...def.volumes }];
+    }),
+  );
 }
 
 /** Every environment value of every service of an app. */

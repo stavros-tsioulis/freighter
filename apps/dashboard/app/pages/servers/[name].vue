@@ -50,6 +50,7 @@ const stateText = computed(() => {
 const showUpgrade = ref(false);
 const showContainers = ref(false);
 const showStorage = ref(false);
+const showMounts = ref(false);
 const checkNow = useCheckServer();
 const restart = useRestartService();
 function askRestart() {
@@ -133,6 +134,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
             <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
             <Fact label="Container images" :title="s.host.containers?.available ? `Podman ${s.host.containers.version ?? ''}` : 'Install with --with-containers to deploy images here'">{{ !s.host.containers ? "Agent too old" : s.host.containers.available ? `Podman ${s.host.containers.version ?? ""}`.trim() : "Podman not installed" }}</Fact>
             <Fact label="S3 storage" :title="s.host.storage?.available ? `rclone ${s.host.storage.version ?? ''}` : 'Install with --with-storage to serve storages here'">{{ !s.host.storage ? "Agent too old" : s.host.storage.available ? `rclone ${s.host.storage.version ?? ""}`.trim() : "rclone not installed" }}</Fact>
+            <Fact label="Remote volumes" :title="s.host.mounts ? 'Install with --with-mounts to mount SMB and NFS here' : ''">{{ !s.host.mounts ? "Agent too old" : s.host.mounts.smb && s.host.mounts.nfs ? "SMB and NFS" : s.host.mounts.smb ? "SMB only" : s.host.mounts.nfs ? "NFS only" : "Not installed" }}</Fact>
           </template>
           <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
           <Fact label="Added">{{ date(s.createdAt) }}</Fact>
@@ -204,6 +206,25 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           </template>
         </div>
 
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Remote volumes">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 class="font-medium">Remote volumes</h3>
+            <Tag v-if="s.host?.mounts?.smb && s.host.mounts.nfs" value="SMB and NFS" severity="success" />
+            <Tag v-else-if="s.host" :value="s.host.mounts ? (s.host.mounts.smb ? 'NFS missing' : s.host.mounts.nfs ? 'SMB missing' : 'not installed') : 'Agent too old'" severity="warn" />
+          </div>
+          <template v-if="s.host && !(s.host.mounts?.smb && s.host.mounts.nfs)">
+            <p v-if="!s.host.mounts" class="text-sm text-muted-color">This agent predates volume support. Upgrade it first.</p>
+            <div v-else-if="remote && s.status === 'online'" class="flex flex-wrap items-center gap-3">
+              <Button label="Add mount support…" icon="pi pi-folder" size="small" :disabled="upgrading" @click="showMounts = true" />
+              <small v-if="upgrading" class="text-muted-color">An upgrade is running; wait for it to finish.</small>
+            </div>
+            <div v-else-if="!remote" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
+              <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-mounts</pre>
+            </div>
+          </template>
+        </div>
+
         <div v-if="behind" class="flex flex-wrap items-center gap-3 text-sm">
           <span class="text-amber-600 dark:text-amber-400">This server runs an older version than this dashboard.</span>
           <Button label="Upgrade…" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
@@ -268,6 +289,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
     <UpgradeDialog v-if="showUpgrade" v-model="showUpgrade" :server="name" />
     <UpgradeDialog v-if="showContainers" v-model="showContainers" :server="name" containers />
     <UpgradeDialog v-if="showStorage" v-model="showStorage" :server="name" storage />
+    <UpgradeDialog v-if="showMounts" v-model="showMounts" :server="name" mounts />
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>

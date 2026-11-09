@@ -107,6 +107,8 @@ export const ops = {
       containers: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
       /** Whether this host can serve S3 storages (a new enough rclone is installed). Absent on agents that predate storage. */
       storage: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
+      /** Whether this host can mount SMB and NFS volumes. Absent on agents that predate volumes. */
+      mounts: z.object({ smb: z.boolean(), nfs: z.boolean() }).optional(),
     }),
   },
   /** Header line only; `size` raw bytes follow on the same connection (see framing.ts). */
@@ -186,6 +188,8 @@ export const ops = {
       withContainers: z.boolean().optional(),
       /** Likewise with `--with-storage` (rclone, for S3 storages). Agents with the "storage.install" capability only. */
       withStorage: z.boolean().optional(),
+      /** Likewise with `--with-mounts` (cifs-utils and nfs-common, for SMB and NFS volumes). Agents with the "mounts.install" capability only. */
+      withMounts: z.boolean().optional(),
     }),
     result: z.object({ started: z.literal(true) }),
   },
@@ -298,6 +302,13 @@ export const ops = {
     args: z.object({ app, manifestText: z.string().min(1).max(262_144), logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
     result: z.object({ deploy: deployResult.nullable() }),
   },
+  /** The remote volumes an app's configuration declares: what is mounted, and whether an SMB password is set. Agents with "volumes" only. */
+  "volumes.status": {
+    args: z.object({ app }),
+    result: z.object({ volumes: z.record(ident, z.object({ type: z.string(), state: z.string(), password: z.boolean().nullable() })) }),
+  },
+  /** Set the password of an SMB volume declared in the app's configuration. It is written to a root-only file and never read back. */
+  "volumes.password.set": { args: z.object({ app, name: ident, password: z.string().min(1).max(256) }), result: z.object({}) },
   /** Variables added on the server, per service, on top of each service's `environment:` in app.yaml. Agents with the "variables" capability only. */
   "variables.get": { args: z.object({ app }), result: z.object({ variables: z.record(ident, z.record(envKey, z.string())) }) },
   "variables.set": {

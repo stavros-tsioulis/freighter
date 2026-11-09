@@ -24,6 +24,8 @@
 #   --with-containers      agent servers: also install Podman, so apps can be deployed as container images
 #                          (`image:` in app.yaml). Off by default; apps that run a command need none.
 #                          Upgrades keep it.                                         [FREIGHTER_WITH_CONTAINERS=1]
+#   --with-mounts          agent servers: also install cifs-utils and nfs-common, so apps can use SMB and NFS volumes.
+#                          Off by default. Safe to re-run on an existing server.            [FREIGHTER_WITH_MOUNTS=1]
 #   --with-storage         agent servers: also install rclone, so this server can serve S3 storages (Storage in the
 #                          dashboard). Off by default. Safe to re-run on an existing server.  [FREIGHTER_WITH_STORAGE=1]
 #   --haproxy auto|dedicated|existing
@@ -170,6 +172,8 @@ install_packages() {
 		# pasta (passt) is the newer rootless network stack; not every release has it, and slirp4netns covers the others.
 		if apt-cache show passt >/dev/null 2>&1; then pkgs="$pkgs passt"; fi
 	fi
+	# Remote volumes: mount.cifs and mount.nfs.
+	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_MOUNTS" = 1 ]; then pkgs="$pkgs cifs-utils nfs-common"; fi
 	# rclone comes as a zip.
 	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_STORAGE" = 1 ]; then pkgs="$pkgs unzip"; fi
 	missing=
@@ -512,6 +516,7 @@ main() {
 	HAS_AGENT=0; [ "${FREIGHTER_WITH_AGENT:-0}" = 1 ] && HAS_AGENT=1
 	WITH_CONTAINERS=0; [ "${FREIGHTER_WITH_CONTAINERS:-0}" = 1 ] && WITH_CONTAINERS=1
 	WITH_STORAGE=0; [ "${FREIGHTER_WITH_STORAGE:-0}" = 1 ] && WITH_STORAGE=1
+	WITH_MOUNTS=0; [ "${FREIGHTER_WITH_MOUNTS:-0}" = 1 ] && WITH_MOUNTS=1
 	NO_START=0; DRY_RUN=0; HAPROXY_MANUAL=0; DL=; NODE_BIN=; NODE_ARCH=
 
 	while [ $# -gt 0 ]; do
@@ -531,6 +536,7 @@ main() {
 			--with-agent) HAS_AGENT=1; shift ;;
 			--with-containers) WITH_CONTAINERS=1; shift ;;
 			--with-storage) WITH_STORAGE=1; shift ;;
+			--with-mounts) WITH_MOUNTS=1; shift ;;
 			--no-agent) HAS_AGENT=0; shift ;; # the default; kept for scripts written before it was
 			--no-start) NO_START=1; shift ;;
 			--dry-run) DRY_RUN=1; shift ;;

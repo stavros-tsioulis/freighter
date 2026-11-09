@@ -367,6 +367,22 @@ describe("upgrading a remote server", () => {
     expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-storage", detail: { server: "vps-1" } });
   });
 
+  it("adds mount support for SMB and NFS volumes the same way", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] });
+    const old = await upgrade(t, { mounts: true });
+    expect(old.status).toBe(409);
+    expect(old.json.error.message).toMatch(/predates volume support/);
+    expect((await upgrade(t, { mounts: true }, "local")).json.error.message).toMatch(/--with-mounts/);
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images", "mounts.install"] });
+    expect((await upgrade(t, { mounts: true })).status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ withMounts: true });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-mounts" });
+  });
+
   it("refuses what can't work, with the reason", async () => {
     const t = await makeApi();
     expect((await upgrade(t, {}, "local")).status).toBe(400);

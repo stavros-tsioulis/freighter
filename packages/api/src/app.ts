@@ -344,6 +344,22 @@ export function createApi(ctx: ApiContext): Api {
     return { ok: true, redeployed: r.deploy !== null };
   }));
 
+  // Remote volumes of the app (declared in its configuration): what is mounted, and whether an SMB password is set.
+  router.get("/v1/apps/:app/volumes", route("viewer", async (event) => {
+    const name = appParam(event);
+    const row = ctx.registry.apps.get(name);
+    if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
+    return ctx.agents.forServer(row.server).call("volumes.status", { app: name }).catch(() => ({ volumes: {} }));
+  }));
+  router.put("/v1/apps/:app/volumes/:name/password", route("admin", async (event, who) => {
+    const name = userAppParam(event);
+    const volume = z.string().regex(IDENT_RE).parse(getRouterParam(event, "name"));
+    const { password } = await body(event, z.object({ password: z.string().min(1).max(256).refine((p) => !/[\r\n\0]/.test(p), "no newlines") }));
+    await agentFor(event, name).call("volumes.password.set", { app: name, name: volume, password });
+    audit(who, "volume.password", name, { volume }); // never the value
+    return { ok: true };
+  }));
+
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
   // Typing the name is required of API clients too, so a stray DELETE can't do it.
   router.delete("/v1/apps/:app", route("admin", async (event, who) => {
@@ -1383,15 +1399,15 @@ export function createApi(ctx: ApiContext): Api {
   router.post("/v1/servers/:name/upgrade", route("admin", async (event, who) => {
     const name = sName(event);
     needServer(name);
-    const { ref, containers, storage } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional() }));
+    const { ref, containers, storage, mounts } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional(), mounts: z.boolean().optional() }));
     let view;
     try {
-      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage });
+      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage, withMounts: mounts });
     } catch (e) {
       if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
       throw e;
     }
-    audit(who, storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage ? {} : { ref: ref ?? view.target }), from: view.commit });
+    audit(who, mounts ? "server.add-mounts" : storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage || mounts ? {} : { ref: ref ?? view.target }), from: view.commit });
     setResponseStatus(event, 202);
     return view;
   }));

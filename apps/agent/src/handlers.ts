@@ -1,6 +1,7 @@
 import { copyFile, rm, realpath, stat, statfs } from "node:fs/promises";
 import { hostname, freemem, loadavg, totalmem, uptime } from "node:os";
 import { sep } from "node:path";
+import { parseManifest } from "@freighter/manifest";
 import {
   DeployFailedError,
   SettingsError,
@@ -38,6 +39,9 @@ import {
   storageAvailable,
   readVariables,
   getConfig,
+  mountSupport,
+  setVolumePassword,
+  volumeStatus,
   setConfig,
   setVariables,
   listApps,
@@ -103,15 +107,15 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "connections", "variables", "reapply", "app.config", ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "volumes", "connections", "variables", "reapply", "app.config", ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
     async "upgrade.status"() {
       return upgradeStatus(d, await currentCommit());
     },
-    async "upgrade.start"({ ref, withContainers, withStorage }) {
-      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers, withStorage });
+    async "upgrade.start"({ ref, withContainers, withStorage, withMounts }) {
+      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers, withStorage, withMounts });
       return { started: true as const };
     },
     async "upgrade.check"({ ref }) {
@@ -128,7 +132,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d) };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d) };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -152,6 +156,18 @@ export function createHandlers(d: Deps): Handlers {
           throw e;
         }),
       );
+    },
+    async "volumes.status"({ app }) {
+      const text = await getConfig(d, app);
+      if (!text) return { volumes: {} };
+      return { volumes: await volumeStatus(d, app, parseManifest(text, { legacy: true })) };
+    },
+    async "volumes.password.set"({ app, name, password }) {
+      const text = await getConfig(d, app);
+      const volume = text ? parseManifest(text, { legacy: true }).volumes[name] : undefined;
+      if (volume?.type !== "smb") throw new Error(`${app} has no SMB volume "${name}"`);
+      await setVolumePassword(d, app, name, password);
+      return {};
     },
     async "app.config.get"({ app }) {
       return { manifestText: await getConfig(d, app) };

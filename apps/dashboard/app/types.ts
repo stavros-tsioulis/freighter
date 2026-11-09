@@ -105,6 +105,8 @@ export interface HostStatus {
   containers?: { available: boolean; version?: string };
   /** Whether the server can serve S3 storages (rclone installed). Absent on agents that predate storage. */
   storage?: { available: boolean; version?: string };
+  /** Whether the server can mount SMB and NFS volumes. Absent on agents that predate volumes. */
+  mounts?: { smb: boolean; nfs: boolean };
 }
 export interface ServerRow {
   name: string;
@@ -127,6 +129,9 @@ export interface Enrollment {
   server: ServerRow;
   enrollment: { token: string; expiresAt: string | null; caFingerprint: string; command: string };
 }
+export type RemoteVolume =
+  | { type: "smb"; host: string; share: string; path?: string; user: string; domain?: string; port?: number }
+  | { type: "nfs"; host: string; export: string; version?: string };
 /** The options of app.yaml except the name; used when a repository has no app.yaml. */
 export interface AppSettings {
   build?: { commands: string[]; timeout?: string; memory?: string; cpu?: number };
@@ -146,6 +151,8 @@ export interface AppSettings {
       secrets?: string[];
     }
   >;
+  /** Remote folders (SMB, NFS) the app can mount; the password is set separately and never read back. */
+  volumes?: Record<string, RemoteVolume>;
   releases?: { keep: number };
 }
 export interface GitLink {

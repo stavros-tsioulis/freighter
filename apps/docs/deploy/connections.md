@@ -38,6 +38,10 @@ If a domain, port, variable or key that an app connects to changes, Freighter re
 
 `@app/service.attribute` works only between apps in the **same project**. `internal` also needs both apps on the same server; use `url` otherwise. The control plane tells each app's server about the other apps in its project before every deploy, so move an app into the project first.
 
+## Volumes
+
+`@volume:name.path` is the path a volume has for the service that holds the reference: where the service asked to see it, or the folder on the server for a command service that doesn't attach it. `@volume:shared.path` is the app's shared directory. See [volumes](/deploy/volumes).
+
 ## S3 storages
 
 `@storage:name.attribute` reaches an [S3 storage](/deploy/storage): `url`, `domain`, `internal`, `region`, `accessKey` and `secretKey`. Storages are global, so they work from any project. The key pair is delivered through a root-only file instead of the unit.

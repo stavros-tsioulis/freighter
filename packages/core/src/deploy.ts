@@ -13,6 +13,7 @@ import { allocateReleaseId, currentRelease, newReleaseId, pruneReleases, release
 import { describeFailures, verifyRelease } from "./verify.ts";
 import { loadReleaseManifest } from "./apply.ts";
 import { readConfig, sameConfig, writeConfig } from "./appconfig.ts";
+import { missingVolumePasswords } from "./volumes.ts";
 
 export interface DeployOptions {
   manifestText: string;
@@ -89,6 +90,9 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
   if (missing.length > 0) {
     throw new Error(`missing secrets for ${app}: ${missing.join(", ")} (set with: freighter env set ${app} SERVICE KEY)`);
   }
+
+  const noPassword = await missingVolumePasswords(d, manifest);
+  if (noPassword.length > 0) throw new Error(`missing passwords for volumes of ${app}: ${noPassword.join(", ")} (set them on the app's Settings tab)`);
 
   const previousDomains = await readDomains(d, app);
   const domains: Domain[] = opts.domains ? parseDomains(opts.domains) : previousDomains;

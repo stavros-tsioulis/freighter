@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { findReferences, isEnvAttr } from "./reference.ts";
+import { SHARED_VOLUME, findReferences, isEnvAttr } from "./reference.ts";
 
 /** Lowercase identifier: segments of [a-z0-9] joined by single hyphens, starting with a letter. */
 export const IDENT_RE = /^[a-z][a-z0-9]*(-[a-z0-9]+)*$/;
@@ -15,6 +15,33 @@ const duration = z.string().regex(/^\d+(ms|s|m|h)$/, "expected e.g. 10s");
  * Deliberately strict: it ends up in a unit file, so no whitespace, quotes or shell characters are allowed.
  */
 export const IMAGE_RE = /^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[a-f0-9]{64})?$/;
+
+/** Where on the machine a command service may see a volume: not over system directories. */
+export const FORBIDDEN_TARGETS = ["/proc", "/sys", "/dev", "/etc", "/run", "/boot", "/usr", "/bin", "/sbin", "/lib", "/root", "/home", "/srv/apps", "/var/lib/freighter"];
+
+const hostName = z.string().min(1).max(253).regex(/^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$/, "expected a host name or address");
+const safePath = z.string().max(300).regex(/^[A-Za-z0-9._/-]*$/, "letters, digits and . _ - / only").refine((p) => !p.split("/").includes(".."), "no ..");
+
+/** A remote folder an app can use as a volume. The password is not part of it: it is set on the server and never read back. */
+export const volumeSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("smb"),
+    host: hostName,
+    share: z.string().min(1).max(80).regex(/^[A-Za-z0-9._$-]+$/, "letters, digits and . _ $ - only"),
+    /** A folder inside the share. */
+    path: safePath.optional(),
+    user: z.string().min(1).max(80).regex(/^[A-Za-z0-9._@-]+$/, "letters, digits and . _ @ - only"),
+    domain: z.string().max(80).regex(/^[A-Za-z0-9._-]*$/).optional(),
+    port: z.number().int().positive().max(65535).optional(),
+  }),
+  z.object({
+    type: z.literal("nfs"),
+    host: hostName,
+    export: safePath.refine((p) => p.startsWith("/"), "expected an absolute path"),
+    version: z.enum(["3", "4", "4.1", "4.2"]).default("4"),
+  }),
+]);
+export type Volume = z.infer<typeof volumeSchema>;
 
 export const serviceSchema = z
   .object({
@@ -58,7 +85,11 @@ export const serviceSchema = z
     }
     if (s.image === undefined) {
       if (s.containerPort !== undefined) ctx.addIssue({ code: "custom", path: ["containerPort"], message: "containerPort only applies to image services" });
-      if (s.volumes !== undefined) ctx.addIssue({ code: "custom", path: ["volumes"], message: "volumes only apply to image services" });
+      for (const [name, path] of Object.entries(s.volumes ?? {})) {
+        if (FORBIDDEN_TARGETS.some((p) => path === p || path.startsWith(`${p}/`))) {
+          ctx.addIssue({ code: "custom", path: ["volumes", name], message: `${path} is a system directory; pick another path` });
+        }
+      }
     }
   });
 
@@ -77,11 +108,15 @@ const manifestBase = z.object({
       })
       .optional(),
     services: z.record(ident, serviceSchema),
+    /** Volumes that live on another machine (SMB, NFS). A name a service attaches that is not here is a plain folder of the app. */
+    volumes: z.record(ident, volumeSchema).default({}),
     releases: z.object({ keep: z.number().int().min(2).default(5) }).default({ keep: 5 }),
 });
 
 function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
+  if (SHARED_VOLUME in m.volumes) ctx.addIssue({ code: "custom", path: ["volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
   for (const [name, svc] of Object.entries(m.services)) {
+    if (SHARED_VOLUME in (svc.volumes ?? {})) ctx.addIssue({ code: "custom", path: ["services", name, "volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
     for (const s of svc.secrets) {
       if (s in svc.environment) {
         ctx.addIssue({ code: "custom", path: ["services", name, "secrets"], message: `${s} is both an environment value and a secret` });
@@ -90,6 +125,12 @@ function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
     // Connections to this app's own services can be checked here; other apps' are checked when the app is deployed.
     for (const [key, value] of Object.entries(svc.environment)) {
       for (const ref of findReferences(value)) {
+        if (ref.volume !== undefined) {
+          if (ref.volume !== SHARED_VOLUME && !(ref.volume in m.volumes) && !Object.values(m.services).some((s) => ref.volume in (s.volumes ?? {}))) {
+            ctx.addIssue({ code: "custom", path: ["services", name, "environment", key], message: `${ref.text}: this app has no volume "${ref.volume}"` });
+          }
+          continue;
+        }
         if (ref.storage !== undefined || (ref.app !== undefined && ref.app !== m.name)) continue;
         const path = ["services", name, "environment", key];
         const target = m.services[ref.service];

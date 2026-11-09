@@ -348,8 +348,8 @@ export function useStartUpgrade() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean }) =>
-      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.containers ? { containers: true } : v.storage ? { storage: true } : v.ref ? { ref: v.ref } : {} }),
+    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean; /** Add cifs-utils and nfs-common (for SMB and NFS volumes). */ mounts?: boolean }) =>
+      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.containers ? { containers: true } : v.storage ? { storage: true } : v.mounts ? { mounts: true } : v.ref ? { ref: v.ref } : {} }),
     onSuccess: (r, v) => {
       // The response already describes the new run: show it at once instead of the previous run until the next poll.
       qc.setQueryData(["server-upgrade", v.server], r);
@@ -492,8 +492,25 @@ export function useSaveGitLink(app: MaybeRef<string>) {
 }
 
 /** The app's configuration: what app.yaml described when the app started, and what is kept (and edited) from then on. */
-export const useAppSettings = (app: MaybeRef<string>) =>
-  useQuery({ queryKey: ["config", app], queryFn: () => api<{ text: string | null; settings: AppSettings | null }>(`/apps/${toValue(app)}/config`), retry: false });
+export const useAppSettings = (app: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
+  useQuery({ queryKey: ["config", app], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ text: string | null; settings: AppSettings | null }>(`/apps/${toValue(app)}/config`), retry: false });
+
+/** What is mounted for each remote volume of the app, and whether an SMB volume has its password. */
+export const useVolumes = (app: MaybeRef<string>) =>
+  useQuery({ queryKey: ["volumes", app], queryFn: () => api<{ volumes: Record<string, { type: string; state: string; password: boolean | null }> }>(`/apps/${toValue(app)}/volumes`).then((r) => r.volumes), refetchInterval: 10_000, retry: false });
+
+export function useSetVolumePassword(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { name: string; password: string }) => api(`/apps/${toValue(app)}/volumes/${v.name}/password`, { method: "PUT", body: { password: v.password } }),
+    onSuccess: (_r, v) => {
+      notify.ok("Password saved", `${v.name}: used the next time the app is deployed`);
+      void qc.invalidateQueries({ queryKey: ["volumes"] });
+    },
+    onError: (e) => notify.fail("Could not save the password", e),
+  });
+}
 
 /** Replace the configuration; a deployed app is redeployed with it. */
 export function useSaveConfig(app: MaybeRef<string>) {

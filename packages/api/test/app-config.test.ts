@@ -37,3 +37,31 @@ describe("PUT /v1/apps/:app/config", () => {
     expect(t.registry.audit.list()[0]).toMatchObject({ action: "config.set", app: "shop" });
   });
 });
+
+describe("volumes", () => {
+  it("lists what the agent reports, and takes an SMB password from admins only, never logging it", async () => {
+    const t = await makeApi();
+    seed(t);
+    t.handlers["volumes.status"] = () => ({ volumes: { media: { type: "smb", state: "mounted", password: true } } });
+    expect((await t.request("/v1/apps/shop/volumes", { token: t.tokens.viewer })).json).toEqual({ volumes: { media: { type: "smb", state: "mounted", password: true } } });
+    expect((await t.request("/v1/apps/nope/volumes", { token: t.tokens.viewer })).status).toBe(404);
+
+    const put = (token: string, body: unknown = { password: "s3cret-pw" }) => t.request("/v1/apps/shop/volumes/media/password", { method: "PUT", token, json: body });
+    expect((await put(t.tokens.deployer)).status).toBe(403);
+    expect((await put(t.tokens.admin, { password: "" })).status).toBe(400);
+    expect((await put(t.tokens.admin)).status).toBe(200);
+    expect(t.calls.at(-1)).toEqual({ op: "volumes.password.set", args: { app: "shop", name: "media", password: "s3cret-pw" } });
+    expect(JSON.stringify(t.registry.audit.list())).not.toContain("s3cret-pw");
+  });
+});
+
+describe("variables that point at volumes", () => {
+  it("resolve to the path the service sees", async () => {
+    const t = await makeApi();
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: "name: shop\nservices:\n  web:\n    command: x\n    volumes:\n      up: /data/up\n    environment:\n      A: \"@volume:up.path\"\n      B: \"@volume:shared.path\"\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const vars = (await t.request("/v1/apps/shop/variables", { token: t.tokens.viewer })).json.variables;
+    const by = Object.fromEntries(vars.map((v: { key: string }) => [v.key, v]));
+    expect(by.A.resolved).toBe("/data/up");
+    expect(by.B.resolved).toBe("/srv/apps/shop/shared");
+  });
+});

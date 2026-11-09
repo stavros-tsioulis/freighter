@@ -60,8 +60,20 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
     }
   };
 
-  const lookup = (from: AppFacts, ref: Reference): Resolved => {
+  const lookupVolume = (from: AppFacts, svc: string, ref: Extract<Reference, { volume: string }>): Resolved => {
+    const path = from.volumePaths?.[svc]?.[ref.volume];
+    if (path === undefined) {
+      const known = from.volumePaths ? Object.values(from.volumePaths).some((v) => ref.volume in v) : false;
+      throw new ReferenceError(
+        known ? `${ref.text}: service "${svc}" doesn't see volume "${ref.volume}" (attach it under \`volumes:\` of the service)` : `${ref.text}: this app has no volume "${ref.volume}"`,
+      );
+    }
+    return { text: path, secret: false };
+  };
+
+  const lookup = (from: AppFacts, svc: string, ref: Reference): Resolved => {
     if (ref.storage !== undefined) return lookupStorage(from, ref);
+    if (ref.volume !== undefined) return lookupVolume(from, svc, ref);
     const owner = ref.app === undefined ? from : apps[ref.app];
     if (!owner) throw new ReferenceError(`${ref.text}: there is no app "${ref.app}" to connect to (apps can only connect to others in the same project)`);
     if (!owner.services.includes(ref.service)) throw new ReferenceError(`${ref.text}: app "${owner.name}" has no service "${ref.service}"`);
@@ -104,7 +116,7 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
     try {
       let secret = false;
       const text = substituteReferences(envOf(app, svc)[key]!, (ref) => {
-        const r = lookup(app, ref);
+        const r = lookup(app, svc, ref);
         secret ||= r.secret;
         return r.text;
       });
@@ -148,6 +160,6 @@ export function resolveEnvironment(self: AppFacts, service: string, peers: Recor
 /** The apps a manifest's environment values name with `@app/service...`, other than itself. */
 export function referencedApps(self: string, values: Iterable<string>): string[] {
   const out = new Set<string>();
-  for (const v of values) for (const r of findReferences(v)) if (r.storage === undefined && r.app !== undefined && r.app !== self) out.add(r.app);
+  for (const v of values) for (const r of findReferences(v)) if (r.storage === undefined && r.volume === undefined && r.app !== undefined && r.app !== self) out.add(r.app);
   return [...out].sort();
 }

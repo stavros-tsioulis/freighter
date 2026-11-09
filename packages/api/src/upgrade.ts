@@ -45,25 +45,27 @@ export class UpgradeRefused extends Error {
 }
 
 /** Ask a remote server's agent to upgrade to `ref` (default: the commit the control plane runs), and keep an eye on it. */
-export async function startServerUpgrade(ctx: UpgradeCtx, name: string, ref?: string, opts: { withContainers?: boolean; withStorage?: boolean } = {}): Promise<UpgradeView> {
+export async function startServerUpgrade(ctx: UpgradeCtx, name: string, ref?: string, opts: { withContainers?: boolean; withStorage?: boolean; withMounts?: boolean } = {}): Promise<UpgradeView> {
   const server = ctx.registry.servers.get(name);
   if (!server) throw new UpgradeRefused(400, `unknown server "${name}"`);
   if (server.kind === "local") {
-    throw new UpgradeRefused(400, opts.withContainers ? "container support on the local server is added by re-running the installer on this machine with --with-containers" : opts.withStorage ? "storage support on the local server is added by re-running the installer on this machine with --with-storage" : "the local server is upgraded by re-running the installer on this machine");
+    throw new UpgradeRefused(400, opts.withContainers ? "container support on the local server is added by re-running the installer on this machine with --with-containers" : opts.withStorage ? "storage support on the local server is added by re-running the installer on this machine with --with-storage" : opts.withMounts ? "mount support on the local server is added by re-running the installer on this machine with --with-mounts" : "the local server is upgraded by re-running the installer on this machine");
   }
   if (server.status !== "online") throw new UpgradeRefused(409, `${name} is ${server.status}: the upgrade needs it online`);
-  if (opts.withContainers || opts.withStorage) {
+  const adding = opts.withContainers || opts.withStorage || opts.withMounts;
+  if (adding) {
     // An agent without the capability would ignore the flag and upgrade to a branch instead, so ask first.
     const caps = (await ctx.agents.forServer(name).call("ping", {}, { timeoutMs: 10_000 })).capabilities ?? [];
     if (opts.withContainers && !caps.includes("containers.install")) throw new UpgradeRefused(409, "this agent predates container support. Upgrade it first, then add container support.");
     if (opts.withStorage && !caps.includes("storage.install")) throw new UpgradeRefused(409, "this agent predates storage support. Upgrade it first, then add storage support.");
+    if (opts.withMounts && !caps.includes("mounts.install")) throw new UpgradeRefused(409, "this agent predates volume support. Upgrade it first, then add mount support.");
   }
-  const target = opts.withContainers || opts.withStorage ? "main" : (ref ?? (await controlRef(ctx)));
+  const target = adding ? "main" : (ref ?? (await controlRef(ctx)));
   if (!target) throw new UpgradeRefused(400, "this control plane doesn't know which version it runs; pass a ref (a branch, tag or commit)");
   const before = await upgradeView(ctx, name);
   if (!before.supported) throw new UpgradeRefused(409, before.reason ?? "this agent can't upgrade itself");
   try {
-    await ctx.agents.forServer(name).call("upgrade.start", opts.withContainers || opts.withStorage ? { ...(opts.withContainers ? { withContainers: true } : {}), ...(opts.withStorage ? { withStorage: true } : {}) } : { ref: target }, { timeoutMs: 15_000 });
+    await ctx.agents.forServer(name).call("upgrade.start", adding ? { ...(opts.withContainers ? { withContainers: true } : {}), ...(opts.withStorage ? { withStorage: true } : {}), ...(opts.withMounts ? { withMounts: true } : {}) } : { ref: target }, { timeoutMs: 15_000 });
   } catch (e) {
     if (e instanceof AgentError && (e.code === "conflict" || e.code === "bad_request")) throw new UpgradeRefused(e.code === "conflict" ? 409 : 400, e.message);
     throw e;

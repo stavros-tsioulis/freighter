@@ -9,6 +9,8 @@ export const appFactsSchema = z.object({
   services: z.array(z.string().regex(IDENT_RE)),
   domains: z.array(domainSchema),
   ports: z.record(z.string(), z.number().int().positive().optional()),
+  /** Where each service sees each volume (`@volume:name.path`), per service. */
+  volumePaths: z.record(z.string(), z.record(z.string(), z.string())).optional(),
   /** Each service's plain environment values as written (they may contain references themselves). */
   environment: z.record(z.string().regex(IDENT_RE), z.record(z.string(), z.string())),
 });

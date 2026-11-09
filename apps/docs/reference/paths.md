@@ -8,6 +8,7 @@ Default locations. Most can be moved in [config.yaml](/reference/config-yaml).
 | --- | --- | --- |
 | `/etc/freighter/config.yaml` | root | host configuration |
 | `/etc/freighter/apps/<app>/<service>.env` | root, `0600` | the service's secrets |
+| `/etc/freighter/apps/<app>/volumes/` | root, `0600` | SMB passwords and mount credentials of the app's remote volumes |
 | `/etc/freighter/agent/` | root | `server.key`, `server.crt`, `ca.crt` (remote servers, after enrollment) |
 | `/srv/apps/<app>/releases/<id>/` | root | one immutable release, including its `app.yaml` |
 | `/srv/apps/<app>/current` | root | symlink to the live release |

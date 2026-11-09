@@ -1,4 +1,4 @@
-import type { AppSettings } from "~/types";
+import type { AppSettings, RemoteVolume } from "~/types";
 
 /** Editable shape of the app.yaml options: arrays of rows and text boxes, converted to/from the API's settings. */
 export interface ServiceForm {
@@ -23,8 +23,24 @@ export interface ServiceForm {
   /** One name per line (or comma separated). */
   secrets: string;
 }
+/** A remote folder as the form edits it: every field of both kinds, only the ones of the chosen type are sent. */
+export interface RemoteVolumeForm {
+  name: string;
+  type: "smb" | "nfs";
+  host: string;
+  share: string;
+  path: string;
+  user: string;
+  domain: string;
+  port: number | null;
+  export: string;
+  version: string;
+}
+export const newRemoteVolume = (): RemoteVolumeForm => ({ name: "", type: "smb", host: "", share: "", path: "", user: "", domain: "", port: null, export: "", version: "4" });
+
 export interface SettingsForm {
   services: ServiceForm[];
+  remoteVolumes: RemoteVolumeForm[];
   /** One command per line. */
   buildCommands: string;
   buildTimeout: string;
@@ -37,6 +53,7 @@ export const newService = (name = "web", kind: ServiceForm["kind"] = "command"):
 
 export const emptyForm = (): SettingsForm => ({
   services: [newService()],
+  remoteVolumes: [],
   buildCommands: "",
   buildTimeout: "",
   buildMemory: "",
@@ -59,9 +76,9 @@ export function toSettings(f: SettingsForm): AppSettings {
         ? {
             image: s.image.trim(),
             ...(s.containerPort ? { containerPort: s.containerPort } : {}),
-            ...(volumes.length ? { volumes: Object.fromEntries(volumes.map((v) => [v.name.trim(), v.path.trim()])) } : {}),
           }
         : { command: s.command.trim() }),
+      ...(volumes.length ? { volumes: Object.fromEntries(volumes.map((v) => [v.name.trim(), v.path.trim()])) } : {}),
       ...(s.port ? { port: s.port } : {}),
       replicas: s.replicas || 1,
       ...(s.memory.trim() || s.cpu ? { resources: { ...(s.memory.trim() ? { memory: s.memory.trim() } : {}), ...(s.cpu ? { cpu: s.cpu } : {}) } } : {}),
@@ -71,12 +88,21 @@ export function toSettings(f: SettingsForm): AppSettings {
       ...(secrets.length ? { secrets } : {}),
     };
   }
+  const remote = f.remoteVolumes
+    .filter((v) => v.name.trim() && v.host.trim())
+    .map((v): [string, RemoteVolume] => [
+      v.name.trim(),
+      v.type === "smb"
+        ? { type: "smb", host: v.host.trim(), share: v.share.trim(), user: v.user.trim(), ...(v.path.trim() ? { path: v.path.trim() } : {}), ...(v.domain.trim() ? { domain: v.domain.trim() } : {}), ...(v.port ? { port: v.port } : {}) }
+        : { type: "nfs", host: v.host.trim(), export: v.export.trim(), ...(v.version ? { version: v.version } : {}) },
+    ]);
   const commands = f.buildCommands.split("\n").map((c) => c.trim()).filter(Boolean);
   return {
     ...(commands.length
       ? { build: { commands, ...(f.buildTimeout.trim() ? { timeout: f.buildTimeout.trim() } : {}), ...(f.buildMemory.trim() ? { memory: f.buildMemory.trim() } : {}), ...(f.buildCpu ? { cpu: f.buildCpu } : {}) } }
       : {}),
     services,
+    ...(remote.length ? { volumes: Object.fromEntries(remote) } : {}),
     releases: { keep: f.keep || 5 },
   };
 }
@@ -102,6 +128,13 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
   }));
   return {
     services: services.length ? services : [newService()],
+    remoteVolumes: Object.entries(s.volumes ?? {}).map(([name, v]) => ({
+      ...newRemoteVolume(),
+      name,
+      type: v.type,
+      host: v.host,
+      ...(v.type === "smb" ? { share: v.share, path: v.path ?? "", user: v.user, domain: v.domain ?? "", port: v.port ?? null } : { export: v.export, version: v.version ?? "4" }),
+    })),
     buildCommands: (s.build?.commands ?? []).join("\n"),
     buildTimeout: s.build?.timeout ?? "",
     buildMemory: s.build?.memory ?? "",

@@ -7,6 +7,7 @@ import { readDomains } from "./domains.ts";
 import { appEnvDir } from "./env.ts";
 import { legacyEnvFile, legacyRefsEnvFile } from "@freighter/systemd";
 import { appKeyDir } from "./git.ts";
+import { assertNoMounts, retireMounts } from "./volumes.ts";
 import { removeContainers } from "./image.ts";
 import { buildCacheDir } from "./build.ts";
 import { withLock } from "./lock.ts";
@@ -44,6 +45,9 @@ export async function deleteApp(d: Deps, app: string): Promise<DeleteAppResult> 
     const units = await retire(d, app, new Set());
     // 2b. Containers and images (rootless Podman state lives in the app's directory, which goes below).
     await removeContainers(d, app);
+    // 2c. Remote volumes are unmounted before anything is deleted: removing a folder with a share mounted on it would delete the share's files.
+    await retireMounts(d, app, []);
+    if (!d.dev) await assertNoMounts(dir);
     // 3. Certificates nobody routes to anymore (the combined PEM, then the certbot lineage; neither is needed again).
     for (const x of domains.filter((x) => x.tls === "auto")) {
       await rm(certPath(d.config.haproxy.dir, x.hostname), { force: true });

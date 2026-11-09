@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { emptyForm, fromSettings, hasService, imageHost, IMAGE_RE, imagesOnly, newService, toSettings } from "../app/utils/settings";
+import { emptyForm, fromSettings, hasService, imageHost, IMAGE_RE, imagesOnly, newRemoteVolume, newService, toSettings } from "../app/utils/settings";
 
 describe("settings form", () => {
   it("only says what was chosen", () => {
@@ -85,5 +85,26 @@ describe("image services", () => {
     expect(imageHost("localhost:5000/app")).toBe("localhost:5000");
     expect(imageHost("nginx")).toBe("docker.io");
     expect(imageHost("acme/app")).toBe("docker.io");
+  });
+});
+
+describe("volumes", () => {
+  it("sends the volumes of a command service too, and remote volumes by type", () => {
+    const f = emptyForm();
+    f.services[0] = { ...newService("web"), command: "run", volumes: [{ name: "up", path: "/data/up" }, { name: "", path: "/x" }] };
+    f.remoteVolumes = [
+      { ...newRemoteVolume(), name: "media", type: "smb", host: " nas.lan ", share: "media", user: "svc", domain: "WG", export: "ignored" },
+      { ...newRemoteVolume(), name: "arch", type: "nfs", host: "10.0.0.5", export: "/exports/a", version: "4.1", share: "ignored" },
+      { ...newRemoteVolume(), name: "", host: "dropped" },
+    ];
+    const s = toSettings(f);
+    expect(s.services.web!.volumes).toEqual({ up: "/data/up" });
+    expect(s.volumes).toEqual({
+      media: { type: "smb", host: "nas.lan", share: "media", user: "svc", domain: "WG" },
+      arch: { type: "nfs", host: "10.0.0.5", export: "/exports/a", version: "4.1" },
+    });
+    const again = fromSettings(s);
+    expect(again.remoteVolumes.map((v) => [v.name, v.type, v.host])).toEqual([["media", "smb", "nas.lan"], ["arch", "nfs", "10.0.0.5"]]);
+    expect(again.services[0]!.volumes).toEqual([{ name: "up", path: "/data/up" }]);
   });
 });

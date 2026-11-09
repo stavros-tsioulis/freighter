@@ -48,6 +48,7 @@ export default defineConfig({
           { text: "Domains and HTTPS", link: "/deploy/domains" },
           { text: "Environment and secrets", link: "/deploy/secrets" },
           { text: "Connections", link: "/deploy/connections" },
+          { text: "Volumes", link: "/deploy/volumes" },
           { text: "S3 storage", link: "/deploy/storage" },
           { text: "Health checks and rollbacks", link: "/deploy/rollbacks" },
         ],

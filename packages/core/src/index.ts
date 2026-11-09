@@ -31,6 +31,7 @@ export * from "./connections.ts";
 export * from "./variables.ts";
 export * from "./shared.ts";
 export * from "./appconfig.ts";
+export * from "./volumes.ts";
 export * from "./configure.ts";
 export * from "./storage.ts";
 export * from "./reapply.ts";

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IMAGE_RE, newService, toSettings, type SettingsForm } from "~/utils/settings";
+import { IMAGE_RE, newRemoteVolume, newService, toSettings, type SettingsForm } from "~/utils/settings";
 import type { AppSettings } from "~/types";
 
 /**
@@ -62,18 +62,18 @@ const addService = () => form.value.services.push(newService(form.value.services
             </div>
             <div class="flex flex-col gap-1"><label :for="`svc-cport-${i}`" class="text-sm font-medium">Container port</label><InputNumber :input-id="`svc-cport-${i}`" v-model="s.containerPort" :min="1" :max="65535" :use-grouping="false" placeholder="from the image" fluid /></div>
           </div>
-          <div class="flex flex-col gap-2 mt-3">
-            <div class="flex items-center justify-between">
-              <span class="text-sm font-medium">Volumes <span class="text-muted-color font-normal">(kept across releases)</span></span>
-              <Button label="Add volume" icon="pi pi-plus" size="small" severity="secondary" text @click="s.volumes.push({ name: '', path: '' })" />
-            </div>
-            <div v-for="(v, j) in s.volumes" :key="j" class="grid grid-cols-[10rem_1fr_auto] gap-2 items-center">
-              <InputText v-model="v.name" placeholder="uploads" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} name`" />
-              <InputText v-model="v.path" placeholder="/var/uploads" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} path in the container`" />
-              <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove volume" @click="s.volumes.splice(j, 1)" />
-            </div>
-          </div>
         </template>
+        <div class="flex flex-col gap-2 mt-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-medium">Volumes <span class="text-muted-color font-normal">(kept across releases)</span></span>
+            <Button label="Add volume" icon="pi pi-plus" size="small" severity="secondary" text @click="s.volumes.push({ name: '', path: '' })" />
+          </div>
+          <div v-for="(v, j) in s.volumes" :key="j" class="grid grid-cols-[10rem_1fr_auto] gap-2 items-center">
+            <InputText v-model="v.name" placeholder="uploads" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} name`" />
+            <InputText v-model="v.path" :placeholder="s.kind === 'image' ? '/var/uploads' : '/data/uploads'" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} path ${s.kind === 'image' ? 'in the container' : 'the service sees'}`" />
+            <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove volume" @click="s.volumes.splice(j, 1)" />
+          </div>
+        </div>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
           <div class="flex flex-col gap-1"><label :for="`svc-port-${i}`" class="text-sm font-medium">Port</label><InputNumber :input-id="`svc-port-${i}`" v-model="s.port" :min="1" :max="65535" :use-grouping="false" placeholder="none" fluid /></div>
           <div class="flex flex-col gap-1"><label :for="`svc-rep-${i}`" class="text-sm font-medium">Replicas</label><InputNumber :input-id="`svc-rep-${i}`" v-model="s.replicas" :min="1" :max="64" fluid /></div>
@@ -92,7 +92,7 @@ const addService = () => form.value.services.push(newService(form.value.services
           </div>
           <div v-for="(e, j) in s.env" :key="j" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
             <InputText v-model="e.key" placeholder="NODE_ENV" autocomplete="off" class="font-mono" :aria-label="`Variable ${j + 1} name`" />
-            <ReferenceInput v-model="e.value" :app="appName" :own-services="form.services.map((x) => x.name.trim())" placeholder="production" :aria-label="`Variable ${j + 1} value`" />
+            <ReferenceInput v-model="e.value" :app="appName" :own-services="form.services.map((x) => x.name.trim())" :own-volumes="[...new Set([...form.remoteVolumes, ...form.services.flatMap((x) => x.volumes)].map((x) => x.name.trim()).filter(Boolean))]" placeholder="production" :aria-label="`Variable ${j + 1} value`" />
             <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="s.env.splice(j, 1)" />
           </div>
           <div class="flex flex-col gap-1">
@@ -101,6 +101,32 @@ const addService = () => form.value.services.push(newService(form.value.services
           </div>
         </div>
       </Panel>
+    </section>
+
+    <!-- remote volumes -->
+    <section class="flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <h3 class="font-medium">Remote volumes <span class="text-muted-color font-normal text-sm">(SMB, NFS)</span></h3>
+        <Button label="Add remote volume" icon="pi pi-plus" size="small" severity="secondary" text @click="form.remoteVolumes.push(newRemoteVolume())" />
+      </div>
+      <div v-for="(v, i) in form.remoteVolumes" :key="i" class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] p-3 flex flex-col gap-3">
+        <div class="grid sm:grid-cols-[10rem_8rem_1fr_auto] gap-2 items-end">
+          <div class="flex flex-col gap-1"><label :for="`rv-name-${i}`" class="text-sm font-medium">Name</label><InputText :id="`rv-name-${i}`" v-model="v.name" placeholder="media" class="font-mono" autocomplete="off" /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-type-${i}`" class="text-sm font-medium">Type</label><Select :input-id="`rv-type-${i}`" v-model="v.type" :options="['smb', 'nfs']" fluid /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-host-${i}`" class="text-sm font-medium">Host</label><InputText :id="`rv-host-${i}`" v-model="v.host" placeholder="nas.local" autocomplete="off" /></div>
+          <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove remote volume" @click="form.remoteVolumes.splice(i, 1)" />
+        </div>
+        <div v-if="v.type === 'smb'" class="grid sm:grid-cols-4 gap-2">
+          <div class="flex flex-col gap-1"><label :for="`rv-share-${i}`" class="text-sm font-medium">Share</label><InputText :id="`rv-share-${i}`" v-model="v.share" placeholder="media" autocomplete="off" /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-path-${i}`" class="text-sm font-medium">Folder in the share</label><InputText :id="`rv-path-${i}`" v-model="v.path" placeholder="optional" autocomplete="off" /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-user-${i}`" class="text-sm font-medium">User</label><InputText :id="`rv-user-${i}`" v-model="v.user" autocomplete="off" /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-domain-${i}`" class="text-sm font-medium">Domain</label><InputText :id="`rv-domain-${i}`" v-model="v.domain" placeholder="optional" autocomplete="off" /></div>
+        </div>
+        <div v-else class="grid sm:grid-cols-[1fr_8rem] gap-2">
+          <div class="flex flex-col gap-1"><label :for="`rv-export-${i}`" class="text-sm font-medium">Export</label><InputText :id="`rv-export-${i}`" v-model="v.export" placeholder="/exports/media" class="font-mono" autocomplete="off" /></div>
+          <div class="flex flex-col gap-1"><label :for="`rv-ver-${i}`" class="text-sm font-medium">Version</label><Select :input-id="`rv-ver-${i}`" v-model="v.version" :options="['3', '4', '4.1', '4.2']" fluid /></div>
+        </div>
+      </div>
     </section>
 
     <!-- build -->
