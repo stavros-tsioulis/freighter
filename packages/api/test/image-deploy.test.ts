@@ -89,7 +89,11 @@ describe("images in the app view, and changing them", () => {
   it("lists the image of each service on GET /apps/:app", async () => {
     const t = await makeApi();
     seed(t);
-    expect((await t.request("/v1/apps/shop", { token: t.tokens.viewer })).json.images).toEqual({ web: "ghcr.io/org/shop:1" });
+    const shop = (await t.request("/v1/apps/shop", { token: t.tokens.viewer })).json;
+    expect(shop.images).toEqual({ web: "ghcr.io/org/shop:1" });
+    expect(shop.imageDetails).toEqual({ web: { image: "ghcr.io/org/shop:1" } });
+    t.registry.apps.upsert({ name: "grafana", server: "local", manifestText: "name: grafana\nservices:\n  web:\n    image: grafana/grafana\n    containerPort: 3000\n    volumes:\n      data: /var/lib/grafana\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await t.request("/v1/apps/grafana", { token: t.tokens.viewer })).json.imageDetails).toEqual({ web: { image: "grafana/grafana", containerPort: 3000, volumes: { data: "/var/lib/grafana" } } });
     t.registry.apps.upsert({ name: "blog", server: "local", manifestText: "name: blog\nservices:\n  web:\n    command: x\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
     expect((await t.request("/v1/apps/blog", { token: t.tokens.viewer })).json.images).toEqual({});
   });

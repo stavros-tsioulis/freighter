@@ -10,12 +10,18 @@ const { data: app, isLoading, error } = useApp(name);
 useHead({ title: computed(() => `${name.value} - Freighter`) });
 
 // The open tab lives in the URL, so reloads and shared links land on the same tab.
-const TABS = ["services", "domains", "deployments", "image", "source", "logs", "env"] as const;
-const hasImages = computed(() => Object.keys(app.value?.images ?? {}).length > 0);
+const TABS = ["services", "domains", "deployments", "source", "logs", "env"] as const;
 const tab = computed({
-  get: () => (TABS.includes(route.query.tab as never) ? String(route.query.tab) : "services"),
+  // "image" was a tab of its own; images are now what the Source tab shows, so old links still land there.
+  get: () => (route.query.tab === "image" ? "source" : TABS.includes(route.query.tab as never) ? String(route.query.tab) : "services"),
   set: (t: string) => void router.replace({ query: { ...route.query, tab: t === "services" ? undefined : t } }),
 });
+
+const { data: projects } = useProjects();
+const project = computed(() => projects.value?.find((p) => p.id === app.value?.projectId));
+const move = useMoveApp();
+const projectOptions = computed(() => [{ id: null, name: "No project" }, ...(projects.value ?? [])]);
+const canMove = computed(() => can("deployer") && (projects.value?.length ?? 0) > 0);
 
 const running = computed(() => app.value?.services.filter((s) => s.activeState === "active").length ?? 0);
 const failed = computed(() => app.value?.services.some((s) => s.activeState === "failed") ?? false);
@@ -29,12 +35,24 @@ const servicesLabel = computed(() => {
   <div class="flex flex-col gap-6">
     <PageHeader :title="name">
       <template #before>
-        <NuxtLink to="/" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1.5">
-          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps
+        <NuxtLink to="/apps" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1.5">
+          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps<template v-if="project"> / {{ project.name }}</template>
         </NuxtLink>
       </template>
-      <template v-if="app && can('admin')" #actions>
-        <Button label="Delete app" icon="pi pi-trash" text size="small" severity="danger" @click="showDelete = true" />
+      <template v-if="app && (can('admin') || canMove)" #actions>
+        <Select
+          v-if="canMove"
+          :model-value="app.projectId"
+          :options="projectOptions"
+          option-label="name"
+          option-value="id"
+          size="small"
+          class="w-44"
+          aria-label="Project"
+          :loading="move.isPending.value"
+          @update:model-value="(id: string | null) => move.mutate({ app: app!.name, projectId: id })"
+        />
+        <Button v-if="can('admin')" label="Delete app" icon="pi pi-trash" text size="small" severity="danger" @click="showDelete = true" />
       </template>
       <template v-if="app" #beside>
         <StatusTag :state="failed && app.status === 'deployed' ? 'failed' : app.status" :label="failed && app.status === 'deployed' ? 'Service failed' : undefined" />
@@ -59,7 +77,6 @@ const servicesLabel = computed(() => {
           <Tab value="services">Services</Tab>
           <Tab value="domains">Domains</Tab>
           <Tab value="deployments">Deployments</Tab>
-          <Tab v-if="hasImages" value="image">Image</Tab>
           <Tab value="source">Source</Tab>
           <Tab value="logs">Logs</Tab>
           <Tab value="env">Secrets</Tab>
@@ -68,7 +85,6 @@ const servicesLabel = computed(() => {
           <TabPanel value="services"><AppServicesTab :app="app" /></TabPanel>
           <TabPanel value="domains"><AppDomainsTab :app="app" /></TabPanel>
           <TabPanel value="deployments"><AppDeploymentsTab :app="app" /></TabPanel>
-          <TabPanel v-if="hasImages" value="image"><AppImageTab :app="app" /></TabPanel>
           <TabPanel value="source"><AppSourceTab :app="app" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab :app="app" /></TabPanel>
           <TabPanel value="env"><AppEnvTab :app="app" /></TabPanel>

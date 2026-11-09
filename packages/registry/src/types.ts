@@ -13,6 +13,16 @@ export interface AppRow {
   status: "deployed" | "undeployed" | "missing" | "unknown";
   syncedAt: string | null;
   updatedAt: string;
+  /** The project this app is organized under, if any. */
+  projectId: string | null;
+}
+export interface ProjectRow {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  appCount: number;
 }
 export interface ServiceRow {
   app: string;

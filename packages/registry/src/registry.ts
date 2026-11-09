@@ -18,6 +18,7 @@ import {
   type SshKeyRow,
   type MetricSampleRow,
   type Role,
+  type ProjectRow,
   type ServiceRow,
   type TokenRow,
 } from "./types.ts";
@@ -34,7 +35,17 @@ const appFrom = (r: Row): AppRow => ({
   status: r.status as AppRow["status"],
   syncedAt: r.synced_at as string | null,
   updatedAt: r.updated_at as string,
+  projectId: (r.project_id as string | null) ?? null,
 });
+const projectFrom = (r: Row): ProjectRow => ({
+  id: r.id as string,
+  name: r.name as string,
+  description: r.description as string,
+  createdAt: r.created_at as string,
+  updatedAt: r.updated_at as string,
+  appCount: Number(r.app_count ?? 0),
+});
+const PROJECT_SELECT = "SELECT p.*, (SELECT COUNT(*) FROM apps a WHERE a.project_id = p.id) AS app_count FROM projects p";
 const serviceFrom = (r: Row): ServiceRow => ({
   app: r.app as string,
   name: r.name as string,
@@ -236,7 +247,20 @@ export interface Registry {
     markSeen(name: string, info: { agentVersion?: string | null; hostname?: string | null; host?: HostStatus | null }): void;
     markError(name: string, message: string): void;
   };
+  /** Projects organize apps; they carry no settings of their own. */
+  projects: {
+    /** Throws if the name is taken (case-insensitively). */
+    create(p: { name: string; description?: string; createdBy?: string | null }): ProjectRow;
+    get(id: string): ProjectRow | undefined;
+    list(): ProjectRow[];
+    /** Rename or re-describe. False if there is no such project; throws if the new name is taken. */
+    update(id: string, patch: { name?: string; description?: string }): boolean;
+    /** Delete the project; its apps stay and become ungrouped. */
+    remove(id: string): boolean;
+  };
   apps: {
+    /** Put an app in a project (null: ungrouped). False if the app or the project is unknown. */
+    setProject(name: string, projectId: string | null): boolean;
     /** Pin an app to a server if it has no row yet (never moves an existing app). */
     ensure(name: string, server: string): void;
     upsert(a: { name: string; server?: string; manifestText: string | null; currentRelease: string | null; previousRelease: string | null; status: AppRow["status"] }): void;
@@ -493,7 +517,32 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
       },
     },
 
+    projects: {
+      create(p) {
+        const id = `prj_${randomBytes(6).toString("hex")}`;
+        const t = now();
+        run("INSERT INTO projects (id, name, description, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", id, p.name, p.description ?? "", p.createdBy ?? null, t, t);
+        return projectFrom(one(`${PROJECT_SELECT} WHERE p.id = ?`, id)!);
+      },
+      get: (id) => {
+        const r = one(`${PROJECT_SELECT} WHERE p.id = ?`, id);
+        return r && projectFrom(r);
+      },
+      list: () => all(`${PROJECT_SELECT} ORDER BY p.name COLLATE NOCASE`).map(projectFrom),
+      update(id, patch) {
+        const cur = one("SELECT name, description FROM projects WHERE id = ?", id);
+        if (!cur) return false;
+        run("UPDATE projects SET name = ?, description = ?, updated_at = ? WHERE id = ?", patch.name ?? (cur.name as string), patch.description ?? (cur.description as string), now(), id);
+        return true;
+      },
+      remove: (id) => Number(run("DELETE FROM projects WHERE id = ?", id).changes) > 0, // apps.project_id is set to NULL
+    },
+
     apps: {
+      setProject(name, projectId) {
+        if (projectId !== null && !one("SELECT 1 AS x FROM projects WHERE id = ?", projectId)) return false;
+        return Number(run("UPDATE apps SET project_id = ? WHERE name = ?", projectId, name).changes) > 0;
+      },
       ensure(name, server) {
         run("INSERT OR IGNORE INTO apps (name, server, status, updated_at) VALUES (?, ?, 'unknown', ?)", name, server, now());
       },

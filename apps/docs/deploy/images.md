@@ -68,7 +68,7 @@ Tags move. When a release is built, Freighter pulls the image, records its diges
 
 ### Redeploy a tag
 
-Pushed a new `:latest` or fixed `:1.4`? Pull it again and release the result. In the dashboard, open the app's **Image** tab and choose **Pull again and redeploy**; **Change image** on a service runs a different image (usually a new tag) and keeps the rest of `app.yaml`. From the CLI:
+Pushed a new `:latest` or fixed `:1.4`? Pull it again and release the result. In the dashboard, open the app's **Source** tab and choose **Pull again and redeploy**; **Change image** on a service runs a different image (usually a new tag) and keeps the rest of `app.yaml`. From the CLI:
 
 ```sh
 freighter redeploy shop
@@ -86,13 +86,13 @@ freighter registry list
 freighter registry remove ghcr.io
 ```
 
-You can also add a login right where you need it (admins): the **Deploy → Container image** form lists each registry its images come from and offers **Add login for a private image**; an app's **Image** tab has **Add login** next to a registry without one; and when a pull fails with an authentication error, the deployment shows **Add or replace the login** for that registry, after which **Back to the form** keeps what you typed so you can deploy again. Deployers who can't add logins are told to ask an admin.
+You can also add a login right where you need it (admins): the **Deploy → Container image** form lists each registry its images come from and offers **Add login for a private image**; an app's **Source** tab has **Add login** next to a registry without one; and when a pull fails with an authentication error, the deployment shows **Add or replace the login** for that registry, after which **Back to the form** keeps what you typed so you can deploy again. Deployers who can't add logins are told to ask an admin.
 
 Use `docker.io` for Docker Hub.
 
 ### Several logins for one registry
 
-A registry can have more than one login (say, two GitHub accounts). Each app pulls with the one chosen for it, per registry. In **Deploy → Container image**, a registry with several logins shows a **Pull with** picker, and the deploy button waits until you choose; the choice is remembered for the app, so redeploys, **Pull again** and **Change image** use it. Change it any time on the app's **Image** tab. From the CLI, `freighter push app.yaml --login ghcr.io=alice` chooses (and remembers) it, and `freighter registry remove ghcr.io --username alice` says which login to delete. With one login for a registry nothing needs choosing. With several and no choice, a deploy is refused rather than guessing which account to use. A login applies to every image from that registry host. Prefer an access token with read-only access to the package over a password.
+A registry can have more than one login (say, two GitHub accounts). Each app pulls with the one chosen for it, per registry. In **Deploy → Container image**, a registry with several logins shows a **Pull with** picker, and the deploy button waits until you choose; the choice is remembered for the app, so redeploys, **Pull again** and **Change image** use it. Change it any time on the app's **Source** tab. From the CLI, `freighter push app.yaml --login ghcr.io=alice` chooses (and remembers) it, and `freighter registry remove ghcr.io --username alice` says which login to delete. With one login for a registry nothing needs choosing. With several and no choice, a deploy is refused rather than guessing which account to use. A login applies to every image from that registry host. Prefer an access token with read-only access to the package over a password.
 
 ## From CI
 

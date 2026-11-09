@@ -221,6 +221,8 @@ export function createApi(ctx: ApiContext): Api {
     apps: ctx.registry.apps.list().map((a) => ({ ...a, manifestText: undefined, services: ctx.registry.services.list(a.name) })),
   })));
 
+  router.get("/v1/projects", route("viewer", () => ({ projects: ctx.registry.projects.list() })));
+
   /** service -> image reference, as written in the app's current app.yaml ({} for an app without image services). */
   const imagesOf = (manifestText: string | null | undefined): Record<string, string> => {
     if (!manifestText) return {};
@@ -231,11 +233,24 @@ export function createApi(ctx: ApiContext): Api {
     }
   };
 
+  /** For each service that runs an image, what app.yaml says about its container (the Source tab shows it). */
+  const imageDetailsOf = (manifestText: string | null | undefined): Record<string, { image: string; containerPort?: number; volumes?: Record<string, string> }> => {
+    if (!manifestText) return {};
+    try {
+      const m = parseManifest(manifestText, { legacy: true });
+      return Object.fromEntries(
+        Object.entries(m.services).flatMap(([name, s]) => (s.image ? [[name, { image: s.image, ...(s.containerPort ? { containerPort: s.containerPort } : {}), ...(s.volumes ? { volumes: s.volumes } : {}) }]] : [])),
+      );
+    } catch {
+      return {};
+    }
+  };
+
   router.get("/v1/apps/:app", route("viewer", (event) => {
     const name = appParam(event);
     const a = ctx.registry.apps.get(name);
     if (!a) throw new ApiError(404, "not_found", `unknown app "${name}"`);
-    return { ...a, images: imagesOf(a.manifestText), registryLogins: ctx.registry.registryCredentials.appChoices(name), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
+    return { ...a, images: imagesOf(a.manifestText), imageDetails: imageDetailsOf(a.manifestText), registryLogins: ctx.registry.registryCredentials.appChoices(name), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
   }));
 
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
@@ -633,6 +648,50 @@ export function createApi(ctx: ApiContext): Api {
     ctx.registry.sshKeys.remove(k.id);
     audit(who, "ssh-key.remove", undefined, { name: k.name, fingerprint: k.fingerprint });
     return { ok: true };
+  }));
+
+  // ---- projects: a place to organize apps in ----
+  const projectBody = z.object({ name: z.string().trim().min(1).max(60), description: z.string().trim().max(300).default("") });
+  const projectParam = (event: H3Event) => {
+    const p = ctx.registry.projects.get(getRouterParam(event, "id") ?? "");
+    if (!p) throw new ApiError(404, "not_found", "unknown project");
+    return p;
+  };
+  const taken = (name: string, except?: string) => ctx.registry.projects.list().some((p) => p.id !== except && p.name.toLowerCase() === name.toLowerCase());
+
+  router.post("/v1/projects", route("admin", async (event, who) => {
+    const b = await body(event, projectBody);
+    if (taken(b.name)) throw new ApiError(409, "conflict", `there is already a project named "${b.name}"`);
+    const row = ctx.registry.projects.create({ ...b, createdBy: who.id });
+    audit(who, "project.create", undefined, { project: row.name });
+    return row;
+  }));
+
+  router.patch("/v1/projects/:id", route("admin", async (event, who) => {
+    const cur = projectParam(event);
+    const b = await body(event, projectBody.partial());
+    if (b.name !== undefined && taken(b.name, cur.id)) throw new ApiError(409, "conflict", `there is already a project named "${b.name}"`);
+    ctx.registry.projects.update(cur.id, b);
+    audit(who, "project.update", undefined, { project: b.name ?? cur.name, was: cur.name });
+    return ctx.registry.projects.get(cur.id);
+  }));
+
+  // Apps in the project are kept and become ungrouped.
+  router.delete("/v1/projects/:id", route("admin", (event, who) => {
+    const cur = projectParam(event);
+    ctx.registry.projects.remove(cur.id);
+    audit(who, "project.delete", undefined, { project: cur.name, ungrouped: cur.appCount });
+    return { ok: true };
+  }));
+
+  // Move an app into a project (null: out of any project).
+  router.put("/v1/apps/:app/project", route("deployer", async (event, who) => {
+    const name = appParam(event);
+    const { projectId } = await body(event, z.object({ projectId: z.string().nullable() }));
+    if (!ctx.registry.apps.get(name)) throw new ApiError(404, "not_found", `unknown app "${name}"`);
+    if (!ctx.registry.apps.setProject(name, projectId)) throw new ApiError(404, "not_found", "unknown project");
+    audit(who, "app.project", name, { project: projectId ? ctx.registry.projects.get(projectId)?.name : null });
+    return { projectId };
   }));
 
   // ---- container registries: logins used when pulling the images of image services ----

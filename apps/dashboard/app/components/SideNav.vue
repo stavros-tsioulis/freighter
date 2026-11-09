@@ -9,7 +9,8 @@ const groups = computed(() => [
   {
     label: "",
     items: [
-      { to: "/", label: "Apps", icon: "pi pi-th-large" },
+      { to: "/", label: "Overview", icon: "pi pi-th-large" },
+      { to: "/apps", label: "Apps", icon: "pi pi-box" },
       { to: "/servers", label: "Servers", icon: "pi pi-server" },
       { to: "/certs", label: "Certificates", icon: "pi pi-shield" },
     ],
@@ -25,14 +26,14 @@ const groups = computed(() => [
           items: [
             { to: "/settings/tokens", label: "API tokens", icon: "pi pi-key" },
             { to: "/settings/ssh-keys", label: "SSH keys", icon: "pi pi-lock" },
-            { to: "/settings/registries", label: "Registry logins", icon: "pi pi-box" },
+            { to: "/settings/registries", label: "Registry logins", icon: "pi pi-id-card" },
             { to: "/settings/audit", label: "Audit log", icon: "pi pi-history" },
           ],
         },
       ]
     : []),
 ]);
-const active = (to: string) => (to === "/" ? route.path === "/" || route.path.startsWith("/apps") : route.path.startsWith(to));
+const active = (to: string) => (to === "/" ? route.path === "/" : route.path === to || route.path.startsWith(`${to}/`));
 const roleLabel = computed(() => ({ viewer: "Viewer", deployer: "Deployer", admin: "Admin" })[me.value?.role ?? "viewer"]);
 </script>
 

@@ -23,8 +23,12 @@ export interface AppRow {
   manifestText?: string | null;
   /** service -> image reference, for services that run an image. */
   images?: Record<string, string>;
+  /** service -> what app.yaml says about its container. */
+  imageDetails?: Record<string, { image: string; containerPort?: number; volumes?: Record<string, string> }>;
   /** host -> user name of the registry login chosen for this app, where it has chosen one. */
   registryLogins?: Record<string, string>;
+  /** The project this app is organized under, if any. */
+  projectId: string | null;
   currentRelease: string | null;
   previousRelease: string | null;
   status: "deployed" | "undeployed" | "missing" | "unknown";
@@ -235,4 +239,13 @@ export interface RegistryLogin {
   username: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+  appCount: number;
 }

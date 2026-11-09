@@ -235,4 +235,16 @@ export const migrations: string[] = [
     PRIMARY KEY (app, host)
   );
   `,
+  `
+  -- Projects: a place to organize apps in. An app belongs to at most one; deleting a project only ungroups its apps.
+  CREATE TABLE projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    description TEXT NOT NULL DEFAULT '',
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  ALTER TABLE apps ADD COLUMN project_id TEXT REFERENCES projects(id) ON DELETE SET NULL;
+  `,
 ];

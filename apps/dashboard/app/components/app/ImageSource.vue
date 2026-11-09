@@ -15,7 +15,19 @@ const loginsOf = (host: string) => (registries.value ?? []).filter((r) => r.host
 const rows = computed(() =>
   Object.entries(props.app.images ?? {}).map(([service, image]) => {
     const host = imageHost(image);
-    return { service, image, host, logins: loginsOf(host), chosen: props.app.registryLogins?.[host] ?? null };
+    const d = props.app.imageDetails?.[service];
+    const svc = props.app.services.find((x) => x.name === service);
+    return {
+      service,
+      image,
+      host,
+      logins: loginsOf(host),
+      chosen: props.app.registryLogins?.[host] ?? null,
+      containerPort: d?.containerPort ?? null,
+      volumes: Object.entries(d?.volumes ?? {}),
+      hostnames: svc?.hostnames ?? [],
+      port: svc?.port ?? null,
+    };
   }),
 );
 
@@ -57,24 +69,37 @@ async function saveEdit() {
   <div class="flex flex-col gap-4">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <p class="text-sm text-muted-color max-w-[60ch]">
-        The server pulls these images and runs them with Podman. Each release is pinned to the exact image content it pulled, so a rollback returns to that content even if the tag has moved on.
+        This app runs container images, pulled by the server from a registry and run with Podman. Each release is pinned to the exact image content it pulled, so a rollback returns to that content even if the tag has moved on.
       </p>
       <Button v-if="can('deployer')" label="Pull again and redeploy" icon="pi pi-cloud-download" size="small" :loading="redeploy.isPending.value" title="Pull every image again and release the result" @click="pullAgain" />
     </div>
 
     <DataTable scrollable :value="rows" data-key="service">
       <Column header="Service" field="service"><template #body="{ data }"><span class="font-medium">{{ data.service }}</span></template></Column>
-      <Column header="Image"><template #body="{ data }"><code class="break-all">{{ data.image }}</code></template></Column>
-      <Column header="Registry">
+      <Column header="Image">
         <template #body="{ data }">
-          <div class="flex flex-wrap items-center gap-2">
-            <span>{{ data.host }}</span>
+          <code class="break-all">{{ data.image }}</code>
+          <div class="flex flex-wrap items-center gap-2 mt-1 text-xs text-muted-color">
+            <span>from {{ data.host }}</span>
             <template v-if="data.logins.length > 1 && can('deployer')">
               <Select :model-value="data.chosen" :options="data.logins" placeholder="Choose a login" size="small" class="w-44" :aria-label="`Login for ${data.host}`" :invalid="!data.chosen" :loading="choose.isPending.value" @update:model-value="choose.mutate({ host: data.host, username: $event })" />
             </template>
             <Tag v-else-if="data.logins.length === 1" :value="`login: ${data.logins[0]}`" severity="success" />
             <Button v-else-if="can('admin')" label="Add login" icon="pi pi-key" size="small" text title="For a private image" @click="loginFor = data.host" />
           </div>
+        </template>
+      </Column>
+      <Column header="Reachable at">
+        <template #body="{ data }">
+          <div v-for="h in data.hostnames" :key="h"><a :href="`https://${h}`" target="_blank" rel="noopener" class="text-primary hover:underline">{{ h }}</a></div>
+          <span v-if="data.port" class="text-xs text-muted-color font-mono block">127.0.0.1:{{ data.port }} → container {{ data.containerPort ?? "port from the image" }}</span>
+          <span v-else-if="!data.hostnames.length" class="text-muted-color">–</span>
+        </template>
+      </Column>
+      <Column header="Volumes">
+        <template #body="{ data }">
+          <div v-for="[n, path] in data.volumes" :key="n" class="text-xs font-mono"><span class="text-muted-color">{{ n }}</span> → {{ path }}</div>
+          <span v-if="!data.volumes.length" class="text-muted-color">–</span>
         </template>
       </Column>
       <Column v-if="can('deployer')" header="" class="text-right whitespace-nowrap">

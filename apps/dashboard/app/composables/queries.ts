@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, RegistryLogin, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -30,6 +30,51 @@ export function useNotify() {
 // ---- reads ----
 export const useApps = () =>
   useQuery({ queryKey: ["apps"], queryFn: () => api<{ apps: AppRow[] }>("/apps").then((r) => r.apps), refetchInterval: 10_000 });
+
+export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => api<{ projects: Project[] }>("/projects").then((r) => r.projects) });
+
+export function useSaveProject() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { id?: string; name: string; description: string }) =>
+      v.id ? api<Project>(`/projects/${v.id}`, { method: "PATCH", body: { name: v.name, description: v.description } }) : api<Project>("/projects", { method: "POST", body: { name: v.name, description: v.description } }),
+    onSuccess: (p, v) => {
+      notify.ok(v.id ? "Project saved" : "Project created", p.name);
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+}
+
+export function useDeleteProject() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (id: string) => api(`/projects/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      notify.ok("Project deleted", "Its apps were kept.");
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["apps"] });
+      void qc.invalidateQueries({ queryKey: ["app"] });
+    },
+    onError: (e) => notify.fail("Could not delete the project", e),
+  });
+}
+
+/** Move an app into a project, or (null) out of any project. */
+export function useMoveApp() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { app: string; projectId: string | null }) => api(`/apps/${v.app}/project`, { method: "PUT", body: { projectId: v.projectId } }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["projects"] });
+      void qc.invalidateQueries({ queryKey: ["apps"] });
+      void qc.invalidateQueries({ queryKey: ["app"] });
+    },
+    onError: (e) => notify.fail("Could not move the app", e),
+  });
+}
 
 export const useApp = (name: MaybeRef<string>) =>
   useQuery({ queryKey: ["app", name], queryFn: () => api<AppRow>(`/apps/${toValue(name)}`), refetchInterval: 10_000, retry: false });

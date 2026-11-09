@@ -13,11 +13,11 @@ describe("registry", () => {
   it("migrates once and is reopenable", async () => {
     const path = join(await mkdtemp(join(tmpdir(), "freighter-db-")), "sub", "r.db");
     const a = openRegistry(path);
-    expect(a.schemaVersion()).toBe(11);
+    expect(a.schemaVersion()).toBe(12);
     a.tokens.create({ name: "x", role: "admin" });
     a.close();
     const b = openRegistry(path);
-    expect(b.schemaVersion()).toBe(11);
+    expect(b.schemaVersion()).toBe(12);
     expect(b.tokens.list()).toHaveLength(1);
   });
 
@@ -97,7 +97,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.apps.get("shop")?.status).toBe("deployed");
     r.metrics.add([{ app: "shop", service: "web", unit: "u", active: "active", memoryBytes: 1, cpuNanos: 2, restarts: 0 }]);
     expect(r.metrics.series("shop", "")).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.apps.get("shop")?.server).toBe("local");
     expect(r.servers.list().map((s) => [s.name, s.kind, s.status, s.appCount])).toEqual([["local", "local", "online", 1]]);
   });
@@ -213,7 +213,7 @@ describe("registry", () => {
     old.exec("INSERT INTO deployments (id, app, action, status, source, created_at) VALUES ('d1', 'shop', 'deploy', 'success', 'api', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.deployments.get("d1")).toMatchObject({ trigger: "upload", commitSha: null });
   });
 
@@ -256,7 +256,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.gitLinks.get("shop")).toMatchObject({ repository: "git@github.com:a/b.git", sshKeyId: null });
   });
 
@@ -314,7 +314,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.gitLinks.get("shop")).toMatchObject({ branch: "main", sshKeyId: null });
     expect(r.sshKeys.list()).toEqual([]);
   });
@@ -436,8 +436,31 @@ describe("registry credentials", () => {
     old.prepare("INSERT INTO registry_credentials VALUES (?, ?, ?, NULL, 'x', 'x')").run("ghcr.io", "me", secrets.seal("legacy-pw"));
     old.close();
     const r = openRegistry(path, { secrets });
-    expect(r.schemaVersion()).toBe(11);
+    expect(r.schemaVersion()).toBe(12);
     expect(r.registryCredentials.secret("ghcr.io", "me")).toEqual({ username: "me", password: "legacy-pw" });
     expect(r.registryCredentials.resolve("shop", "ghcr.io")).toEqual({ username: "me", password: "legacy-pw" });
+  });
+
+  it("organizes apps in projects; deleting a project only ungroups its apps", () => {
+    const r = mem();
+    r.apps.ensure("shop", "local");
+    r.apps.ensure("blog", "local");
+    const p = r.projects.create({ name: "Storefront", description: "web + api" });
+    expect(p).toMatchObject({ name: "Storefront", description: "web + api", appCount: 0 });
+    expect(() => r.projects.create({ name: "storefront" })).toThrow(); // names are unique, ignoring case
+    expect(r.apps.setProject("shop", p.id)).toBe(true);
+    expect(r.apps.setProject("shop", "prj_nope")).toBe(false);
+    expect(r.apps.setProject("ghost", p.id)).toBe(false);
+    expect(r.apps.get("shop")?.projectId).toBe(p.id);
+    expect(r.apps.get("blog")?.projectId).toBeNull();
+    expect(r.projects.get(p.id)?.appCount).toBe(1);
+    // a sync of the app leaves its project alone
+    r.apps.upsert({ name: "shop", manifestText: null, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect(r.apps.get("shop")?.projectId).toBe(p.id);
+    expect(r.projects.update(p.id, { name: "Shop" })).toBe(true);
+    expect(r.projects.get(p.id)).toMatchObject({ name: "Shop", description: "web + api" });
+    expect(r.projects.remove(p.id)).toBe(true);
+    expect(r.apps.get("shop")?.projectId).toBeNull();
+    expect(r.projects.list()).toEqual([]);
   });
 });

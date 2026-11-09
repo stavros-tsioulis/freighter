@@ -7,6 +7,7 @@ import { emptyForm, fromSettings, hasService, toSettings } from "~/utils/setting
 const props = defineProps<{ app: AppRow }>();
 const { can } = useSession();
 const appName = computed(() => props.app.name);
+const hasImages = computed(() => Object.keys(props.app.images ?? {}).length > 0);
 const { data: link, isLoading } = useGitLink(appName);
 const save = useSaveGitLink(appName);
 const patch = usePatchGitLink(appName);
@@ -92,10 +93,13 @@ function ask(header: string, message: string, label: string, run: () => void) {
 </script>
 
 <template>
-  <Skeleton v-if="isLoading" height="10rem" />
+  <!-- an app that runs container images: its source is the image, not an archive or a repository -->
+  <AppImageSource v-if="hasImages" :app="app" />
 
-  <!-- not linked -->
-  <div v-else-if="!link" class="flex flex-col gap-4 max-w-2xl">
+  <Skeleton v-if="isLoading && !hasImages" height="10rem" />
+
+  <!-- not linked (and not an image app, which has nothing to link) -->
+  <div v-else-if="!link && !hasImages" class="flex flex-col gap-4 max-w-2xl">
     <Message v-if="!can('admin')" severity="info">Deployed from uploaded artifacts. An admin can link a Git repository.</Message>
     <p v-if="can('admin')" class="text-sm text-muted-color">This app is deployed from uploaded archives. Link a repository to build and deploy it from Git instead.</p>
     <form v-if="can('admin')" class="grid gap-3" @submit.prevent="valid && linkRepo()">
@@ -125,7 +129,7 @@ function ask(header: string, message: string, label: string, run: () => void) {
   </div>
 
   <!-- linked -->
-  <div v-else class="flex flex-col gap-4">
+  <div v-else-if="link" class="flex flex-col gap-4" :class="{ 'mt-8 border-t border-[var(--fr-line)] pt-6': hasImages }">
     <div class="grid grid-cols-[9rem_1fr] gap-y-3 text-sm items-center max-w-3xl">
       <span class="text-muted-color">Repository</span><code class="break-all">{{ link.repository }}</code>
       <span class="text-muted-color">Branch</span>

@@ -25,12 +25,24 @@ curl -s -H "Authorization: Bearer $TOKEN" https://freighter.example.com/api/v1/a
 
 | | | Role |
 | --- | --- | --- |
-| `GET /apps` | apps with their services | viewer |
+| `GET /apps` | apps with their services; each has a `projectId` (or `null`) | viewer |
 | `GET /apps/:app` | one app, with services, recent deployments and `images` (service to image reference) | viewer |
 | `GET /apps/:app/releases` | releases on the server (`current`, `result`) | viewer |
 | `GET /apps/:app/metrics?minutes=60` | memory, CPU %, restarts and state per service over time | viewer |
 | `GET /apps/:app/logs?service=web&lines=200` | service journal | deployer |
 | `POST /apps/:app/start`, `/stop`, `/restart` | body `{"service": "web"}`, or `{}` for all | deployer |
+
+## Projects
+
+A project only groups apps; it has no effect on how they run. An app is in at most one project.
+
+| | | Role |
+| --- | --- | --- |
+| `GET /projects` | projects with their `appCount` | viewer |
+| `POST /projects` | `{"name": "Storefront", "description": "…"}`; names are unique, ignoring case (`409` otherwise) | admin |
+| `PATCH /projects/:id` | rename or re-describe | admin |
+| `DELETE /projects/:id` | delete the project; its apps are kept and become ungrouped | admin |
+| `PUT /apps/:app/project` | `{"projectId": "prj_…"}` to move the app into a project, `{"projectId": null}` to take it out | deployer |
 
 ## Deployments
 
