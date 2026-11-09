@@ -8,24 +8,18 @@ const props = defineProps<{ data: FlowNode["data"] }>();
 const s = computed(() => props.data.service!);
 const tone = computed(() => (s.value.activeState === "failed" ? "bad" : s.value.activeState === "active" ? "ok" : "idle"));
 const address = computed(() => s.value.hostnames[0] ?? (s.value.port ? `:${s.value.port}` : null));
-const what = computed(() => s.value.image ?? s.value.command ?? "");
+// The left band carries the state; the words are for screen readers and the tooltip.
+const state = computed(() => ({ active: "Running", failed: "Failed", inactive: "Stopped", activating: "Starting", deactivating: "Stopping" })[s.value.activeState] ?? s.value.activeState);
 </script>
 
 <template>
-  <div class="svc" :data-tone="tone" :data-selected="data.selected || undefined" :aria-label="`${s.name}, ${s.activeState}`">
+  <div class="svc" :data-tone="tone" :data-selected="data.selected || undefined" :aria-label="`${s.name}, ${state}`" :title="state">
     <Handle type="target" :position="Position.Left" :connectable="false" />
-    <div class="flex items-start justify-between gap-2">
-      <span class="svc-name">{{ s.name }}</span>
-      <StatusTag :state="s.activeState" class="!text-[0.8rem] !font-normal" />
-    </div>
+    <span class="svc-name">{{ s.name }}</span>
     <div class="svc-line" :title="s.hostnames.join(', ')">
       <i :class="s.hostnames.length ? 'pi pi-globe' : 'pi pi-link'" aria-hidden="true" />
       <span v-if="address" class="truncate">{{ address }}<template v-if="s.hostnames.length > 1"> +{{ s.hostnames.length - 1 }}</template></span>
-      <span v-else class="text-muted-color">No address</span>
-    </div>
-    <div class="svc-line font-mono" :title="what">
-      <i :class="s.image ? 'pi pi-box' : 'pi pi-code'" aria-hidden="true" />
-      <span class="truncate">{{ what || "–" }}</span>
+      <span v-else>No address</span>
     </div>
     <Handle type="source" :position="Position.Right" :connectable="false" />
   </div>

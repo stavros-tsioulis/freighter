@@ -2,7 +2,10 @@ import dagre from "@dagrejs/dagre";
 import type { GraphApp, GraphEdge, GraphService, ProjectGraph } from "~/types";
 
 /** Card geometry, in canvas pixels. Groups are sized from the number of services they hold. */
-export const CARD = { w: 264, h: 96, gap: 12, pad: 14, head: 48 } as const;
+export const CARD = { w: 264, h: 66, gap: 12, pad: 14, head: 48 } as const;
+/** Cards snap to this grid when dragged, and it is the spacing of the dots behind them. */
+export const GRID = 22;
+const snap = (n: number) => Math.round(n / GRID) * GRID;
 
 export const appNodeId = (app: string) => `app:${app}`;
 export const serviceNodeId = (app: string, service: string) => `svc:${app}/${service}`;
@@ -66,7 +69,7 @@ export function autoLayout(apps: GraphApp[], edges: GraphEdge[]): Record<string,
   return Object.fromEntries(
     apps.map((a) => {
       const n = g.node(a.name)!;
-      return [appNodeId(a.name), { x: Math.round(n.x - n.width / 2), y: Math.round(n.y - n.height / 2) }];
+      return [appNodeId(a.name), { x: snap(n.x - n.width / 2), y: snap(n.y - n.height / 2) }];
     }),
   );
 }

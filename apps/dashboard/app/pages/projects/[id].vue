@@ -27,13 +27,10 @@ const select = (s: { app: string; service?: string } | null) =>
 const canvas = ref<{ fit: () => void } | null>(null);
 const wrap = ref<HTMLElement | null>(null);
 
-const summary = computed(() => {
-  const g = graph.value;
-  if (!g) return "";
-  const services = g.apps.reduce((n, a) => n + a.services.length, 0);
-  const broken = g.edges.filter((e) => e.broken).length;
-  const parts = [`${g.apps.length} app${g.apps.length === 1 ? "" : "s"}`, `${services} service${services === 1 ? "" : "s"}`, `${g.edges.length} connection${g.edges.length === 1 ? "" : "s"}`];
-  return parts.join(", ") + (broken ? `. ${broken} can't resolve.` : ".");
+// Only worth saying when something needs attention; counts are visible on the canvas itself.
+const warning = computed(() => {
+  const n = graph.value?.edges.filter((e) => e.broken).length ?? 0;
+  return n ? `${n} connection${n === 1 ? "" : "s"} can't resolve.` : "";
 });
 </script>
 
@@ -45,7 +42,7 @@ const summary = computed(() => {
           <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Apps
         </NuxtLink>
         <h1 class="font-display text-[1.9rem] leading-none font-semibold truncate">{{ title }}</h1>
-        <p class="mt-1 text-sm text-muted-color">{{ summary || project?.description || "&nbsp;" }}</p>
+        <p v-if="warning || project?.description" class="mt-1 text-sm" :class="warning ? 'text-red-600 dark:text-red-400' : 'text-muted-color'">{{ warning || project?.description }}</p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <Button label="Fit" icon="pi pi-expand" size="small" severity="secondary" @click="canvas?.fit()" />

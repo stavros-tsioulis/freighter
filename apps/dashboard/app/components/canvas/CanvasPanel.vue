@@ -144,4 +144,5 @@ dd { margin: 0; }
 .conn-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.6rem; padding: 0.35rem 0.6rem; border: 1px solid var(--fr-line); border-radius: var(--p-border-radius-md); background: var(--fr-sunken); }
 .conn-row[data-broken] { border-color: color-mix(in srgb, var(--p-red-500) 45%, var(--fr-line)); }
 :deep(.p-tabpanels) { padding: 0; }
+:deep(.p-tablist) { --tab-fade: var(--fr-panel); }
 </style>

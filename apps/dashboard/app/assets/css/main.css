@@ -93,7 +93,13 @@ code, pre, kbd { font-family: var(--font-mono); font-size: 0.86em; }
 .p-datatable .p-datatable-tbody > tr:last-child > td { border-bottom: 0; }
 .p-datatable .p-paginator { background: var(--fr-sunken); border-top: 1px solid var(--fr-line); }
 
-.p-tablist, .p-tablist-content, .p-tablist-tab-list, .p-tablist-nav-button { background: transparent; }
+.p-tablist, .p-tablist-content, .p-tablist-tab-list { background: transparent; }
+/* The scroll buttons fade the tabs out with an outer shadow, which is never painted under the button itself, so the button
+   needs a solid background in the colour of the surface behind the tabs or the tabs show through right at the edge.
+   `--tab-fade` is that surface: the page by default, set it on .p-tablist where tabs sit on a panel. */
+.p-tablist { --tab-fade: var(--fr-page); }
+.p-tablist-nav-button { background: var(--tab-fade); }
+.p-tablist-nav-button:not(:focus-visible) { box-shadow: 0 0 10px 50px color-mix(in srgb, var(--tab-fade) 60%, transparent); }
 .p-tablist-tab-list { border-color: var(--fr-line); }
 .p-tabpanels { background: transparent; padding-inline: 0; }
 .p-tab { font-weight: 500; }

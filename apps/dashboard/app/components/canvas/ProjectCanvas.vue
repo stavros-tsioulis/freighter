@@ -7,7 +7,7 @@ import "@vue-flow/core/dist/style.css";
 import "@vue-flow/controls/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import type { ProjectGraph } from "~/types";
-import { buildFlow, type FlowEdge, type FlowNode } from "~/utils/graph";
+import { GRID, buildFlow, type FlowEdge, type FlowNode } from "~/utils/graph";
 
 type Selection = { app: string; service?: string } | null;
 const props = defineProps<{ graph: ProjectGraph; selected: Selection; editable: boolean }>();
@@ -47,7 +47,7 @@ onNodeDragStart(() => (dragging.value = true));
 onNodeDragStop(() => {
   dragging.value = false;
   const positions: ProjectGraph["layout"] = { ...props.graph.layout };
-  for (const n of getNodes.value) if (n.type === "app") positions[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+  for (const n of getNodes.value) if (n.type === "app") positions[n.id] = { x: Math.round(n.position.x / GRID) * GRID, y: Math.round(n.position.y / GRID) * GRID };
   emit("layout", positions);
 });
 onNodeClick(({ node }: NodeMouseEvent) => {
@@ -68,6 +68,8 @@ const minimapColor = (n: { data?: FlowNode["data"]; type?: string }) =>
     :edges="edges"
     :nodes-draggable="editable"
     :nodes-connectable="false"
+    :snap-to-grid="true"
+    :snap-grid="[GRID, GRID]"
     :elements-selectable="true"
     :min-zoom="0.2"
     :max-zoom="1.6"
@@ -82,7 +84,7 @@ const minimapColor = (n: { data?: FlowNode["data"]; type?: string }) =>
     <template #node-app="p"><CanvasAppGroupNode v-bind="p" /></template>
     <template #node-service="p"><CanvasServiceNode v-bind="p" /></template>
     <template #edge-connection="p"><CanvasConnectionEdge v-bind="p" /></template>
-    <Background :gap="22" :size="1.6" pattern-color="var(--canvas-dot)" />
+    <Background :gap="GRID" :size="1.6" pattern-color="var(--canvas-dot)" />
     <Controls position="bottom-left" :show-interactive="false" />
     <MiniMap pannable zoomable :node-color="minimapColor" :node-stroke-width="0" mask-color="rgb(0 0 0 / 0.08)" class="hidden md:block" />
   </VueFlow>
