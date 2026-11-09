@@ -13,12 +13,12 @@ const git = (cwd: string, ...args: string[]) =>
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A "server": origin repo with an old and a new version of the installer, a checkout of the old one, a fake systemctl. */
-async function server(installer: { good: string; bad: string }) {
+async function server(installer: { good: string; bad: string }, installed = "#!/bin/sh\n# old installer\n") {
   const root = await mkdtemp(join(tmpdir(), "freighter-up-"));
   const origin = `${root}/origin`;
   mkdirSync(`${origin}/infra`, { recursive: true });
   git(origin, "init", "-q", "-b", "main");
-  writeFileSync(`${origin}/infra/install.sh`, "#!/bin/sh\n# old installer\n");
+  writeFileSync(`${origin}/infra/install.sh`, installed);
   git(origin, "add", ".");
   git(origin, "commit", "-qm", "old");
   const old = git(origin, "rev-parse", "HEAD");
@@ -46,11 +46,11 @@ async function server(installer: { good: string; bad: string }) {
 
   const t = await makeDeps({ config: { agent: { upgradeDir: `${root}/state` } } });
   t.deps.installDir = dir;
-  const run = (ref: string, confirmSeconds = 30) => {
+  const run = (ref: string, confirmSeconds = 30, withContainers = false) => {
     mkdirSync(`${root}/state`, { recursive: true });
     writeFileSync(
       `${root}/upgrade.sh`,
-      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds }),
+      renderUpgradeScript({ stateDir: `${root}/state`, installDir: dir, ref, haproxy: "dedicated", haproxyMain: `${root}/haproxy.cfg`, haproxyReload: ["systemctl", "reload", "x"], confirmSeconds, withContainers }),
     );
     const child = spawn("sh", [`${root}/upgrade.sh`], {
       env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FREIGHTER_UNIT_DIR: units, FREIGHTER_POLL_SECONDS: "1" },
@@ -80,6 +80,8 @@ describe("renderUpgradeScript", () => {
     execFileSync("sh", ["-n"], { input: script });
     expect(script).toContain(`DIR='/o'\\''pt'`);
     expect(script).toContain('--haproxy "$MODE"');
+    execFileSync("sh", ["-n"], { input: renderUpgradeScript({ stateDir: "/s", installDir: "/opt", ref: "main", haproxy: "existing", haproxyMain: "/m", haproxyReload: ["x"], confirmSeconds: 1, withContainers: true }) });
+    expect(script).toContain("WITH_CONTAINERS=0");
   });
   it("accepts branches, tags and commits, and nothing that could be an option or a path trick", () => {
     for (const ok of ["main", "v1.2.3", "release/2026-11", "a".repeat(40)]) expect(validRef(ok), ok).toBe(true);
@@ -111,6 +113,21 @@ describe("the upgrade script on a fake server", () => {
     expect(s.read("opt/apps/cli/dist/cli.js")).toBe("OLD");
     expect(readFileSync(`${s.units}/freighter-agent.service`, "utf8").trim()).toBe("OLD unit");
     expect(readFileSync(`${s.root}/systemctl.log`, "utf8")).toContain("systemctl restart freighter-agent");
+  });
+
+  it("adds container support at the installed version: same commit, installer run with --with-containers", async () => {
+    // The installer that is already installed is the one that runs; it just records how it was called.
+    const s = await server({ good: installs("NEW"), bad: installs("NEW") }, `#!/bin/sh\necho "$@" >"$(dirname "$0")/args.log"\n`);
+    const done = s.run("good", 30, true); // the ref is ignored: adding Podman is not an upgrade
+    await s.waitState("verifying");
+    writeFileSync(`${s.root}/state/confirmed`, "ok\n");
+    expect(await done).toBe(0);
+    expect(s.read("state/state")).toBe("done");
+    expect(s.read("state/message")).toMatch(/Container support added/);
+    expect(s.read("state/ref")).toBe(s.old);
+    expect(s.read("state/to")).toBe(s.old);
+    expect(git(s.dir, "rev-parse", "HEAD")).toBe(s.old);
+    expect(s.read("state/args.log")).toBe(`--role agent --ref ${s.old} --dir ${s.dir} --haproxy dedicated --with-containers`);
   });
 
   it("rolls back when the new installer fails halfway", async () => {
@@ -169,6 +186,20 @@ describe("agent side of an upgrade", () => {
     await expect(startUpgrade(t.deps, "v1.0.0", "abc")).rejects.toThrow(/already in progress/);
     t.deps.isRoot = false;
     await expect(startUpgrade(t.deps, "main", null)).rejects.toThrow(/root/);
+  });
+
+  it("starts a new run from nothing: the previous run's log, versions and result are gone", async () => {
+    const upgradeDir = (await mkdtemp(join(tmpdir(), "freighter-us-"))) + "/up";
+    const t = await makeDeps({ config: { agent: { upgradeDir } } });
+    t.deps.installDir = t.root;
+    mkdirSync(upgradeDir, { recursive: true });
+    for (const [f, v] of Object.entries({ state: "done", from: "aaa", to: "bbb", message: "Upgraded from aaa to bbb", log: "[x] old run output\n", confirmed: "ok" })) writeFileSync(`${upgradeDir}/${f}`, `${v}\n`);
+    await startUpgrade(t.deps, "main", "abc");
+    expect(readFileSync(`${upgradeDir}/log`, "utf8")).toBe("");
+    for (const f of ["from", "to", "confirmed"]) expect(existsSync(`${upgradeDir}/${f}`), f).toBe(false);
+    const s = await upgradeStatus(t.deps, "abc");
+    expect(s.log).toBe("");
+    expect(s.upgrade).toMatchObject({ state: "running", from: null, to: null, message: "Starting" });
   });
 
   it("reports an upgrade whose unit has vanished as failed, and only confirms a verifying one", async () => {

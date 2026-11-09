@@ -48,6 +48,7 @@ const stateText = computed(() => {
 
 // ---- controls ----
 const showUpgrade = ref(false);
+const showContainers = ref(false);
 const checkNow = useCheckServer();
 const restart = useRestartService();
 function askRestart() {
@@ -159,6 +160,29 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           <Fact v-if="remote" label="Agent certificate"><span :class="certTone">{{ certText }}</span></Fact>
         </Facts>
 
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Containers">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 class="font-medium">Containers</h3>
+            <Tag v-if="s.host?.containers?.available" :value="`Podman ${s.host.containers.version ?? ''}`.trim()" severity="success" />
+            <Tag v-else-if="s.host" :value="s.host.containers ? 'Podman not installed' : 'Agent too old'" severity="warn" />
+          </div>
+          <p v-if="s.host?.containers?.available" class="text-sm text-muted-color">Apps can run container images on this server.</p>
+          <template v-else-if="s.host">
+            <p class="text-sm text-muted-color">
+              <template v-if="!s.host.containers">This agent predates container support. Upgrade it first.</template>
+              <template v-else>Apps made of container images can't run here until Podman is installed.</template>
+            </p>
+            <div v-if="s.host.containers && remote && s.status === 'online'" class="flex flex-wrap items-center gap-3">
+              <Button label="Add container support…" icon="pi pi-box" size="small" :disabled="upgrading" @click="showContainers = true" />
+              <small v-if="upgrading" class="text-muted-color">An upgrade is running; wait for it to finish.</small>
+            </div>
+            <div v-else-if="s.host.containers && !remote" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
+              <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-containers</pre>
+            </div>
+          </template>
+        </div>
+
         <div v-if="behind" class="flex flex-wrap items-center gap-3 text-sm">
           <span class="text-amber-600 dark:text-amber-400">This server runs an older version than this dashboard.</span>
           <Button label="Upgrade…" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
@@ -221,6 +245,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
     </template>
 
     <UpgradeDialog v-if="showUpgrade" v-model="showUpgrade" :server="name" />
+    <UpgradeDialog v-if="showContainers" v-model="showContainers" :server="name" containers />
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>

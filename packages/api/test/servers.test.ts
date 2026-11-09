@@ -321,6 +321,33 @@ describe("upgrading a remote server", () => {
     expect(agent.calls.filter((c) => c.op === "upgrade.start").at(-1)?.args).toEqual({ ref: "v1.2.0" });
   });
 
+  it("adds container support without moving the server to another version", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images", "containers.install"] });
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    const r = await upgrade(t, { containers: true, ref: "ignored" });
+    expect(r.status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ withContainers: true });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-containers", detail: { server: "vps-1", from: "aaaaaaaaaaaa" } });
+  });
+
+  it("won't add container support through an agent that would upgrade instead, or to the local server", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] });
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    const old = await upgrade(t, { containers: true });
+    expect(old.status).toBe(409);
+    expect(old.json.error.message).toMatch(/predates container support/);
+    expect(agent.calls.some((c) => c.op === "upgrade.start")).toBe(false);
+    const local = await upgrade(t, { containers: true }, "local");
+    expect(local.status).toBe(400);
+    expect(local.json.error.message).toMatch(/--with-containers/);
+  });
+
   it("refuses what can't work, with the reason", async () => {
     const t = await makeApi();
     expect((await upgrade(t, {}, "local")).status).toBe(400);

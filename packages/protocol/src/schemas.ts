@@ -168,7 +168,14 @@ export const ops = {
   "challenge.get": { args: z.object({}), result: z.object({ token: z.string() }) },
   /** Upgrade this agent in place by re-running the installer for `ref` (default `main`); rolls back unless `upgrade.confirm` arrives. */
   "upgrade.start": {
-    args: z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional() }),
+    args: z.object({
+      ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(),
+      /**
+       * Re-run the installer with `--with-containers` (Podman) at the version that is installed now, instead of moving
+       * to `ref`. Agents with the "containers.install" capability only.
+       */
+      withContainers: z.boolean().optional(),
+    }),
     result: z.object({ started: z.literal(true) }),
   },
   "upgrade.status": {

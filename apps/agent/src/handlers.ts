@@ -94,15 +94,15 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images"],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install"],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
     async "upgrade.status"() {
       return upgradeStatus(d, await currentCommit());
     },
-    async "upgrade.start"({ ref }) {
-      await startUpgrade(d, ref ?? "main", await currentCommit());
+    async "upgrade.start"({ ref, withContainers }) {
+      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers });
       return { started: true as const };
     },
     async "upgrade.check"({ ref }) {

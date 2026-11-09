@@ -12,6 +12,8 @@ Install Podman when you set up the server, or add it later by re-running the ins
 curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --role agent --with-containers
 ```
 
+You can also do this from the dashboard: on a remote server's page, under *Agent and software*, **Containers → Add container support…** runs the installer with that flag for you.
+
 `--with-containers` (or `FREIGHTER_WITH_CONTAINERS=1`) installs `podman`, `uidmap`, `slirp4netns`, `fuse-overlayfs`, `dbus-user-session` and, where the release has it, `passt`. Upgrades keep what's installed. Servers without Podman refuse an image deploy with a message saying so.
 
 Containers run rootless, as the app's own user. The first image deploy for an app gives that user a range of subordinate user ids and keeps its login session alive (`loginctl enable-linger`), which Podman needs for its runtime directory.

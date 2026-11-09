@@ -119,7 +119,7 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 | `GET /version` | the commit the control plane runs | viewer |
 | `GET /servers/:name/upgrade` | whether the agent can upgrade itself, its version against the control plane's, and the state and log of the last upgrade | admin |
 | `POST /servers/:name/updates/check` | `{ref?}`. The server's agent runs git against its repository and reports whether `ref` (default `main`) has newer commits than what is installed, with the newest of them. Changes nothing. | admin |
-| `POST /servers/:name/upgrade` | `{ref?}`. Starts an upgrade of a remote server (default ref: the control plane's own commit). `202` with the same body as above. | admin |
+| `POST /servers/:name/upgrade` | `{ref?}`. Starts an upgrade of a remote server (default ref: the control plane's own commit). `202` with the same body as above. `{containers: true}` instead installs Podman at the version already installed (the installer's `--with-containers`); `409` if the agent predates it, `400` for the local server. | admin |
 | `DELETE /servers/:name` | not `local`, and not while apps are pinned | admin |
 | `POST /enroll` | **public**: `{token, csr}`. An agent redeems its token for a certificate. | token |
 
