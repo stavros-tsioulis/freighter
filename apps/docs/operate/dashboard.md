@@ -6,7 +6,7 @@ The dashboard is served by the API on the control server. Sign in by pasting an 
 
 One row per app: its status, its services with a dot each (green running, amber starting or stopping, red failed), its first domain, the current release and when it last changed. Apps that need attention (a failed service, or a release missing on disk) are listed first, and the sentence under the title says how many there are.
 
-From here, admins can **Deploy from Git** and deployers can **Upload archive** or **Deploy an image** (see [Deploy images](/deploy/images)). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync. With more than one server, filter the list by server.
+The **Deploy** button asks what to deploy, then shows that kind's form: a **Git repository** (admin), a **Container image** (see [Deploy images](/deploy/images)) or an **Archive** (both deployer). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync. With more than one server, filter the list by server.
 
 Below the list, **Recent deployments** shows the latest deploys and rollbacks across all apps.
 

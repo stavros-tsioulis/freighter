@@ -46,7 +46,7 @@ secrets:
 
 ## Deploy
 
-In the dashboard, **Apps → Deploy an image** takes an app name, one or more image services (image, ports, volumes, limits, health check, environment, secret names) and, with several servers, the server to run on. It shows the equivalent `app.yaml`, then pulls the image and follows the deployment's log. It warns if the server has no Podman.
+In the dashboard, **Apps → Deploy → Container image** takes an app name, one or more image services (image, ports, volumes, limits, health check, environment, secret names) and, with several servers, the server to run on. It shows the equivalent `app.yaml`, then pulls the image and follows the deployment's log. It warns if the server has no Podman.
 
 With the [CLI](/reference/cli#push), against your control server:
 
@@ -109,5 +109,5 @@ Over the API, `POST /apps/:app/image-deployments` takes `{"manifest": "<app.yaml
 - Podman only; there is no Docker support. Images must be pullable by Podman (`linux/amd64` or `linux/arm64`, matching the server).
 - One container per service and one instance per service, like other services.
 - Containers are rootless and use user networking, so they can't bind ports below 1024 or reach services bound to the host's loopback by `127.0.0.1`. Use the host's address, or run the dependency as another Freighter service.
-- Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy an image** or `freighter push`.
-- The dashboard's **Deploy an image** needs every service to be an image. To mix in command services, upload an archive.
+- Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy → Container image** or `freighter push`.
+- The dashboard's **Container image** form needs every service to be an image. To mix in command services, upload an archive.

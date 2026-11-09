@@ -126,7 +126,7 @@ After the restart, the agent also listens on `:7443`. Within a minute the server
 
 ## 4. Deploy to it
 
-Choose the server when you create an app: the **Server** field in *Deploy from Git* or *Upload archive* (shown once you have more than one server), `--server vps-fra-1` with `freighter push` and `freighter git add`, or `?server=vps-fra-1` on the API. The app stays on that server for good.
+Choose the server when you create an app: the **Server** field in the *Deploy* forms (shown once you have more than one server), `--server vps-fra-1` with `freighter push` and `freighter git add`, or `?server=vps-fra-1` on the API. The app stays on that server for good.
 
 Builds from Git run on the app's server, so install the build toolchain there.
 

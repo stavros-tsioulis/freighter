@@ -3,6 +3,12 @@ import { pruneSpool, sampleOnce } from "@freighter/api";
 export default defineNitroPlugin(async (nitro) => {
   // The build renders the app shell once (prerender). It must not open the registry or start the loops.
   if (import.meta.prerender) return;
+  // Talking to another Freighter's API: nothing of its own to open or run here.
+  const remote = remoteApiUrl();
+  if (remote) {
+    console.log(`[freighter] /api is forwarded to ${remote} (FREIGHTER_API_URL); no local registry, sync or sampling`);
+    return;
+  }
   const { api, ctx, settings } = await useFreighter();
 
   // Anything still queued/running belonged to a previous process.

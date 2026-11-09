@@ -10,9 +10,6 @@ const serverFilter = ref<string | null>(null);
 const multi = computed(() => (servers.value?.length ?? 0) > 1);
 const { data: recent } = useRecentDeployments();
 const sync = useSync();
-const showDeploy = ref(false);
-const showGit = ref(false);
-const showImage = ref(false);
 
 const troubled = (a: AppRow) => a.status === "missing" || a.services.some((s) => s.activeState === "failed");
 const tone = (a: AppRow) => (troubled(a) ? "bad" : a.status === "deployed" ? "ok" : "idle");
@@ -45,9 +42,7 @@ const summary = computed(() => {
       <template #actions>
         <Select v-if="multi" v-model="serverFilter" :options="servers" option-label="name" option-value="name" placeholder="All servers" show-clear size="small" class="w-44" aria-label="Filter by server" />
         <Button v-if="can('admin')" label="Sync" icon="pi pi-sync" severity="secondary" text size="small" title="Re-read app state from every server" :loading="sync.isPending.value" @click="sync.mutate()" />
-        <Button v-if="can('deployer')" label="Deploy an image" icon="pi pi-box" size="small" severity="secondary" outlined @click="showImage = true" />
-        <Button v-if="can('deployer')" label="Upload archive" icon="pi pi-upload" size="small" :severity="can('admin') ? 'secondary' : undefined" :outlined="can('admin')" @click="showDeploy = true" />
-        <Button v-if="can('admin')" label="Deploy from Git" icon="pi pi-github" size="small" @click="showGit = true" />
+        <DeployMenu size="small" />
       </template>
     </PageHeader>
 
@@ -62,11 +57,7 @@ const summary = computed(() => {
         <p class="mt-1.5 text-muted-color max-w-[56ch]">
           Point Freighter at a Git repository and it builds and deploys on every push, upload a <code>.tar.gz</code> that contains an <code>app.yaml</code>, or run a container image from a registry.
         </p>
-        <div class="mt-5 flex flex-wrap gap-2">
-          <Button v-if="can('admin')" label="Deploy from Git" icon="pi pi-github" @click="showGit = true" />
-          <Button v-if="can('deployer')" label="Upload archive" icon="pi pi-upload" :severity="can('admin') ? 'secondary' : undefined" :outlined="can('admin')" @click="showDeploy = true" />
-          <Button v-if="can('deployer')" label="Deploy an image" icon="pi pi-box" severity="secondary" outlined @click="showImage = true" />
-        </div>
+        <div class="mt-5"><DeployMenu /></div>
       </div>
 
       <div v-else class="board">
@@ -114,9 +105,6 @@ const summary = computed(() => {
       </ul>
     </section>
 
-    <DeployDialog v-model:visible="showDeploy" />
-    <NewFromGitDialog v-model:visible="showGit" />
-    <NewImageDialog v-model:visible="showImage" />
   </div>
 </template>
 

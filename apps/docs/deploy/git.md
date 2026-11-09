@@ -28,7 +28,7 @@ freighter ssh-key generate deploy-acme       # prints the public key to add to y
 
 ## Create an app from a repository
 
-In the dashboard, on **Apps**, choose **Deploy from Git**:
+In the dashboard, on **Apps**, choose **Deploy**, then **Git repository**:
 
 1. Pick the **SSH key**, or *None* for a public HTTPS repository.
 2. Enter the **repository**, such as `git@github.com:acme/shop.git`. The **branch** list fills from the repository, with the default branch selected.

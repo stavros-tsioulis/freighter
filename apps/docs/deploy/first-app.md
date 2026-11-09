@@ -59,7 +59,7 @@ Pick whichever fits:
 tar -czf hello.tar.gz -C ./hello .
 ```
 
-Then on the **Apps** page choose **Upload archive**, enter the app name `hello`, choose the file, and press **Upload and deploy**. The dialog follows the deployment until it succeeds or fails.
+Then on the **Apps** page choose **Deploy**, then **Archive**, enter the app name `hello`, choose the file, and press **Upload and deploy**. The dialog follows the deployment until it succeeds or fails.
 
 **From your machine or CI**, with a deployer token:
 

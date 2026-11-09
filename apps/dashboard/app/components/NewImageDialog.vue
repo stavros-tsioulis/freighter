@@ -3,6 +3,7 @@ import { IDENT_RE } from "~/utils/validation";
 import { emptyForm, hasService, imageHost, IMAGE_RE, newService, toSettings, type SettingsForm } from "~/utils/settings";
 
 const visible = defineModel<boolean>("visible", { required: true });
+const emit = defineEmits<{ back: [] }>();
 const { data: servers } = useServers();
 const { data: apps } = useApps();
 const { can } = useSession();
@@ -104,6 +105,7 @@ async function openApp() {
 
     <template #footer>
       <template v-if="!deploymentId">
+        <Button label="Back" icon="pi pi-arrow-left" severity="secondary" text class="mr-auto" :disabled="deploy.isPending.value" @click="emit('back')" />
         <Button label="Cancel" severity="secondary" text @click="visible = false" />
         <Button label="Pull and deploy" icon="pi pi-cloud-download" :disabled="!ready" :loading="deploy.isPending.value" @click="start" />
       </template>

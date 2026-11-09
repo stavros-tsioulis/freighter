@@ -4,7 +4,7 @@ The web UI (phase 6) and the host process for the API. A Nuxt 4 SPA (PrimeVue + 
 
 | Page | What it shows | Role |
 | --- | --- | --- |
-| Apps | one row per app with service states, attention first; recent deployments; "Deploy from Git", "Upload archive" | viewer (deploy: deployer) |
+| Apps | one row per app with service states, attention first; recent deployments; "Deploy" (Git repository, container image or archive) | viewer (deploy: deployer) |
 | App → Services | state, ports, hostnames, restarts, memory and CPU with sparklines (15 min / 1 h / 6 h), start/stop/restart | viewer (actions: deployer) |
 | App → Deployments | history (API and host-CLI deploys), deploy by uploading a `.tar.gz`, roll back with live status | viewer (actions: deployer) |
 | App → Logs | journal tail, Live mode (3 s polling), copy/download | deployer |
@@ -32,4 +32,11 @@ FREIGHTER_PREFIX=/tmp/fr pnpm --filter @freighter/dashboard dev
 pnpm --filter @freighter/dashboard typecheck   # vue-tsc via nuxt typecheck
 pnpm --filter @freighter/dashboard test        # unit tests for formatting/sparkline helpers
 ```
+### Against a remote API
+To try the local frontend on a real control plane, set `FREIGHTER_API_URL` (an `http(s)` origin). Everything under `/api` is then forwarded there, and the dev server opens no registry and runs no sync or sampling of its own:
+```sh
+FREIGHTER_API_URL=https://freighter.example.com pnpm --filter @freighter/dashboard dev
+```
+Sign in on `http://localhost:3000` with a token for that server. The session cookie it sets is rewritten to work on `http://localhost` (no `Secure`, no `Domain`), so it belongs to the dev server only. An unreachable remote answers `502` with the reason. Use it for development: the proxy forwards your token and cookies to that server, so only point it at one you trust.
+
 Production: `pnpm --filter @freighter/dashboard build`, copy `.output/` to the server and run it with `infra/systemd/freighter-api.service`.
