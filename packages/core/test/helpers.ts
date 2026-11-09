@@ -106,12 +106,14 @@ services:
   web:
     command: node server.mjs
     port: 3100
+    environment:
+      GREETING: hi
+    secrets:
+      - TOKEN
   worker:
     command: node worker.mjs
-environment:
-  GREETING: hi
-secrets:
-  - TOKEN
+    environment:
+      GREETING: hi
 `;
 
 /** web has a healthcheck; no worker. */

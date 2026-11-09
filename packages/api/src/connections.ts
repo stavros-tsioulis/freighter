@@ -1,4 +1,4 @@
-import { parseManifest, storageApp, type AppFacts, type Connections, type StorageFacts } from "@freighter/manifest";
+import { parseManifest, storageApp, type AppFacts, type Connections, type Manifest, type StorageFacts } from "@freighter/manifest";
 import type { ApiContext } from "./context.ts";
 
 /**
@@ -40,7 +40,7 @@ export async function buildConnections(ctx: ApiContext, app: string, server: str
           services: Object.keys(manifest.services),
           domains,
           ports: Object.fromEntries(ctx.registry.services.list(peer.name).map((s) => [s.name, s.port ?? undefined])),
-          environment: { ...manifest.environment, ...(await storedVariables(ctx, peer.server, peer.name)) },
+          environment: withStored(manifest, await storedVariables(ctx, peer.server, peer.name)),
         };
       } catch {
         // unreachable or unreadable: not connectable right now
@@ -50,8 +50,12 @@ export async function buildConnections(ctx: ApiContext, app: string, server: str
   return { server, peers, storages: await buildStorages(ctx) };
 }
 
-/** Variables added on the server for an app (none from an agent that predates them). */
-export async function storedVariables(ctx: ApiContext, server: string, app: string): Promise<Record<string, string>> {
+/** Each service's `environment:` with the variables added on the server laid over it. */
+export const withStored = (manifest: Manifest, stored: Record<string, Record<string, string>>): Record<string, Record<string, string>> =>
+  Object.fromEntries(Object.entries(manifest.services).map(([name, def]) => [name, { ...def.environment, ...stored[name] }]));
+
+/** Variables added on the server for an app, per service (none from an agent that predates them). */
+export async function storedVariables(ctx: ApiContext, server: string, app: string): Promise<Record<string, Record<string, string>>> {
   return ctx.agents.forServer(server).call("variables.get", { app }).then((r) => r.variables, () => ({}));
 }
 
@@ -69,7 +73,7 @@ export async function pushConnections(ctx: ApiContext, server: string, app: stri
 }
 
 /** What `app`'s own environment can read about its services right now (for showing resolved values). */
-export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts & { fromFile: Record<string, string>; stored: Record<string, string> }) | undefined> {
+export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts & { fromFile: Record<string, Record<string, string>>; stored: Record<string, Record<string, string>> }) | undefined> {
   const row = ctx.registry.apps.get(app);
   if (!row?.manifestText) return undefined;
   let manifest;
@@ -86,8 +90,8 @@ export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts 
     services: Object.keys(manifest.services),
     domains,
     ports: Object.fromEntries(ctx.registry.services.list(app).map((s) => [s.name, s.port ?? undefined])),
-    environment: { ...manifest.environment, ...stored },
-    fromFile: manifest.environment,
+    environment: withStored(manifest, stored),
+    fromFile: Object.fromEntries(Object.entries(manifest.services).map(([name, def]) => [name, def.environment])),
     stored,
   };
 }

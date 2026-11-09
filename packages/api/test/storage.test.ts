@@ -88,7 +88,7 @@ describe("storages", () => {
   it("deletes after typing its name, and not while an app uses it", async () => {
     const t = await makeApi();
     await create(t);
-    t.registry.apps.upsert({ name: "web", server: "local", manifestText: 'name: web\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:up.url"\n', currentRelease: "r1", previousRelease: null, status: "deployed" });
+    t.registry.apps.upsert({ name: "web", server: "local", manifestText: 'name: web\nservices:\n  web:\n    command: x\n    environment:\n      S3: "@storage:up.url"\n', currentRelease: "r1", previousRelease: null, status: "deployed" });
     const del = (json: unknown) => t.request("/v1/storages/up", { method: "DELETE", token: t.tokens.admin, json });
     expect((await del({ confirm: "nope" })).status).toBe(400);
     const busy = await del({ confirm: "up" });
@@ -105,7 +105,7 @@ describe("storages", () => {
     const t = await makeApi();
     const made = await create(t);
     t.handlers["domains.get"] = ({ app }: { app: string }) => ({ domains: app === "storage-up" ? [{ hostname: "s3.example.com", service: "s3", tls: "auto" }] : [] });
-    const WEB = 'name: web\nservices:\n  web:\n    command: x\nenvironment:\n  URL: "@storage:up.url"\n  SECRET: "@storage:up.secretKey"\n';
+    const WEB = 'name: web\nservices:\n  web:\n    command: x\n    environment:\n      URL: "@storage:up.url"\n      SECRET: "@storage:up.secretKey"\n';
     t.registry.apps.upsert({ name: "web", server: "local", manifestText: WEB, currentRelease: "r1", previousRelease: null, status: "deployed" });
 
     const vars = (await t.request("/v1/apps/web/variables", { token: t.tokens.viewer })).json.variables;
@@ -127,7 +127,7 @@ describe("storages on the project canvas", () => {
     const t = await makeApi();
     await create(t);
     const p = (await t.request("/v1/projects", { method: "POST", token: t.tokens.admin, json: { name: "Shop" } })).json;
-    const WEB = 'name: web\nservices:\n  web:\n    command: x\nenvironment:\n  A: "@storage:up.url"\n  B: "@storage:ghost.url"\n';
+    const WEB = 'name: web\nservices:\n  web:\n    command: x\n    environment:\n      A: "@storage:up.url"\n      B: "@storage:ghost.url"\n';
     t.registry.apps.upsert({ name: "web", server: "local", manifestText: WEB, currentRelease: "r1", previousRelease: null, status: "deployed" });
     t.registry.apps.setProject("web", p.id);
     const g = (await t.request(`/v1/projects/${p.id}/graph`, { token: t.tokens.viewer })).json;
@@ -140,9 +140,9 @@ describe("storages on the project canvas", () => {
 });
 
 describe("dependants follow", () => {
-  const WEB = 'name: web\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:up.url"\n';
+  const WEB = 'name: web\nservices:\n  web:\n    command: x\n    environment:\n      S3: "@storage:up.url"\n';
   const BILLING = 'name: billing\nservices:\n  api:\n    command: y\n';
-  const WORKER = 'name: worker\nservices:\n  w:\n    command: z\nenvironment:\n  PAY: "@billing/api.url"\n';
+  const WORKER = 'name: worker\nservices:\n  w:\n    command: z\n    environment:\n      PAY: "@billing/api.url"\n';
   const deployed = (t: Awaited<ReturnType<typeof makeApi>>, name: string, manifestText: string) => t.registry.apps.upsert({ name, server: "local", manifestText, currentRelease: "r1", previousRelease: null, status: "deployed" });
   const reapplies = (t: Awaited<ReturnType<typeof makeApi>>) => t.calls.filter((c) => c.op === "app.reapply").map((c) => (c.args as { app: string }).app);
 
@@ -176,8 +176,8 @@ describe("dependants follow", () => {
   it("follows a chain a few steps and then stops, so apps that read each other can't loop", async () => {
     const t = await makeApi();
     const manifests: Record<string, string> = {
-      a: 'name: a\nservices:\n  s:\n    command: x\nenvironment:\n  B: "@b/s.url"\n',
-      b: 'name: b\nservices:\n  s:\n    command: x\nenvironment:\n  A: "@a/s.url"\n',
+      a: 'name: a\nservices:\n  s:\n    command: x\n    environment:\n      B: "@b/s.url"\n',
+      b: 'name: b\nservices:\n  s:\n    command: x\n    environment:\n      A: "@a/s.url"\n',
     };
     for (const [name, text] of Object.entries(manifests)) deployed(t, name, text);
     // syncing after each job re-reads the app from its (fake) agent, so the agent has to know these manifests
@@ -194,7 +194,7 @@ describe("dependants follow", () => {
     const t = await makeApi();
     await create(t);
     deployed(t, "web", BILLING);
-    t.handlers["variables.get"] = ({ app }: { app: string }) => ({ variables: app === "web" ? { S3: "@storage:up.url" } : {} });
+    t.handlers["variables.get"] = ({ app }: { app: string }) => ({ variables: app === "web" ? { api: { S3: "@storage:up.url" } } : {} });
     t.handlers["app.reapply"] = () => ({ changed: false, deploy: null });
     t.calls.length = 0;
     await t.request("/v1/storages/up/rotate-keys", { method: "POST", token: t.tokens.admin });

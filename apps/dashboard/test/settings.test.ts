@@ -4,15 +4,22 @@ import { emptyForm, fromSettings, hasService, imageHost, IMAGE_RE, imagesOnly, n
 describe("settings form", () => {
   it("only says what was chosen", () => {
     const f = emptyForm();
-    f.services[0] = { ...newService("web"), command: " node server.js ", port: 3000, healthPath: "/up" };
+    f.services[0] = {
+      ...newService("web"),
+      command: " node server.js ",
+      port: 3000,
+      healthPath: "/up",
+      env: [{ key: "NODE_ENV", value: "production" }, { key: " ", value: "ignored" }],
+      secrets: "DATABASE_URL, API_KEY\n",
+    };
+    f.services.push({ ...newService("worker"), command: "run" });
     f.buildCommands = "npm ci\n\n npm run build \n";
-    f.env = [{ key: "NODE_ENV", value: "production" }, { key: " ", value: "ignored" }];
-    f.secrets = "DATABASE_URL, API_KEY\n";
     expect(toSettings(f)).toEqual({
       build: { commands: ["npm ci", "npm run build"] },
-      services: { web: { command: "node server.js", port: 3000, replicas: 1, healthcheck: { path: "/up" }, restart: "on-failure" } },
-      environment: { NODE_ENV: "production" },
-      secrets: ["DATABASE_URL", "API_KEY"],
+      services: {
+        web: { command: "node server.js", port: 3000, replicas: 1, healthcheck: { path: "/up" }, restart: "on-failure", environment: { NODE_ENV: "production" }, secrets: ["DATABASE_URL", "API_KEY"] },
+        worker: { command: "run", replicas: 1, restart: "on-failure" },
+      },
       releases: { keep: 5 },
     });
   });
@@ -23,6 +30,9 @@ describe("settings form", () => {
     const again = fromSettings(toSettings(f));
     expect(again.services[0]).toMatchObject({ name: "web", memory: "512M", cpu: 1.5, healthPath: "/h", healthTimeout: "1m", restart: "always" });
     expect(fromSettings(null).services).toHaveLength(1);
+    f.services[0]!.env = [{ key: "A", value: "1" }];
+    f.services[0]!.secrets = "S";
+    expect(fromSettings(toSettings(f)).services[0]).toMatchObject({ env: [{ key: "A", value: "1" }], secrets: "S" });
   });
 
   it("needs a service with a command before it can be deployed", () => {

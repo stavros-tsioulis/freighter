@@ -41,7 +41,7 @@ The header shows the app's server, how many services are running, the current an
 | **Deployments** | history with trigger, commit and duration; open a row for its log (the build output for Git deploys, then each step of the deploy: certificates, new instances, health check, HAProxy switch; domain changes have one too), warnings and errors; **Roll back**, **Upload archive** | viewer (actions: deployer) |
 | **Source** | for an app that runs container images: each service's image, its registry and login, where it is reachable (domains, the published port and the container port), its volumes, **Pull again and redeploy** and **Change image**; for other apps: the linked repository, branch, key, auto-deploy, last webhook, settings for repositories without `app.yaml`; **Deploy latest**, **Test connection**, rotate secret or key, unlink | viewer (changes: admin) |
 | **Logs** | the journal of a service, 10–1000 lines, *Live* mode refreshing every 3 seconds, copy and download | deployer |
-| **Variables** | variables (the `environment:` of app.yaml as initial values, plus any you add or change here; connections show what they resolve to), and secrets (names, and a way to set a value) | viewer (change: admin) |
+| **Variables** | of one service (pick it on the app page; on the canvas, select the service): its variables (the `environment:` of app.yaml as initial values, plus any you add or change here; connections show what they resolve to), and its secrets (names, and a way to set a value) | viewer (change: admin) |
 
 The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link straight to it.
 

@@ -29,7 +29,7 @@ Nothing else is reachable through the agent: there is no shell, no arbitrary fil
 
 ## What happens during a deploy
 
-1. **Validate.** `app.yaml` is parsed and checked. Every name listed under `secrets:` must already have a value, or the deploy stops here.
+1. **Validate.** `app.yaml` is parsed and checked. Every name listed under a service's `secrets:` must already have a value, or the deploy stops here.
 2. **Lock.** The server takes a host-wide lock, so two deploys never interleave port allocation or HAProxy writes. A second deploy started meanwhile is refused (from the CLI) or queued (from the API).
 3. **Stage.** The directory or `.tar.gz` is unpacked into a new, immutable release directory `releases/r20261107-142501`.
 4. **Start.** Units are installed for each service. What happens next depends on whether a domain points at the service:
@@ -46,7 +46,7 @@ If any step fails after the release was staged, the previous release is re-appli
 | State | Location | Owner |
 | --- | --- | --- |
 | Releases, `current` symlink, `shared/` data, history | `/srv/apps/<app>/` on the app's server | agent |
-| Secrets | `/etc/freighter/apps/<app>.env` on the app's server | agent |
+| Secrets | `/etc/freighter/apps/<app>/<service>.env` on the app's server | agent |
 | Domains | `/srv/apps/<app>/domains.json` on the app's server | agent |
 | Tokens, servers, deployment history, metrics, Git links, SSH keys | `/var/lib/freighter/registry.db` on the control server | API |
 

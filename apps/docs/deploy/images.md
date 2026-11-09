@@ -35,12 +35,11 @@ services:
       cpu: 1
     volumes:
       uploads: /var/uploads
-
-secrets:
-  - DATABASE_URL
+    secrets:
+      - DATABASE_URL
 ```
 
-- `environment`, secrets and `PORT` are passed into the container. Secrets never appear on a command line.
+- The service's `environment`, its secrets and `PORT` are passed into the container. Secrets never appear on a command line.
 - `resources` limit the whole container.
 - `volumes` are directories under `/srv/apps/<app>/shared/volumes/<name>`. They survive releases and are removed with the app.
 - Add a [domain](/deploy/domains) to route traffic to the service. Routed services get a fresh port per release, and traffic moves over once the new container is healthy.

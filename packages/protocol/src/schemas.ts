@@ -288,11 +288,12 @@ export const ops = {
     args: z.object({ id: z.string().regex(/^[0-9a-f-]{8,64}$/), from: z.number().int().min(0).default(0) }),
     result: z.object({ text: z.string(), next: z.number(), done: z.boolean() }),
   },
-  /** Variables added on the server, on top of app.yaml's `environment:`. Agents with the "variables" capability only. */
-  "variables.get": { args: z.object({ app }), result: z.object({ variables: z.record(envKey, z.string()) }) },
+  /** Variables added on the server, per service, on top of each service's `environment:` in app.yaml. Agents with the "variables" capability only. */
+  "variables.get": { args: z.object({ app }), result: z.object({ variables: z.record(ident, z.record(envKey, z.string())) }) },
   "variables.set": {
     args: z.object({
       app,
+      service: ident,
       set: z.record(envKey, z.string().max(65_536).refine((v) => !/[\r\n\0]/.test(v), "no newlines")).optional(),
       remove: z.array(envKey).max(200).optional(),
       logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
@@ -326,9 +327,10 @@ export const ops = {
     args: z.object({ app, logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
     result: z.object({ changed: z.boolean(), deploy: deployResult.nullable() }),
   },
-  "env.list": { args: z.object({ app }), result: z.object({ names: z.array(z.string()) }) },
+  /** The names of a service's secrets that have a value. */
+  "env.list": { args: z.object({ app, service: ident }), result: z.object({ names: z.array(z.string()) }) },
   "env.set": {
-    args: z.object({ app, key: envKey, value: z.string().max(65_536).refine((v) => !/[\r\n\0]/.test(v), "no newlines") }),
+    args: z.object({ app, service: ident, key: envKey, value: z.string().max(65_536).refine((v) => !/[\r\n\0]/.test(v), "no newlines") }),
     result: z.object({}),
   },
   "certs.status": {

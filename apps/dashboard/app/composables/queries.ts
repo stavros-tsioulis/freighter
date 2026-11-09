@@ -136,6 +136,7 @@ export const useLogs = (app: MaybeRef<string>, service: MaybeRef<string | null>,
   });
 
 export interface VariableRow {
+  service: string;
   key: string;
   /** As written in app.yaml. */
   value: string;
@@ -149,18 +150,18 @@ export interface VariableRow {
   /** `app.yaml`: the initial value; `added`: set in the dashboard; `override`: set in the dashboard over app.yaml's. */
   source: "app.yaml" | "added" | "override";
 }
-export const useVariables = (app: MaybeRef<string>) =>
-  useQuery({ queryKey: ["variables", app], queryFn: () => api<{ variables: VariableRow[] }>(`/apps/${toValue(app)}/variables`).then((r) => r.variables), refetchInterval: 15_000 });
+export const useVariables = (app: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
+  useQuery({ queryKey: ["variables", app], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ variables: VariableRow[] }>(`/apps/${toValue(app)}/variables`).then((r) => r.variables), refetchInterval: 15_000 });
 
 /** Add or change a variable, or remove one added in the dashboard (an override goes back to app.yaml's value). The app is redeployed to apply it. */
 export function useVariableChange(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { key: string; value?: string }) =>
+    mutationFn: (v: { service: string; key: string; value?: string }) =>
       v.value === undefined
-        ? api(`/apps/${toValue(app)}/variables/${v.key}`, { method: "DELETE" })
-        : api(`/apps/${toValue(app)}/variables/${v.key}`, { method: "PUT", body: { value: v.value } }),
+        ? api(`/apps/${toValue(app)}/services/${v.service}/variables/${v.key}`, { method: "DELETE" })
+        : api(`/apps/${toValue(app)}/services/${v.service}/variables/${v.key}`, { method: "PUT", body: { value: v.value } }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["variables"] });
       void qc.invalidateQueries({ queryKey: ["app"] });
@@ -170,8 +171,14 @@ export function useVariableChange(app: MaybeRef<string>) {
   });
 }
 
-export const useEnvNames = (app: MaybeRef<string>) =>
-  useQuery({ queryKey: ["env", app], queryFn: () => api<{ names: string[] }>(`/apps/${toValue(app)}/env`).then((r) => r.names), retry: false });
+/** A service's secrets: the names that have a value, and the ones its app.yaml declares. */
+export const useEnvNames = (app: MaybeRef<string>, service: MaybeRef<string>) =>
+  useQuery({
+    queryKey: ["env", app, service],
+    enabled: computed(() => !!toValue(service)),
+    queryFn: () => api<{ names: string[]; declared: string[] }>(`/apps/${toValue(app)}/services/${toValue(service)}/env`),
+    retry: false,
+  });
 
 export const useCerts = () => useQuery({ queryKey: ["certs"], queryFn: () => api<{ certs: CertRow[] }>("/certs").then((r) => r.certs), retry: false });
 export const useTokens = () => useQuery({ queryKey: ["tokens"], queryFn: () => api<{ tokens: TokenRow[] }>("/tokens").then((r) => r.tokens) });
@@ -410,7 +417,7 @@ export function useSetEnv(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { key: string; value: string }) => api(`/apps/${toValue(app)}/env/${v.key}`, { method: "PUT", body: { value: v.value } }),
+    mutationFn: (v: { service: string; key: string; value: string }) => api(`/apps/${toValue(app)}/services/${v.service}/env/${v.key}`, { method: "PUT", body: { value: v.value } }),
     onSuccess: (_r, v) => {
       notify.ok("Secret saved", v.key);
       void qc.invalidateQueries({ queryKey: ["env"] });

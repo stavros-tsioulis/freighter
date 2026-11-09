@@ -19,12 +19,12 @@ export interface ServiceForm {
   healthPath: string;
   healthTimeout: string;
   restart: "always" | "on-failure" | "no";
-}
-export interface SettingsForm {
-  services: ServiceForm[];
   env: { key: string; value: string }[];
   /** One name per line (or comma separated). */
   secrets: string;
+}
+export interface SettingsForm {
+  services: ServiceForm[];
   /** One command per line. */
   buildCommands: string;
   buildTimeout: string;
@@ -33,12 +33,10 @@ export interface SettingsForm {
   keep: number;
 }
 
-export const newService = (name = "web", kind: ServiceForm["kind"] = "command"): ServiceForm => ({ name, kind, command: "", image: "", containerPort: null, volumes: [], port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure" });
+export const newService = (name = "web", kind: ServiceForm["kind"] = "command"): ServiceForm => ({ name, kind, command: "", image: "", containerPort: null, volumes: [], port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure", env: [], secrets: "" });
 
 export const emptyForm = (): SettingsForm => ({
   services: [newService()],
-  env: [],
-  secrets: "",
   buildCommands: "",
   buildTimeout: "",
   buildMemory: "",
@@ -54,6 +52,8 @@ export function toSettings(f: SettingsForm): AppSettings {
   for (const s of f.services) {
     if (!s.name.trim()) continue;
     const volumes = s.volumes.filter((v) => v.name.trim() && v.path.trim());
+    const env = s.env.filter((e) => e.key.trim());
+    const secrets = lines(s.secrets);
     services[s.name.trim()] = {
       ...(s.kind === "image"
         ? {
@@ -67,6 +67,8 @@ export function toSettings(f: SettingsForm): AppSettings {
       ...(s.memory.trim() || s.cpu ? { resources: { ...(s.memory.trim() ? { memory: s.memory.trim() } : {}), ...(s.cpu ? { cpu: s.cpu } : {}) } } : {}),
       ...(s.healthPath.trim() ? { healthcheck: { path: s.healthPath.trim(), ...(s.healthTimeout.trim() ? { timeout: s.healthTimeout.trim() } : {}) } } : {}),
       restart: s.restart,
+      ...(env.length ? { environment: Object.fromEntries(env.map((e) => [e.key.trim(), e.value])) } : {}),
+      ...(secrets.length ? { secrets } : {}),
     };
   }
   const commands = f.buildCommands.split("\n").map((c) => c.trim()).filter(Boolean);
@@ -75,8 +77,6 @@ export function toSettings(f: SettingsForm): AppSettings {
       ? { build: { commands, ...(f.buildTimeout.trim() ? { timeout: f.buildTimeout.trim() } : {}), ...(f.buildMemory.trim() ? { memory: f.buildMemory.trim() } : {}), ...(f.buildCpu ? { cpu: f.buildCpu } : {}) } }
       : {}),
     services,
-    environment: Object.fromEntries(f.env.filter((e) => e.key.trim()).map((e) => [e.key.trim(), e.value])),
-    secrets: lines(f.secrets),
     releases: { keep: f.keep || 5 },
   };
 }
@@ -97,11 +97,11 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
     healthPath: v.healthcheck?.path ?? "",
     healthTimeout: v.healthcheck?.timeout ?? "",
     restart: v.restart ?? "on-failure",
+    env: Object.entries(v.environment ?? {}).map(([key, value]) => ({ key, value })),
+    secrets: (v.secrets ?? []).join("\n"),
   }));
   return {
     services: services.length ? services : [newService()],
-    env: Object.entries(s.environment ?? {}).map(([key, value]) => ({ key, value })),
-    secrets: (s.secrets ?? []).join("\n"),
     buildCommands: (s.build?.commands ?? []).join("\n"),
     buildTimeout: s.build?.timeout ?? "",
     buildMemory: s.build?.memory ?? "",

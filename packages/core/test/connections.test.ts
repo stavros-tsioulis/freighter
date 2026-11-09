@@ -8,11 +8,11 @@ services:
   web:
     command: node server.mjs
     port: 3000
-environment:
-  BILLING: "@billing/api.url"
-  V: "${v}"
+    environment:
+      BILLING: "@billing/api.url"
+      V: "${v}"
 `;
-const peer = { name: "billing", server: "s1", services: ["api"], domains: [{ hostname: "pay.example.com", service: "api", tls: "auto" as const }], ports: {}, environment: {} };
+const peer = { name: "billing", server: "s1", services: ["api"], domains: [{ hostname: "pay.example.com", service: "api", tls: "auto" as const }], ports: {}, environment: { api: {} } };
 
 describe("stored connections", () => {
   it("round-trips, and an empty set removes the file", async () => {
@@ -69,15 +69,15 @@ describe("reapply", () => {
     const { reapply } = await import("../src/index.ts");
     const { rm } = await import("node:fs/promises");
     const h = await makeDeps();
-    const text = 'name: web\nservices:\n  web:\n    command: node server.mjs\n    port: 3000\nenvironment:\n  S3_SECRET: "@storage:up.secretKey"\n';
+    const text = 'name: web\nservices:\n  web:\n    command: node server.mjs\n    port: 3000\n    environment:\n      S3_SECRET: "@storage:up.secretKey"\n';
     const st = (secretKey: string) => ({ up: { name: "up", hostname: "s3.example.com", tls: "auto" as const, port: 20100, accessKey: "AK", secretKey } });
     await writeConnections(h.deps, "web", { peers: {}, storages: st("old-secret") });
     await deploy(h.deps, { manifestText: text, source: await artifact() });
-    expect(await readFile(`${h.deps.layout.envDir}/web.refs.env`, "utf8")).toContain("old-secret");
+    expect(await readFile(`${h.deps.layout.envDir}/web/web.refs.env`, "utf8")).toContain("old-secret");
 
     await writeConnections(h.deps, "web", { peers: {}, storages: st("new-secret") });
     expect((await reapply(h.deps, "web")).changed).toBe(true);
-    expect(await readFile(`${h.deps.layout.envDir}/web.refs.env`, "utf8")).toContain("new-secret");
+    expect(await readFile(`${h.deps.layout.envDir}/web/web.refs.env`, "utf8")).toContain("new-secret");
 
     await rm(`${h.deps.layout.appsRoot}/web/resolved.json`);
     await writeConnections(h.deps, "web", { peers: {}, storages: st("newer-secret") });

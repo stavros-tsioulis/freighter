@@ -98,10 +98,10 @@ export function storageManifest(d: Deps, spec: StorageSpec, port: number): strin
         restart: "always",
         // big transfers and slow remote backends: don't let HAProxy give up after its default 30 s
         proxy: { timeout: "30m" },
+        environment: { HOME: shared, FR_TARGET: remote.target, ...remote.env },
+        secrets: ["RCLONE_AUTH_KEY", ...(remote.passwordKey ? [remote.passwordKey] : [])],
       },
     },
-    environment: { HOME: shared, FR_TARGET: remote.target, ...remote.env },
-    secrets: ["RCLONE_AUTH_KEY", ...(remote.passwordKey ? [remote.passwordKey] : [])],
   });
 }
 
@@ -176,11 +176,11 @@ export async function applyStorage(d: Deps, spec: StorageSpec, opts: ApplyStorag
   await d.run("chown", ["-R", `${app}:${app}`, `${shared}/data`, `${shared}/cache`]);
   await writeSsh(d, app, spec.backend, secrets);
 
-  await setEnv(d, app, "RCLONE_AUTH_KEY", `${spec.accessKey},${spec.secretKey}`);
+  await setEnv(d, app, "s3", "RCLONE_AUTH_KEY", `${spec.accessKey},${spec.secretKey}`);
   const remote = rcloneRemote(d, app, spec.backend);
   if (remote.passwordKey) {
     if (!secrets.password) throw new Error("a password is required");
-    await setEnv(d, app, remote.passwordKey, d.dev ? secrets.password : await obscure(d, secrets.password));
+    await setEnv(d, app, "s3", remote.passwordKey, d.dev ? secrets.password : await obscure(d, secrets.password));
   }
 
   await log(`==> deploying the S3 endpoint for storage ${spec.name} (${spec.backend.kind})`);

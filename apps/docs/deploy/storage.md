@@ -25,11 +25,14 @@ Use **path-style** addressing, `https://s3.example.com/<bucket>/<key>`: domains 
 ## Connect an app
 
 ```yaml
-environment:
-  S3_ENDPOINT: "@storage:uploads.url"
-  S3_REGION: "@storage:uploads.region"
-  S3_ACCESS_KEY_ID: "@storage:uploads.accessKey"
-  S3_SECRET_ACCESS_KEY: "@storage:uploads.secretKey"
+services:
+  web:
+    command: node server.js
+    environment:
+      S3_ENDPOINT: "@storage:uploads.url"
+      S3_REGION: "@storage:uploads.region"
+      S3_ACCESS_KEY_ID: "@storage:uploads.accessKey"
+      S3_SECRET_ACCESS_KEY: "@storage:uploads.secretKey"
 ```
 
 | Attribute | Value |
@@ -40,7 +43,7 @@ environment:
 | `region` | `us-east-1` |
 | `accessKey`, `secretKey` | the key pair |
 
-Storages are global: any app can use any storage, whatever project it is in. The key pair is **never written into the service's unit file**; it goes in a file that only root can read (`/etc/freighter/apps/<app>.refs.env`) which the unit loads. The Variables tab shows such values as hidden. Because every deploy resolves these references, each server that runs apps keeps a root-only copy of the storages' keys.
+Storages are global: any app can use any storage, whatever project it is in. The key pair is **never written into the service's unit file**; it goes in a file that only root can read (`/etc/freighter/apps/<app>/<service>.refs.env`) which the unit loads. The Variables tab shows such values as hidden. Because every deploy resolves these references, each server that runs apps keeps a root-only copy of the storages' keys.
 
 On the project canvas a storage appears as a dashed node, with an arrow from each service that uses it.
 

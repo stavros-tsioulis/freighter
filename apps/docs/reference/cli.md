@@ -67,9 +67,9 @@ Without a service, applies to all of the app's services.
 ### env
 
 ```sh
-freighter env set <app> KEY=VALUE
-freighter env set <app> KEY            # value read from stdin
-freighter env list <app>               # names only
+freighter env set <app> <service> KEY=VALUE
+freighter env set <app> <service> KEY            # value read from stdin
+freighter env list <app> <service>               # names only
 ```
 
 ### domain

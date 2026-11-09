@@ -29,5 +29,6 @@ export * from "./image.ts";
 export * from "./references.ts";
 export * from "./connections.ts";
 export * from "./variables.ts";
+export * from "./shared.ts";
 export * from "./storage.ts";
 export * from "./reapply.ts";

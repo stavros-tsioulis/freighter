@@ -76,6 +76,16 @@ describe("POST /v1/apps/:app/redeploy", () => {
     await t.api.jobs.idle();
     expect(t.calls.find((c) => c.op === "app.deploy")?.args).toMatchObject({ manifestText: IMAGE_YAML });
   });
+  it("moves a release written with a shared environment into its services", async () => {
+    const t = await makeApi();
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: `${IMAGE_YAML}environment:\n  A: b\nsecrets:\n  - S\n`, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await t.request("/v1/apps/shop/redeploy", { method: "POST", token: t.tokens.deployer })).status).toBe(202);
+    await t.api.jobs.idle();
+    const sent = (t.calls.find((c) => c.op === "app.deploy")!.args as { manifestText: string }).manifestText;
+    expect(sent).not.toMatch(/^environment:/m);
+    expect(sent).toMatch(/environment:\n\s+A: b/);
+    expect(sent).toMatch(/secrets:\n\s+- S/);
+  });
   it("is a 404 for an app that was never deployed", async () => {
     const t = await makeApi();
     expect((await t.request("/v1/apps/ghost/redeploy", { method: "POST", token: t.tokens.deployer })).status).toBe(404);
@@ -83,7 +93,7 @@ describe("POST /v1/apps/:app/redeploy", () => {
 });
 
 describe("images in the app view, and changing them", () => {
-  const seed = (t: Awaited<ReturnType<typeof makeApi>>, text = `${IMAGE_YAML}environment:\n  A: b\n`) =>
+  const seed = (t: Awaited<ReturnType<typeof makeApi>>, text = `${IMAGE_YAML}    environment:\n      A: b\n`) =>
     t.registry.apps.upsert({ name: "shop", server: "local", manifestText: text, currentRelease: "r1", previousRelease: null, status: "deployed" });
 
   it("lists the image of each service on GET /apps/:app", async () => {

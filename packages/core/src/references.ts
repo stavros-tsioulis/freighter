@@ -18,15 +18,17 @@ interface Resolved {
 export type EnvResult = { value: string; secret: boolean } | { error: string };
 
 /**
- * Resolve the references in `self`'s environment, one result per entry so a broken reference doesn't hide the rest. `peers`
+ * Resolve the references in one service's environment (`service` of `self`), one result per entry so a broken reference
+ * doesn't hide the rest. `peers`
  * are the other apps a reference may name (the caller decides which: the control plane passes the apps of the same project)
  * and `storages` the S3 storages (`@storage:name.url`). A reference to an environment value is resolved in the context of
  * the app that owns it, and a chain that loops back on itself is an error. A value that uses a storage's key pair, directly
  * or through another value, is marked `secret`.
  */
-export function resolveEnvironmentEach(self: AppFacts, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): Record<string, EnvResult> {
+export function resolveEnvironmentEach(self: AppFacts, service: string, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): Record<string, EnvResult> {
   const apps: Record<string, AppFacts> = { ...peers, [self.name]: self };
   const done = new Map<string, Resolved>();
+  const envOf = (app: AppFacts, svc: string) => app.environment[svc] ?? {};
   const stack: string[] = [];
 
   const lookupStorage = (from: AppFacts, ref: Extract<Reference, { storage: string }>): Resolved => {
@@ -87,21 +89,21 @@ export function resolveEnvironmentEach(self: AppFacts, peers: Record<string, App
       }
       default: {
         if (!isEnvAttr(ref.attr)) throw new ReferenceError(`${ref.text}: unknown attribute`);
-        if (!(ref.attr in owner.environment)) throw new ReferenceError(`${ref.text}: ${ref.attr} is not set in the environment of app "${owner.name}" (secrets can't be referenced)`);
-        return value(owner, ref.attr);
+        if (!(ref.attr in envOf(owner, ref.service))) throw new ReferenceError(`${ref.text}: ${ref.attr} is not set in the environment of service "${ref.service}"${where} (secrets can't be referenced)`);
+        return value(owner, ref.service, ref.attr);
       }
     }
   };
 
-  const value = (app: AppFacts, key: string): Resolved => {
-    const id = `${app.name}/${key}`;
+  const value = (app: AppFacts, svc: string, key: string): Resolved => {
+    const id = `${app.name}/${svc}.${key}`;
     const cached = done.get(id);
     if (cached !== undefined) return cached;
     if (stack.includes(id)) throw new ReferenceError(`environment values refer to each other in a loop: ${[...stack, id].join(" -> ")}`);
     stack.push(id);
     try {
       let secret = false;
-      const text = substituteReferences(app.environment[key]!, (ref) => {
+      const text = substituteReferences(envOf(app, svc)[key]!, (ref) => {
         const r = lookup(app, ref);
         secret ||= r.secret;
         return r.text;
@@ -115,9 +117,9 @@ export function resolveEnvironmentEach(self: AppFacts, peers: Record<string, App
   };
 
   return Object.fromEntries(
-    Object.keys(self.environment).map((k): [string, EnvResult] => {
+    Object.keys(envOf(self, service)).map((k): [string, EnvResult] => {
       try {
-        const r = value(self, k);
+        const r = value(self, service, k);
         return [k, { value: r.text, secret: r.secret }];
       } catch (e) {
         if (!(e instanceof ReferenceError)) throw e;
@@ -127,10 +129,10 @@ export function resolveEnvironmentEach(self: AppFacts, peers: Record<string, App
   );
 }
 
-/** Resolve the references in `self`'s environment (see `resolveEnvironmentEach`), split into plain values and secrets; the first one that can't be resolved throws. */
-export function resolveEnvironmentSplit(self: AppFacts, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): { plain: Record<string, string>; secret: Record<string, string> } {
+/** Resolve the references in a service's environment (see `resolveEnvironmentEach`), split into plain values and secrets; the first one that can't be resolved throws. */
+export function resolveEnvironmentSplit(self: AppFacts, service: string, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): { plain: Record<string, string>; secret: Record<string, string> } {
   const out = { plain: {} as Record<string, string>, secret: {} as Record<string, string> };
-  for (const [k, r] of Object.entries(resolveEnvironmentEach(self, peers, storages))) {
+  for (const [k, r] of Object.entries(resolveEnvironmentEach(self, service, peers, storages))) {
     if ("error" in r) throw new ReferenceError(r.error);
     (r.secret ? out.secret : out.plain)[k] = r.value;
   }
@@ -138,14 +140,14 @@ export function resolveEnvironmentSplit(self: AppFacts, peers: Record<string, Ap
 }
 
 /** Like `resolveEnvironmentSplit`, with everything in one map. */
-export function resolveEnvironment(self: AppFacts, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): Record<string, string> {
-  const { plain, secret } = resolveEnvironmentSplit(self, peers, storages);
+export function resolveEnvironment(self: AppFacts, service: string, peers: Record<string, AppFacts> = {}, storages: Record<string, StorageFacts> = {}): Record<string, string> {
+  const { plain, secret } = resolveEnvironmentSplit(self, service, peers, storages);
   return { ...plain, ...secret };
 }
 
-/** The apps a manifest's environment names with `@app/service...`, other than itself. */
-export function referencedApps(self: string, environment: Record<string, string>): string[] {
+/** The apps a manifest's environment values name with `@app/service...`, other than itself. */
+export function referencedApps(self: string, values: Iterable<string>): string[] {
   const out = new Set<string>();
-  for (const v of Object.values(environment)) for (const r of findReferences(v)) if (r.storage === undefined && r.app !== undefined && r.app !== self) out.add(r.app);
+  for (const v of values) for (const r of findReferences(v)) if (r.storage === undefined && r.app !== undefined && r.app !== self) out.add(r.app);
   return [...out].sort();
 }

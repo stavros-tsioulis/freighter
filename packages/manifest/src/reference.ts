@@ -2,7 +2,7 @@
  * Connections: an environment value may point at another service, such as `API_URL: "@api.url"`.
  *
  * Syntax: `@[app/]service.attr`, anywhere in a value. `attr` is `domain`, `url`, `internal`, `port`, or the name of an
- * `environment:` entry of the service's app (`UPPER_SNAKE_CASE`; `PORT` is the same as `port`). `@@` is a literal `@`.
+ * `environment:` entry of that service (`UPPER_SNAKE_CASE`; `PORT` is the same as `port`). `@@` is a literal `@`.
  * An `@` right after a word character (an email address, say) is never a reference.
  */
 export const REFERENCE_ATTRS = ["domain", "url", "internal", "port"] as const;
@@ -74,20 +74,18 @@ export interface ConnectionEdge {
   key: string;
 }
 
-/**
- * The connections an app's environment declares. Environment is app-wide, so every service of the app (other than the
- * target itself) is a consumer of each reference.
- */
-export function connectionEdges(m: { name: string; services: Record<string, unknown>; environment: Record<string, string> }): ConnectionEdge[] {
+type EnvOwners = { name: string; services: Record<string, { environment: Record<string, string> }> };
+
+/** The connections a service's environment declares, per service: the one that holds the reference is the consumer. */
+export function connectionEdges(m: EnvOwners): ConnectionEdge[] {
   const out = new Map<string, ConnectionEdge>();
-  for (const [key, value] of Object.entries(m.environment)) {
-    for (const ref of findReferences(value)) {
-      if (ref.storage !== undefined) continue;
-      const to = { app: ref.app ?? m.name, service: ref.service };
-      for (const service of Object.keys(m.services)) {
+  for (const [service, def] of Object.entries(m.services)) {
+    for (const [key, value] of Object.entries(def.environment)) {
+      for (const ref of findReferences(value)) {
+        if (ref.storage !== undefined) continue;
+        const to = { app: ref.app ?? m.name, service: ref.service };
         if (to.app === m.name && to.service === service) continue;
-        const from = { app: m.name, service };
-        out.set(`${service}>${to.app}/${to.service}.${ref.attr}:${key}`, { from, to, attr: ref.attr, key });
+        out.set(`${service}>${to.app}/${to.service}.${ref.attr}:${key}`, { from: { app: m.name, service }, to, attr: ref.attr, key });
       }
     }
   }
@@ -102,21 +100,28 @@ export interface StorageEdge {
   key: string;
 }
 
-/** The storages an app's environment uses; every service of the app is a consumer, as for `connectionEdges`. */
-export function storageEdges(m: { name: string; services: Record<string, unknown>; environment: Record<string, string> }): StorageEdge[] {
+/** The storages the services' environments use. */
+export function storageEdges(m: EnvOwners): StorageEdge[] {
   const out = new Map<string, StorageEdge>();
-  for (const [key, value] of Object.entries(m.environment)) {
-    for (const ref of findReferences(value)) {
-      if (ref.storage === undefined) continue;
-      for (const service of Object.keys(m.services)) out.set(`${service}>${ref.storage}.${ref.attr}:${key}`, { from: { app: m.name, service }, storage: ref.storage, attr: ref.attr, key });
+  for (const [service, def] of Object.entries(m.services)) {
+    for (const [key, value] of Object.entries(def.environment)) {
+      for (const ref of findReferences(value)) {
+        if (ref.storage === undefined) continue;
+        out.set(`${service}>${ref.storage}.${ref.attr}:${key}`, { from: { app: m.name, service }, storage: ref.storage, attr: ref.attr, key });
+      }
     }
   }
   return [...out.values()];
 }
 
-/** Names of the storages an environment uses. */
-export function referencedStorages(environment: Record<string, string>): string[] {
+/** Names of the storages a set of environment values uses. */
+export function referencedStorages(values: Iterable<string>): string[] {
   const out = new Set<string>();
-  for (const v of Object.values(environment)) for (const r of findReferences(v)) if (r.storage !== undefined) out.add(r.storage);
+  for (const v of values) for (const r of findReferences(v)) if (r.storage !== undefined) out.add(r.storage);
   return [...out].sort();
+}
+
+/** Every environment value of every service of an app. */
+export function environmentValues(m: { services: Record<string, { environment: Record<string, string> }> }): string[] {
+  return Object.values(m.services).flatMap((s) => Object.values(s.environment));
 }

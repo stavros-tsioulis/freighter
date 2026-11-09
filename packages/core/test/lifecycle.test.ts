@@ -16,7 +16,7 @@ const current = (deps: Deps) => readlink(`${deps.layout.appsRoot}/hello/current`
 
 async function setup(manifest = HC_MANIFEST) {
   const h = await makeDeps();
-  await setEnv(h.deps, "hello", "TOKEN", "t");
+  await setEnv(h.deps, "hello", "web", "TOKEN", "t");
   return { ...h, manifest };
 }
 

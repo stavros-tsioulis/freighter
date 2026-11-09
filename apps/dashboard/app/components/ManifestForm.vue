@@ -85,24 +85,22 @@ const addService = () => form.value.services.push(newService(form.value.services
           <div class="flex flex-col gap-1"><label :for="`svc-hct-${i}`" class="text-sm font-medium">Healthy within</label><InputText :id="`svc-hct-${i}`" v-model="s.healthTimeout" placeholder="30s" autocomplete="off" :disabled="!s.healthPath" /></div>
           <div class="flex flex-col gap-1"><label :for="`svc-rs-${i}`" class="text-sm font-medium">Restart</label><Select :input-id="`svc-rs-${i}`" v-model="s.restart" :options="restarts" fluid /></div>
         </div>
+        <div class="flex flex-col gap-2 mt-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-medium">Environment</span>
+            <Button label="Add variable" icon="pi pi-plus" size="small" severity="secondary" text @click="s.env.push({ key: '', value: '' })" />
+          </div>
+          <div v-for="(e, j) in s.env" :key="j" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
+            <InputText v-model="e.key" placeholder="NODE_ENV" autocomplete="off" class="font-mono" :aria-label="`Variable ${j + 1} name`" />
+            <ReferenceInput v-model="e.value" :app="appName" :own-services="form.services.map((x) => x.name.trim())" placeholder="production" :aria-label="`Variable ${j + 1} value`" />
+            <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="s.env.splice(j, 1)" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label :for="`svc-secrets-${i}`" class="text-sm font-medium">Secret names</label>
+            <Textarea :id="`svc-secrets-${i}`" v-model="s.secrets" rows="1" auto-resize placeholder="DATABASE_URL" class="font-mono" />
+          </div>
+        </div>
       </Panel>
-    </section>
-
-    <!-- environment + secrets -->
-    <section class="flex flex-col gap-2">
-      <div class="flex items-center justify-between">
-        <h3 class="font-medium">Environment</h3>
-        <Button label="Add variable" icon="pi pi-plus" size="small" severity="secondary" text @click="form.env.push({ key: '', value: '' })" />
-      </div>
-      <div v-for="(e, i) in form.env" :key="i" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
-        <InputText v-model="e.key" placeholder="NODE_ENV" autocomplete="off" class="font-mono" :aria-label="`Variable ${i + 1} name`" />
-        <InputText v-model="e.value" placeholder="production" autocomplete="off" class="font-mono" :aria-label="`Variable ${i + 1} value`" />
-        <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="form.env.splice(i, 1)" />
-      </div>
-      <div class="flex flex-col gap-1 mt-1">
-        <label for="mf-secrets" class="text-sm font-medium">Secret names <span class="text-muted-color font-normal">(set their values on the Secrets tab)</span></label>
-        <Textarea id="mf-secrets" v-model="form.secrets" rows="2" auto-resize placeholder="DATABASE_URL" class="font-mono" />
-      </div>
     </section>
 
     <!-- build -->

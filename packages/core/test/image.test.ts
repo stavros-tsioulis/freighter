@@ -11,8 +11,8 @@ services:
     healthcheck:
       path: /health
       timeout: 5s
-secrets:
-  - DB_URL
+    secrets:
+      - DB_URL
 `;
 
 const digest = (c: string) => c.repeat(64);
@@ -21,7 +21,7 @@ describe("image deploys", () => {
   it("pulls the image, pins its digest and runs it with podman", async () => {
     const { deps, calls, unitText, ctl } = await makeDeps();
     const { setEnv } = await import("../src/index.ts");
-    await setEnv(deps, "shop", "DB_URL", "postgres://x");
+    await setEnv(deps, "shop", "web", "DB_URL", "postgres://x");
     const r = await deploy(deps, { manifestText: IMG("1"), registryAuth: undefined });
     expect(r.units).toEqual(["freighter-shop--web.service"]);
 
@@ -46,7 +46,7 @@ describe("image deploys", () => {
     const deployWith = async (exposed: number[], extra = "", tag = "1") => {
       const t = await makeDeps();
       const { setEnv } = await import("../src/index.ts");
-      await setEnv(t.deps, "shop", "DB_URL", "x");
+      await setEnv(t.deps, "shop", "web", "DB_URL", "x");
       t.ctl.podman.exposed = exposed;
       const logs: string[] = [];
       const r = await deploy(t.deps, { manifestText: IMG(tag).replace("    port: 3000\n", `    port: 3000\n${extra}`), log: (l) => void logs.push(l) });
@@ -87,7 +87,7 @@ describe("image deploys", () => {
   it("fails cleanly, leaving no release behind, when the pull fails", async () => {
     const { deps, ctl } = await makeDeps();
     const { setEnv } = await import("../src/index.ts");
-    await setEnv(deps, "shop", "DB_URL", "x");
+    await setEnv(deps, "shop", "web", "DB_URL", "x");
     ctl.podman.failPull = true;
     await expect(deploy(deps, { manifestText: IMG("nope") })).rejects.toThrow(/pulling ghcr.io\/org\/shop:nope failed.*manifest unknown/);
     expect(await readdir(`${deps.layout.appsRoot}/shop/releases`)).toEqual([]);
@@ -102,7 +102,7 @@ describe("image deploys", () => {
   it("rolls back to the digest the old release was verified with", async () => {
     const { deps, ctl, unitText } = await makeDeps();
     const { setEnv } = await import("../src/index.ts");
-    await setEnv(deps, "shop", "DB_URL", "x");
+    await setEnv(deps, "shop", "web", "DB_URL", "x");
     ctl.podman.digest = digest("a");
     const first = await deploy(deps, { manifestText: IMG("latest") });
     ctl.podman.digest = digest("b"); // the tag moved
@@ -122,7 +122,7 @@ describe("image deploys", () => {
   it("removes containers and the app's directory when the app is deleted", async () => {
     const { deps, calls } = await makeDeps();
     const { setEnv } = await import("../src/index.ts");
-    await setEnv(deps, "shop", "DB_URL", "x");
+    await setEnv(deps, "shop", "web", "DB_URL", "x");
     await deploy(deps, { manifestText: IMG("1") });
     await deleteApp(deps, "shop");
     expect(calls.some((c) => c[0] === "runuser" && c.includes("system") && c.includes("reset"))).toBe(true);

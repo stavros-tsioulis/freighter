@@ -158,9 +158,9 @@ export function createHandlers(d: Deps): Handlers {
     async "variables.get"({ app }) {
       return { variables: await readVariables(d, app) };
     },
-    async "variables.set"({ app, set, remove, logId }) {
+    async "variables.set"({ app, service, set, remove, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      const r = await setVariables(d, app, { set, remove }, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+      const r = await setVariables(d, app, service, { set, remove }, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
         await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
         throw e;
       });
@@ -243,11 +243,11 @@ export function createHandlers(d: Deps): Handlers {
     async "metrics.snapshot"() {
       return { samples: await collectMetrics(d) };
     },
-    async "env.list"({ app }) {
-      return { names: await listEnvNames(d, app) };
+    async "env.list"({ app, service }) {
+      return { names: await listEnvNames(d, app, service) };
     },
-    async "env.set"({ app, key, value }) {
-      await setEnv(d, app, key, value);
+    async "env.set"({ app, service, key, value }) {
+      await setEnv(d, app, service, key, value);
       return {};
     },
     async "config.get"() {

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { loadReleaseManifest, liveTargets, resolveAppEnvironment, withVariables } from "./apply.ts";
+import { loadReleaseManifest, liveTargets, resolveAppEnvironment, withVariables, type ResolvedEnv } from "./apply.ts";
 import { readConnections } from "./connections.ts";
 import type { Deps } from "./deps.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
@@ -17,9 +17,10 @@ import { readVariables } from "./variables.ts";
  */
 const hashPath = (d: Deps, app: string) => `${appDir(d, app)}/resolved.json`;
 
-export function hashResolved(env: { plain: Record<string, string>; secret: Record<string, string> }): string {
+export function hashResolved(env: Record<string, ResolvedEnv>): string {
   const sorted = (m: Record<string, string>) => Object.entries(m).sort(([a], [b]) => a.localeCompare(b));
-  return createHash("sha256").update(JSON.stringify([sorted(env.plain), sorted(env.secret)])).digest("hex");
+  const services = Object.entries(env).sort(([a], [b]) => a.localeCompare(b)).map(([service, e]) => [service, sorted(e.plain), sorted(e.secret)]);
+  return createHash("sha256").update(JSON.stringify(services)).digest("hex");
 }
 
 export async function writeResolvedHash(d: Deps, app: string, hash: string): Promise<void> {
@@ -69,6 +70,7 @@ export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean
     meta: (await currentSource(d, app)) ?? undefined,
     skipVerify: opts.skipVerify,
     log,
+    legacy: true,
   });
   return { changed: true, deploy: result };
 }

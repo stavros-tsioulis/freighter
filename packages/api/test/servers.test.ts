@@ -179,7 +179,7 @@ describe("multi-server routing", () => {
     const remote = t.remote("vps-1");
     expect((await t.request("/v1/apps/shop/restart", { method: "POST", token: t.tokens.deployer, json: {} })).status).toBe(200);
     expect((await t.request("/v1/apps/shop/logs?service=web", { token: t.tokens.deployer })).status).toBe(200);
-    expect((await t.request("/v1/apps/shop/env/TOKEN", { method: "PUT", token: t.tokens.admin, json: { value: "x" } })).status).toBe(200);
+    expect((await t.request("/v1/apps/shop/services/web/env/TOKEN", { method: "PUT", token: t.tokens.admin, json: { value: "x" } })).status).toBe(200);
     expect((await t.request("/v1/apps/shop/rollback", { method: "POST", token: t.tokens.deployer, json: {} })).status).toBe(202);
     await t.api.jobs.idle();
     expect(remote.calls.map((c) => c.op)).toEqual(expect.arrayContaining(["app.control", "app.logs", "env.set", "app.rollback"]));

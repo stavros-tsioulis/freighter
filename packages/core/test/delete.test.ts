@@ -9,8 +9,8 @@ describe("deleteApp", () => {
     const h = await makeDeps();
     await deploy(h.deps, { ...routed("shop", "shop.example.com", "auto"), source: await artifact() });
     await deploy(h.deps, { ...routed("blog", "blog.example.com", "off"), source: await artifact() });
-    await mkdir(h.deps.layout.envDir, { recursive: true });
-    await writeFile(envFilePath(h.deps, "shop"), "TOKEN=1\n");
+    await mkdir(`${h.deps.layout.envDir}/shop`, { recursive: true });
+    await writeFile(envFilePath(h.deps, "shop", "web"), "TOKEN=1\n");
     await mkdir(`${h.deps.config.git.keyDir}/shop`, { recursive: true });
     await mkdir(`${h.deps.layout.appsRoot}/shop/shared`, { recursive: true });
     await writeFile(`${h.deps.layout.appsRoot}/shop/shared/data.db`, "precious");
@@ -26,7 +26,7 @@ describe("deleteApp", () => {
     expect(r.units).toContain(unit);
     expect(h.unitFiles().filter((u) => h.unitText(u).includes("X-Freighter-App=shop"))).toEqual([]);
     expect(existsSync(`${h.deps.layout.appsRoot}/shop`)).toBe(false);
-    expect(existsSync(envFilePath(h.deps, "shop"))).toBe(false);
+    expect(existsSync(envFilePath(h.deps, "shop", "web"))).toBe(false);
     expect(existsSync(`${h.deps.config.git.keyDir}/shop`)).toBe(false);
     expect(existsSync(pem)).toBe(false);
     expect(h.calls.some((c) => c[0] === "certbot" && c.includes("delete") && c.includes("shop.example.com"))).toBe(true);

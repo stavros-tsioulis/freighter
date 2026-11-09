@@ -31,6 +31,8 @@ export interface DeployOptions {
    * fails, the previous domains are restored along with the previous release.
    */
   domains?: DomainInput[];
+  /** The manifest may be written the old way (shared `environment` and `secrets`); set when redeploying a release that was. */
+  legacy?: boolean;
   /** Where to write what the deploy is doing (the dashboard shows it as the deployment's log). */
   log?: DeployLog;
 }
@@ -64,7 +66,7 @@ export class DeployFailedError extends Error {
 
 export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult> {
   if (!d.isRoot) throw new Error("deploy must run as root (or use --prefix for a dry local run)");
-  const manifest = parseManifest(opts.manifestText);
+  const manifest = parseManifest(opts.manifestText, { legacy: opts.legacy });
   const app = manifest.name;
 
   const hasImages = Object.keys(imageServices(manifest)).length > 0;
@@ -75,7 +77,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
 
   const missing = await missingSecrets(d, manifest);
   if (missing.length > 0) {
-    throw new Error(`missing secrets for ${app}: ${missing.join(", ")} (set with: freighter env set ${app} KEY)`);
+    throw new Error(`missing secrets for ${app}: ${missing.join(", ")} (set with: freighter env set ${app} SERVICE KEY)`);
   }
 
   const previousDomains = await readDomains(d, app);

@@ -47,6 +47,10 @@ export const serviceSchema = z
   restart: z.enum(["always", "on-failure", "no"]).default("on-failure"),
   /** For routed services: how long HAProxy waits on the service (uploads, streaming, slow responses). */
   proxy: z.object({ timeout: duration }).optional(),
+  /** Plain values for this service: the initial ones, which more can be added to from the dashboard. May contain references. */
+  environment: z.record(envKey, z.string()).default({}),
+  /** Names of this service's secrets. Their values are set on the server and never appear in app.yaml. */
+  secrets: z.array(envKey).default([]),
   })
   .superRefine((s, ctx) => {
     if ((s.command === undefined) === (s.image === undefined)) {
@@ -73,26 +77,27 @@ const manifestBase = z.object({
       })
       .optional(),
     services: z.record(ident, serviceSchema),
-    environment: z.record(envKey, z.string()).default({}),
-    secrets: z.array(envKey).default([]),
     releases: z.object({ keep: z.number().int().min(2).default(5) }).default({ keep: 5 }),
 });
 
 function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
-  for (const s of m.secrets) {
-    if (s in m.environment) {
-      ctx.addIssue({ code: "custom", path: ["secrets"], message: `${s} is both an environment value and a secret` });
+  for (const [name, svc] of Object.entries(m.services)) {
+    for (const s of svc.secrets) {
+      if (s in svc.environment) {
+        ctx.addIssue({ code: "custom", path: ["services", name, "secrets"], message: `${s} is both an environment value and a secret` });
+      }
     }
-  }
-  // Connections to this app's own services can be checked here; other apps' are checked when the app is deployed.
-  for (const [key, value] of Object.entries(m.environment)) {
-    for (const ref of findReferences(value)) {
-      if (ref.storage !== undefined || (ref.app !== undefined && ref.app !== m.name)) continue;
-      const path = ["environment", key];
-      if (!(ref.service in m.services)) {
-        ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });
-      } else if (isEnvAttr(ref.attr) && !(ref.attr in m.environment)) {
-        ctx.addIssue({ code: "custom", path, message: `${ref.text}: ${ref.attr} is not set in environment (secrets can't be referenced)` });
+    // Connections to this app's own services can be checked here; other apps' are checked when the app is deployed.
+    for (const [key, value] of Object.entries(svc.environment)) {
+      for (const ref of findReferences(value)) {
+        if (ref.storage !== undefined || (ref.app !== undefined && ref.app !== m.name)) continue;
+        const path = ["services", name, "environment", key];
+        const target = m.services[ref.service];
+        if (!target) {
+          ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });
+        } else if (isEnvAttr(ref.attr) && !(ref.attr in target.environment)) {
+          ctx.addIssue({ code: "custom", path, message: `${ref.text}: ${ref.attr} is not set in the environment of ${ref.service} (secrets can't be referenced)` });
+        }
       }
     }
   }

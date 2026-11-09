@@ -1,5 +1,5 @@
 import { stringify } from "yaml";
-import { parseManifest } from "./parse.ts";
+import { foldSharedEnvironment, parseManifest } from "./parse.ts";
 import { settingsSchema, type ManifestSettings } from "./schema.ts";
 
 /**
@@ -7,7 +7,7 @@ import { settingsSchema, type ManifestSettings } from "./schema.ts";
  * format would reject is rejected here too (throws a ZodError / Error with a readable message).
  */
 export function renderManifest(name: string, settings: ManifestSettings): string {
-  const s = settingsSchema.parse(settings);
+  const s = settingsSchema.parse(foldSharedEnvironment(settings));
   const text = stringify({ name, ...s }, { lineWidth: 0 });
   parseManifest(text);
   return text;

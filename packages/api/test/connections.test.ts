@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { makeApi } from "./helpers.ts";
 
-const WEB = "name: web\nservices:\n  web:\n    image: ghcr.io/org/web:1\n    port: 3000\nenvironment:\n  BILLING_URL: \"@billing/api.url\"\n";
-const BILLING = "name: billing\nservices:\n  api:\n    image: ghcr.io/org/billing:1\nenvironment:\n  REGION: eu\n";
+const WEB = "name: web\nservices:\n  web:\n    image: ghcr.io/org/web:1\n    port: 3000\n    environment:\n      BILLING_URL: \"@billing/api.url\"\n";
+const BILLING = "name: billing\nservices:\n  api:\n    image: ghcr.io/org/billing:1\n    environment:\n      REGION: eu\n";
 
 async function project(t: Awaited<ReturnType<typeof makeApi>>) {
   const p = (await t.request("/v1/projects", { method: "POST", token: t.tokens.admin, json: { name: "Shop" } })).json;
@@ -25,7 +25,7 @@ describe("connections", () => {
     expect(set[0]!.args).toMatchObject({
       app: "web",
       server: "local",
-      peers: { billing: { name: "billing", server: "local", services: ["api"], domains: [{ hostname: "pay.example.com", service: "api", tls: "auto" }], ports: { api: 21000 }, environment: { REGION: "eu" } } },
+      peers: { billing: { name: "billing", server: "local", services: ["api"], domains: [{ hostname: "pay.example.com", service: "api", tls: "auto" }], ports: { api: 21000 }, environment: { api: { REGION: "eu" } } } },
     });
     expect(t.calls.findIndex((c) => c.op === "connections.set")).toBeLessThan(t.calls.findIndex((c) => c.op === "app.deploy"));
     expect(t.registry.deployments.get(r.json.id)).toMatchObject({ status: "success" });

@@ -114,8 +114,8 @@ function renderImageUnit(input: RenderInput): string {
     if (!ENV_KEY.test(k)) throw new Error(`invalid environment key "${k}"`);
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));
   }
-  svc.push(line("EnvironmentFile", `-${envFile(layout, app)}`));
-  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app)}`));
+  svc.push(line("EnvironmentFile", `-${envFile(layout, app, service)}`));
+  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app, service)}`));
   if (port !== undefined) svc.push(line("Environment", `PORT=${port}`));
   svc.push(line("Restart", def.restart), line("RestartSec", 3), line("TimeoutStopSec", 20));
   svc.push(line("CPUAccounting", "true"), line("MemoryAccounting", "true"));
@@ -159,8 +159,8 @@ export function renderUnit(input: RenderInput): string {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) throw new Error(`invalid environment key "${k}"`);
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));
   }
-  svc.push(line("EnvironmentFile", `-${envFile(layout, app)}`));
-  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app)}`));
+  svc.push(line("EnvironmentFile", `-${envFile(layout, app, service)}`));
+  if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app, service)}`));
   if (port !== undefined) svc.push(line("Environment", `PORT=${port}`));
 
   svc.push(line("Restart", def.restart), line("RestartSec", 3));

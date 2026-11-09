@@ -6,10 +6,10 @@ services:
   web:
     image: ghcr.io/org/web:1
     port: 3000
-environment:
-  PAY: "@billing/api.url"
-  INT: "@billing/api.internal"
-  GONE: "@ghost/x.url"
+    environment:
+      PAY: "@billing/api.url"
+      INT: "@billing/api.internal"
+      GONE: "@ghost/x.url"
 `;
 const BILLING = "name: billing\nservices:\n  api:\n    image: ghcr.io/org/billing:1\n";
 
@@ -33,6 +33,16 @@ describe("project graph", () => {
     expect(edge("url", "PAY")).toMatchObject({ from: { app: "web", service: "web" }, to: { app: "billing", service: "api" }, broken: null });
     expect(edge("internal", "INT").broken).toMatch(/has no port/);
     expect(edge("url", "GONE").broken).toMatch(/not in this project/);
+  });
+
+  it("draws an arrow only from the service whose environment holds the reference", async () => {
+    const { t, p } = await setup();
+    t.registry.apps.upsert({ name: "web", server: "local", manifestText: `${WEB}  worker:\n    image: ghcr.io/org/worker:1\n    environment:\n      PAY: "@billing/api.url"\n`, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const g = (await t.request(`/v1/projects/${p.id}/graph`, { token: t.tokens.viewer })).json;
+    expect(g.edges.filter((e: { key: string }) => e.key === "PAY").map((e: { from: { service: string } }) => e.from.service).sort()).toEqual(["web", "worker"]);
+    t.registry.apps.upsert({ name: "web", server: "local", manifestText: `${WEB}  worker:\n    image: ghcr.io/org/worker:1\n`, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const g2 = (await t.request(`/v1/projects/${p.id}/graph`, { token: t.tokens.viewer })).json;
+    expect(g2.edges.map((e: { from: { service: string } }) => e.from.service)).toEqual(["web", "web", "web"]);
   });
 
   it("keeps apps without a project on their own canvas", async () => {
@@ -67,6 +77,7 @@ describe("GET /v1/apps/:app/variables", () => {
     expect(byKey.INT.error).toMatch(/has no port/);
     expect(byKey.INT.resolved).toBeNull();
     expect(byKey.PAY.source).toBe("app.yaml");
+    expect(byKey.PAY.service).toBe("web");
     expect((await t.request("/v1/apps/nope/variables", { token: t.tokens.viewer })).status).toBe(404);
   });
 });
@@ -74,20 +85,20 @@ describe("GET /v1/apps/:app/variables", () => {
 describe("changing variables", () => {
   it("is admin-only, validates the name, tells the agent, and labels added and overridden values", async () => {
     const { t } = await setup();
-    const put = (token: string, key = "MODE", value = "x") => t.request(`/v1/apps/web/variables/${key}`, { method: "PUT", token, json: { value } });
+    const put = (token: string, key = "MODE", value = "x") => t.request(`/v1/apps/web/services/web/variables/${key}`, { method: "PUT", token, json: { value } });
     expect((await put(t.tokens.deployer)).status).toBe(403);
     expect((await put(t.tokens.admin, "lower")).status).toBe(400);
     expect((await put(t.tokens.admin)).json).toMatchObject({ ok: true, redeployed: false });
-    expect(t.calls.find((c) => c.op === "variables.set")!.args).toMatchObject({ app: "web", set: { MODE: "x" } });
+    expect(t.calls.find((c) => c.op === "variables.set")!.args).toMatchObject({ app: "web", service: "web", set: { MODE: "x" } });
     expect(t.calls.findIndex((c) => c.op === "connections.set")).toBeLessThan(t.calls.findIndex((c) => c.op === "variables.set"));
 
     // the change re-syncs the app from the (fake) agent, which knows a different manifest
     t.registry.apps.upsert({ name: "web", server: "local", manifestText: WEB, currentRelease: "r1", previousRelease: null, status: "deployed" });
-    t.handlers["variables.get"] = () => ({ variables: { PAY: "https://other", NEW: "1" } });
+    t.handlers["variables.get"] = () => ({ variables: { web: { PAY: "https://other", NEW: "1" } } });
     const vars = (await t.request("/v1/apps/web/variables", { token: t.tokens.viewer })).json.variables;
     const src = Object.fromEntries(vars.map((v: { key: string; source: string }) => [v.key, v.source]));
     expect(src).toMatchObject({ PAY: "override", NEW: "added", INT: "app.yaml" });
-    expect((await t.request("/v1/apps/web/variables/NEW", { method: "DELETE", token: t.tokens.admin })).status).toBe(200);
-    expect(t.calls.filter((c) => c.op === "variables.set").at(-1)!.args).toMatchObject({ remove: ["NEW"] });
+    expect((await t.request("/v1/apps/web/services/web/variables/NEW", { method: "DELETE", token: t.tokens.admin })).status).toBe(200);
+    expect(t.calls.filter((c) => c.op === "variables.set").at(-1)!.args).toMatchObject({ service: "web", remove: ["NEW"] });
   });
 });

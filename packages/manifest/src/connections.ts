@@ -9,8 +9,8 @@ export const appFactsSchema = z.object({
   services: z.array(z.string().regex(IDENT_RE)),
   domains: z.array(domainSchema),
   ports: z.record(z.string(), z.number().int().positive().optional()),
-  /** The plain `environment:` values as written (they may contain references themselves). */
-  environment: z.record(z.string(), z.string()),
+  /** Each service's plain environment values as written (they may contain references themselves). */
+  environment: z.record(z.string().regex(IDENT_RE), z.record(z.string(), z.string())),
 });
 export type AppFacts = z.infer<typeof appFactsSchema>;
 

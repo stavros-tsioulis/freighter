@@ -24,23 +24,27 @@ describe("substituteReferences", () => {
 });
 
 describe("manifest connections", () => {
-  const base = "name: a\nservices:\n  api:\n    command: x\n  web:\n    command: y\n";
-  it("accepts references to own services and environment", () => {
-    expect(() => parseManifest(`${base}environment:\n  A: "@api.url"\n  B: "@api.A"\n  C: "@other/svc.url"\n`)).not.toThrow();
+  const api = "name: a\nservices:\n  api:\n    command: x\n";
+  const web = (env: string) => `${api}  web:\n    command: y\n    environment:\n${env}`;
+  it("accepts references to own services and their environment", () => {
+    expect(() => parseManifest(`${api}    environment:\n      A: x\n  web:\n    command: y\n    environment:\n      B: "@api.url"\n      C: "@api.A"\n      D: "@other/svc.url"\n`)).not.toThrow();
   });
   it("rejects unknown services and unset or secret env keys", () => {
-    expect(() => parseManifest(`${base}environment:\n  A: "@nope.url"\n`)).toThrow(/has no service/);
-    expect(() => parseManifest(`${base}environment:\n  A: "@api.MISSING"\n`)).toThrow(/not set in environment/);
-    expect(() => parseManifest(`${base}environment:\n  A: "@api.S"\nsecrets:\n  - S\n`)).toThrow(/secrets can't be referenced/);
+    expect(() => parseManifest(web('      A: "@nope.url"\n'))).toThrow(/has no service/);
+    expect(() => parseManifest(web('      A: "@api.MISSING"\n'))).toThrow(/not set in the environment of api/);
+    expect(() => parseManifest(`${api}    secrets:\n      - S\n  web:\n    command: y\n    environment:\n      A: "@api.S"\n`)).toThrow(/secrets can't be referenced/);
+  });
+  it("looks in the environment of the service it names, not of the one that holds it", () => {
+    expect(() => parseManifest("name: a\nservices:\n  api:\n    command: x\n  web:\n    command: y\n    environment:\n      A: x\n      B: \"@api.A\"\n")).toThrow(/not set in the environment of api/);
   });
 });
 
 describe("connectionEdges", () => {
-  it("makes every other service of the app a consumer, across apps too", async () => {
+  it("makes the service that holds a reference its consumer, across apps too", async () => {
     const { connectionEdges } = await import("../src/index.ts");
-    const m = parseManifest('name: a\nservices:\n  api:\n    command: x\n  web:\n    command: y\n  jobs:\n    command: z\nenvironment:\n  API: "@api.url"\n  PAY: "@billing/api.internal"\n');
+    const m = parseManifest('name: a\nservices:\n  api:\n    command: x\n    environment:\n      PAY: "@billing/api.internal"\n  web:\n    command: y\n    environment:\n      API: "@api.url"\n  jobs:\n    command: z\n');
     const edges = connectionEdges(m).map((e) => `${e.from.service}>${e.to.app}/${e.to.service}.${e.attr}`).sort();
-    expect(edges).toEqual(["api>billing/api.internal", "jobs>a/api.url", "jobs>billing/api.internal", "web>a/api.url", "web>billing/api.internal"]);
+    expect(edges).toEqual(["api>billing/api.internal", "web>a/api.url"]);
   });
 });
 
@@ -51,11 +55,11 @@ describe("storage references", () => {
     expect(findReferences("@storage:uploads.secretKey")[0]).toMatchObject({ attr: "secretKey" });
     expect(findReferences("@storage:uploads.nope")).toEqual([]);
     expect(findReferences("me@storage:uploads.url")).toEqual([]);
-    expect(referencedStorages({ A: "@storage:b.url", B: "@storage:a.region @storage:b.domain", C: "@api.url" })).toEqual(["a", "b"]);
-    const m = parseManifest('name: a\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:up.url"\n');
+    expect(referencedStorages(["@storage:b.url", "@storage:a.region @storage:b.domain", "@api.url"])).toEqual(["a", "b"]);
+    const m = parseManifest('name: a\nservices:\n  web:\n    command: x\n    environment:\n      S3: "@storage:up.url"\n');
     expect(storageEdges(m)).toEqual([{ from: { app: "a", service: "web" }, storage: "up", attr: "url", key: "S3" }]);
   });
   it("accepts them in a manifest without checking the storage exists", () => {
-    expect(() => parseManifest('name: a\nservices:\n  web:\n    command: x\nenvironment:\n  S3: "@storage:anything.url"\n')).not.toThrow();
+    expect(() => parseManifest('name: a\nservices:\n  web:\n    command: x\n    environment:\n      S3: "@storage:anything.url"\n')).not.toThrow();
   });
 });

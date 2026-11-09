@@ -7,7 +7,7 @@ describe("auth", () => {
     ["GET", "/v1/apps", "viewer"],
     ["GET", "/v1/apps/shop/releases", "viewer"],
     ["GET", "/v1/apps/shop/deployments", "viewer"],
-    ["GET", "/v1/apps/shop/env", "viewer"],
+    ["GET", "/v1/apps/shop/services/web/env", "viewer"],
     ["GET", "/v1/apps/shop/domains", "viewer"],
     ["POST", "/v1/apps/shop/domains", "admin"],
     ["POST", "/v1/apps/shop/domains/a.example.com/verify", "admin"],
@@ -16,7 +16,7 @@ describe("auth", () => {
     ["POST", "/v1/apps/shop/rollback", "deployer"],
     ["POST", "/v1/apps/shop/restart", "deployer"],
     ["GET", "/v1/apps/shop/logs?service=web", "deployer"],
-    ["PUT", "/v1/apps/shop/env/TOKEN", "admin"],
+    ["PUT", "/v1/apps/shop/services/web/env/TOKEN", "admin"],
     ["GET", "/v1/tokens", "admin"],
     ["GET", "/v1/audit", "admin"],
     ["POST", "/v1/certs/renew", "admin"],
@@ -245,13 +245,20 @@ describe("operations", () => {
 
   it("sets env without ever storing or returning the value", async () => {
     const t = await makeApi();
-    const r = await t.request("/v1/apps/shop/env/TOKEN", { method: "PUT", token: t.tokens.admin, json: { value: "s3cret-value" } });
+    const r = await t.request("/v1/apps/shop/services/web/env/TOKEN", { method: "PUT", token: t.tokens.admin, json: { value: "s3cret-value" } });
     expect(r.status).toBe(200);
-    expect(t.calls.at(-1)).toEqual({ op: "env.set", args: { app: "shop", key: "TOKEN", value: "s3cret-value" } });
+    expect(t.calls.at(-1)).toEqual({ op: "env.set", args: { app: "shop", service: "web", key: "TOKEN", value: "s3cret-value" } });
     expect(JSON.stringify(t.registry.audit.list())).not.toContain("s3cret-value");
-    expect(t.registry.audit.list()[0]).toMatchObject({ action: "env.set", app: "shop", detail: { key: "TOKEN" } });
-    expect((await t.request("/v1/apps/shop/env/lower", { method: "PUT", token: t.tokens.admin, json: { value: "x" } })).status).toBe(400);
-    expect((await t.request("/v1/apps/shop/env", { token: t.tokens.viewer })).json).toEqual({ names: ["TOKEN"] });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "env.set", app: "shop", detail: { service: "web", key: "TOKEN" } });
+    expect((await t.request("/v1/apps/shop/services/web/env/lower", { method: "PUT", token: t.tokens.admin, json: { value: "x" } })).status).toBe(400);
+    expect((await t.request("/v1/apps/shop/services/web/env", { token: t.tokens.viewer })).json).toEqual({ names: ["TOKEN"], declared: [] });
+  });
+
+  it("lists the secrets a service declares next to the ones that have a value", async () => {
+    const t = await makeApi();
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: "name: shop\nservices:\n  web:\n    command: x\n    secrets: [TOKEN, DB]\n  job:\n    command: y\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    expect((await t.request("/v1/apps/shop/services/web/env", { token: t.tokens.viewer })).json).toEqual({ names: ["TOKEN"], declared: ["TOKEN", "DB"] });
+    expect((await t.request("/v1/apps/shop/services/job/env", { token: t.tokens.viewer })).json.declared).toEqual([]);
   });
 
   it("maps agent failures to HTTP statuses", async () => {
@@ -259,17 +266,17 @@ describe("operations", () => {
     t.handlers["env.list"] = () => {
       throw new AgentError("not_found", "app \"shop\" is not deployed");
     };
-    expect((await t.request("/v1/apps/shop/env", { token: t.tokens.viewer })).status).toBe(404);
+    expect((await t.request("/v1/apps/shop/services/web/env", { token: t.tokens.viewer })).status).toBe(404);
     t.handlers["env.list"] = () => {
       throw new AgentError("unavailable", "cannot reach agent at /run/x");
     };
-    const r = await t.request("/v1/apps/shop/env", { token: t.tokens.viewer });
+    const r = await t.request("/v1/apps/shop/services/web/env", { token: t.tokens.viewer });
     expect(r.status).toBe(503);
     expect(r.json.error.code).toBe("agent_unavailable");
     t.handlers["env.list"] = () => {
       throw new Error("kaboom");
     };
-    const e = await t.request("/v1/apps/shop/env", { token: t.tokens.viewer });
+    const e = await t.request("/v1/apps/shop/services/web/env", { token: t.tokens.viewer });
     expect(e.status).toBe(500);
     expect(e.json.error.message).toBe("internal error"); // no leakage
   });

@@ -4,7 +4,8 @@ import { IDENT_RE } from "@freighter/manifest";
 import { retire, writeRoutes } from "./apply.ts";
 import type { Deps } from "./deps.ts";
 import { readDomains } from "./domains.ts";
-import { envFilePath, refsEnvPath } from "./env.ts";
+import { appEnvDir } from "./env.ts";
+import { legacyEnvFile, legacyRefsEnvFile } from "@freighter/systemd";
 import { appKeyDir } from "./git.ts";
 import { removeContainers } from "./image.ts";
 import { buildCacheDir } from "./build.ts";
@@ -49,7 +50,7 @@ export async function deleteApp(d: Deps, app: string): Promise<DeleteAppResult> 
       await d.run("certbot", ["delete", "--non-interactive", "--cert-name", x.hostname]).catch(() => undefined);
     }
     // 4. Everything on disk that belongs to it.
-    for (const path of [dir, envFilePath(d, app), refsEnvPath(d, app), appKeyDir(d, app), buildCacheDir(d, app)]) await rm(path, { recursive: true, force: true });
+    for (const path of [dir, appEnvDir(d, app), legacyEnvFile(d.layout, app), legacyRefsEnvFile(d.layout, app), appKeyDir(d, app), buildCacheDir(d, app)]) await rm(path, { recursive: true, force: true });
     // 5. The system user, but only one that ensureApp made (a no-login system account with a home that was never created).
     // An app named after a user that already existed (postgres, say) ran as that user and must not take it away.
     const entry = (await d.run("getent", ["passwd", app])).stdout.trim().split(":");

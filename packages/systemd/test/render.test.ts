@@ -4,7 +4,7 @@ import { parseManifest } from "@freighter/manifest";
 import { renderUnit } from "../src/index.ts";
 
 const manifest = parseManifest(readFileSync(new URL("../../../examples/app.yaml", import.meta.url), "utf8"));
-const render = (service: string) => renderUnit({ app: manifest.name, service, def: manifest.services[service]!, environment: manifest.environment });
+const render = (service: string) => renderUnit({ app: manifest.name, service, def: manifest.services[service]!, environment: manifest.services[service]!.environment });
 
 const WEB = `[Unit]
 Description=Freighter myapp/web
@@ -22,7 +22,7 @@ Group=myapp
 WorkingDirectory=/srv/apps/myapp/current
 ExecStart=/usr/bin/env node .output/server/index.mjs
 Environment="NODE_ENV=production"
-EnvironmentFile=-/etc/freighter/apps/myapp.env
+EnvironmentFile=-/etc/freighter/apps/myapp/web.env
 Environment=PORT=3100
 Restart=on-failure
 RestartSec=3
@@ -95,10 +95,10 @@ describe("renderUnit", () => {
 
 describe("renderUnit for image services", () => {
   const img = parseManifest(
-    "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1.2\n    port: 3000\n    containerPort: 8080\n    resources:\n      memory: 512M\n      cpu: 1\n    volumes:\n      uploads: /var/uploads\nenvironment:\n  NODE_ENV: production\nsecrets:\n  - DB_URL\n",
+    "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1.2\n    port: 3000\n    containerPort: 8080\n    resources:\n      memory: 512M\n      cpu: 1\n    volumes:\n      uploads: /var/uploads\n    environment:\n      NODE_ENV: production\n    secrets:\n      - DB_URL\n",
   );
   const run = (extra: Partial<Parameters<typeof renderUnit>[0]> = {}) =>
-    renderUnit({ app: "shop", service: "web", def: img.services.web!, environment: img.environment, secrets: img.secrets, port: 21000, loopback: true, ...extra });
+    renderUnit({ app: "shop", service: "web", def: img.services.web!, environment: img.services.web!.environment, secrets: img.services.web!.secrets, port: 21000, loopback: true, ...extra });
 
   it("runs podman with the pinned digest, forwarding the environment by name", () => {
     const digest = `ghcr.io/org/shop@sha256:${"b".repeat(64)}`;

@@ -32,9 +32,8 @@ services:
     healthcheck:
       path: /health
       timeout: 20s
-
-environment:
-  GREETING: hello
+    environment:
+      GREETING: hello
 
 releases:
   keep: 5
@@ -102,6 +101,8 @@ Open the app's **Domains** tab, add `hello.example.com` for the `web` service wi
 Releases are replaced on every deploy, so never write data into the release directory. Use `/srv/apps/<app>/shared/`. It's owned by the app's user and is the only path the service can write to besides its private `/tmp`. Point your app at it with an environment value:
 
 ```yaml
-environment:
-  UPLOAD_DIR: /srv/apps/hello/shared/uploads
+services:
+  web:
+    environment:
+      UPLOAD_DIR: /srv/apps/hello/shared/uploads
 ```

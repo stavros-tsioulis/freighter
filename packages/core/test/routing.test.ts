@@ -188,7 +188,7 @@ describe("host-level checks", () => {
 
   it("missing acme email is reported by the cert layer, not swallowed", async () => {
     const h = await makeDeps();
-    await setEnv(h.deps, "shop", "X", "1");
+    await setEnv(h.deps, "shop", "web", "X", "1");
     h.deps.issueCert = async () => {
       throw new Error("acme.email is not set in /etc/freighter/config.yaml (required for tls: auto)");
     };

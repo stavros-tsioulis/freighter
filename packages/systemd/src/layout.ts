@@ -12,9 +12,13 @@ export const defaultLayout: Layout = {
 
 export const workingDir = (l: Layout, app: string) => `${l.appsRoot}/${app}/current`;
 export const sharedDir = (l: Layout, app: string) => `${l.appsRoot}/${app}/shared`;
-export const envFile = (l: Layout, app: string) => `${l.envDir}/${app}.env`;
+/** A service's secrets, in a root-only file its unit loads. */
+export const envFile = (l: Layout, app: string, service: string) => `${l.envDir}/${app}/${service}.env`;
 /** Credentials that connections resolve to (a storage's key pair): root-only like the secrets file, never in a unit. */
-export const refsEnvFile = (l: Layout, app: string) => `${l.envDir}/${app}.refs.env`;
+export const refsEnvFile = (l: Layout, app: string, service: string) => `${l.envDir}/${app}/${service}.refs.env`;
+/** Where an app's secrets and refs lived when they were shared by all its services (still read once to move them). */
+export const legacyEnvFile = (l: Layout, app: string) => `${l.envDir}/${app}.env`;
+export const legacyRefsEnvFile = (l: Layout, app: string) => `${l.envDir}/${app}.refs.env`;
 export const releasePath = (l: Layout, app: string, release: string) => `${l.appsRoot}/${app}/releases/${release}`;
 /** Home of the app's rootless Podman (image store, runtime state); owned by the app user. */
 export const containerHome = (l: Layout, app: string) => `${l.appsRoot}/${app}/container`;

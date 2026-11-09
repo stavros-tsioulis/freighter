@@ -92,8 +92,8 @@ describe("agent", () => {
 
   it("sets and lists secret names, never values", async () => {
     const { client } = await setup();
-    await client.call("env.set", { app: "shop", key: "TOKEN", value: "s3cret" });
-    const out = await client.call("env.list", { app: "shop" });
+    await client.call("env.set", { app: "shop", service: "web", key: "TOKEN", value: "s3cret" });
+    const out = await client.call("env.list", { app: "shop", service: "web" });
     expect(out).toEqual({ names: ["TOKEN"] });
     expect(JSON.stringify(out)).not.toContain("s3cret");
   });

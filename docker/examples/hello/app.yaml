@@ -5,8 +5,7 @@ services:
     command: node server.mjs
     resources: { memory: 128M, cpu: 0.5 }
     healthcheck: { path: /health, timeout: 20s }
+    environment:
+      GREETING: hello from the lab
 
 # Domains are not set here: add them on the app (dashboard → app → Domains, `freighter domain add`, or the API).
-
-environment:
-  GREETING: hello from the lab

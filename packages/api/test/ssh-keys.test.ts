@@ -138,8 +138,7 @@ describe("branches, inspect and one-step deployments", () => {
   describe("settings for repositories without an app.yaml", () => {
     const settings = {
       build: { commands: ["npm ci"] },
-      services: { web: { command: "node server.js", port: 3000, healthcheck: { path: "/up" } } },
-      secrets: ["DATABASE_URL"],
+      services: { web: { command: "node server.js", port: 3000, healthcheck: { path: "/up" }, secrets: ["DATABASE_URL"] } },
     };
     const noManifest = (t: Awaited<ReturnType<typeof makeApi>>) => {
       t.handlers["git.inspect"] = () => ({ sha: "e".repeat(40), commit: { sha: "e".repeat(40), subject: "s", author: "a" }, hasManifest: false, valid: false, appName: null, error: "app.yaml not found", buildCommands: [] });
@@ -158,7 +157,7 @@ describe("branches, inspect and one-step deployments", () => {
       expect(sent).toMatch(/^name: storefront/m);
       expect(sent).toMatch(/node server.js/);
       expect(r.json.link.settings.services.web.port).toBe(3000);
-      expect(t.registry.gitLinks.get("storefront")?.settings).toMatchObject({ secrets: ["DATABASE_URL"] });
+      expect(t.registry.gitLinks.get("storefront")?.settings).toMatchObject({ services: { web: { secrets: ["DATABASE_URL"] } } });
     });
 
     it("asks for a name and at least one service when the repository has no app.yaml", async () => {
@@ -182,11 +181,11 @@ describe("branches, inspect and one-step deployments", () => {
       const t = await makeApi();
       const put = await t.request("/v1/apps/shop/git", { method: "PUT", token: t.tokens.admin, json: { repository: REPO, branch: "main", settings } });
       expect(put.json.link.settings.build.commands).toEqual(["npm ci"]);
-      const patched = await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { settings: { ...settings, environment: { NODE_ENV: "production" } } } });
-      expect(patched.json.settings.environment).toEqual({ NODE_ENV: "production" });
+      const patched = await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { settings: { ...settings, services: { web: { ...settings.services.web, environment: { NODE_ENV: "production" } } } } } });
+      expect(patched.json.settings.services.web.environment).toEqual({ NODE_ENV: "production" });
       expect((await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { branch: "dev" } })).json.settings).not.toBeNull(); // untouched by other edits
       expect((await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { settings: null } })).json.settings).toBeNull();
-      const bad = await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { settings: { services: { web: { command: "x" } }, secrets: ["lower"] } } });
+      const bad = await t.request("/v1/apps/shop/git", { method: "PATCH", token: t.tokens.admin, json: { settings: { services: { web: { command: "x", secrets: ["lower"] } } } } });
       expect(bad.status).toBe(400);
       const prev = await t.request("/v1/manifest/render", { method: "POST", token: t.tokens.viewer, json: { name: "shop", settings } });
       expect(prev.json.text).toMatch(/command: node server.js/);

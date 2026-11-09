@@ -142,10 +142,10 @@ export interface AppSettings {
       resources?: { memory?: string; cpu?: number };
       healthcheck?: { path: string; interval?: string; timeout?: string };
       restart?: "always" | "on-failure" | "no";
+      environment?: Record<string, string>;
+      secrets?: string[];
     }
   >;
-  environment?: Record<string, string>;
-  secrets?: string[];
   releases?: { keep: number };
 }
 export interface GitLink {

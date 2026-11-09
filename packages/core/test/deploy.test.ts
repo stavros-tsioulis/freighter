@@ -9,7 +9,7 @@ import { MANIFEST, artifact, makeDeps } from "./helpers.ts";
 describe("deploy", () => {
   it("performs a first deploy", async () => {
     const { deps, calls, mutating } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     const src = await artifact();
     const r = await deploy(deps, { manifestText: MANIFEST, source: src });
 
@@ -39,7 +39,7 @@ describe("deploy", () => {
 
   it("second deploy swaps current and keeps the old release", async () => {
     const { deps } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     const a = await deploy(deps, { manifestText: MANIFEST, source: await artifact() });
     const b = await deploy(deps, { manifestText: MANIFEST, source: await artifact({ "server.mjs": "// v2\n" }) });
     const app = `${deps.layout.appsRoot}/hello`;
@@ -57,12 +57,12 @@ describe("deploy", () => {
 
   it("removes units for dropped services only for the same app", async () => {
     const { deps, calls } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     const other = MANIFEST.replace("name: hello", "name: hello-web"); // prefix-overlapping app name
-    await setEnv(deps, "hello-web", "TOKEN", "t");
+    await setEnv(deps, "hello-web", "web", "TOKEN", "t");
     await deploy(deps, { manifestText: other, source: await artifact() });
     await deploy(deps, { manifestText: MANIFEST, source: await artifact() });
-    const slim = MANIFEST.replace(/  worker:\n    command: node worker.mjs\n/, "");
+    const slim = MANIFEST.replace(/  worker:\n    command: node worker.mjs\n    environment:\n      GREETING: hi\n/, "");
     const r = await deploy(deps, { manifestText: slim, source: await artifact() });
     expect(r.removed).toEqual(["freighter-hello--worker.service"]);
     expect((await readdir(deps.layout.unitDir)).sort()).toEqual([
@@ -76,7 +76,7 @@ describe("deploy", () => {
 
   it("extracts a .tar.gz artifact", async () => {
     const { deps } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     const src = await artifact();
     const tgz = join(await mkdtemp(join(tmpdir(), "freighter-tgz-")), "a.tar.gz");
     execFileSync("tar", ["-czf", tgz, "-C", src, "."]);
@@ -86,7 +86,7 @@ describe("deploy", () => {
 
   it("dry run changes nothing; non-root is refused; bad source cleans up", async () => {
     const { deps, calls } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     const r = await deploy(deps, { manifestText: MANIFEST, source: await artifact(), dryRun: true });
     expect(r.dryRun).toBe(true);
     expect(calls).toEqual([]);
@@ -101,7 +101,7 @@ describe("deploy", () => {
 
   it("reports status and controls services of the current release", async () => {
     const { deps, calls } = await makeDeps();
-    await setEnv(deps, "hello", "TOKEN", "t");
+    await setEnv(deps, "hello", "web", "TOKEN", "t");
     await expect(appStatus(deps, "hello")).rejects.toThrow(/not deployed/);
     await deploy(deps, { manifestText: MANIFEST, source: await artifact() });
     const s = await appStatus(deps, "hello");

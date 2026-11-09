@@ -26,17 +26,17 @@ services:
       path: /health
       timeout: 30s
     restart: on-failure
+    environment:
+      NODE_ENV: production
+    secrets:
+      - DATABASE_URL
+      - SESSION_SECRET
   worker:
     command: node dist/worker.js
     resources:
       memory: 128M
-
-environment:
-  NODE_ENV: production
-
-secrets:
-  - DATABASE_URL
-  - SESSION_SECRET
+    secrets:
+      - DATABASE_URL
 
 releases:
   keep: 5
@@ -49,12 +49,10 @@ releases:
 | `name` | identifier | required | The app's name: lowercase letters, digits and single hyphens, starting with a letter. It must match the app you deploy to. |
 | `services` | map of identifier to [service](#services) | required | The app's processes. |
 | `build` | [build](#build) | none | Commands that run before deploying, for Git deploys. |
-| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for every service. These are the initial values: variables added or changed on the app's **Variables** tab are laid over them. |
-| `secrets` | list of `UPPER_SNAKE_CASE` | `[]` | Names that must have a value (set separately) before a deploy. See [secrets](/deploy/secrets). |
 | `releases.keep` | integer, 2 or more | `5` | How many releases to keep on disk. The current and previous ones are always kept. |
 | `source` | object | none | `type: git`, `repository`, `branch` (default `main`). Accepted for documentation only: the repository link set in Freighter is what's used. |
 
-A name can't be in both `environment` and `secrets`. `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
+`environment:` and `secrets:` belong to each [service](#services), not to the app. `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
 
 ## services
 
@@ -75,8 +73,12 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `restart` | `on-failure`, `always`, `no` | `on-failure` | systemd's restart policy, with 3 seconds between restarts and at most 5 starts per minute. |
 | `proxy.timeout` | duration | HAProxy's `30s` | Routed services: how long HAProxy waits on the service before giving up, for uploads, streaming and slow responses. |
 | `replicas` | integer | `1` | Accepted, but only one instance runs for now, and values above 1 produce a warning. |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for this service. These are the initial values: variables added or changed on the service's **Variables** tab are laid over them. Values may contain [connections](/deploy/connections). |
+| `secrets` | list of `UPPER_SNAKE_CASE` | `[]` | Names that must have a value (set separately) before a deploy. See [secrets](/deploy/secrets). A name can't be in both `environment` and `secrets`. |
 
 Set exactly one of `command` and `image` on each service. An app can mix both kinds.
+
+An `app.yaml` with `environment:` or `secrets:` at the top, from before they belonged to services, is refused. Move them under the services that use them. Releases that are already deployed keep working: their top-level values count for every service, and secrets and variables saved for the app move to its services the next time the app is deployed or its Variables are opened.
 
 Durations are a number followed by `ms`, `s`, `m` or `h`, such as `500ms`, `30s`, `15m` or `1h`.
 

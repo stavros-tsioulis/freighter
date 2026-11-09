@@ -10,8 +10,8 @@ describe("protocol schemas", () => {
   it("bounds arguments", () => {
     expect(ops["app.logs"].args.safeParse({ app: "a", service: "w", lines: 5000 }).success).toBe(false);
     expect(ops["app.control"].args.safeParse({ app: "a", verb: "rm" }).success).toBe(false);
-    expect(ops["env.set"].args.safeParse({ app: "a", key: "lower", value: "x" }).success).toBe(false);
-    expect(ops["env.set"].args.safeParse({ app: "a", key: "K", value: "x\ny" }).success).toBe(false);
-    expect(ops["env.set"].args.safeParse({ app: "a", key: "K", value: "ok" }).success).toBe(true);
+    expect(ops["env.set"].args.safeParse({ app: "a", service: "web", key: "lower", value: "x" }).success).toBe(false);
+    expect(ops["env.set"].args.safeParse({ app: "a", service: "web", key: "K", value: "x\ny" }).success).toBe(false);
+    expect(ops["env.set"].args.safeParse({ app: "a", service: "web", key: "K", value: "ok" }).success).toBe(true);
   });
 });

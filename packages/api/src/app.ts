@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { promisify } from "node:util";
-import { IDENT_RE, domainSchema, findReferences, referencedStorages, storageApp, storageBackendSchema, storageNameSchema, storageOfApp, storageSecretsSchema, type StorageBackend, type StorageSecrets, imageHost, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { IDENT_RE, domainSchema, environmentValues, findReferences, referencedStorages, storageApp, storageBackendSchema, storageNameSchema, storageOfApp, storageSecretsSchema, type StorageBackend, type StorageSecrets, imageHost, foldSharedEnvironment, imageServices, parseManifest, renderManifest, settingsSchema, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { AgentError, ops } from "@freighter/protocol";
 import { assertValidCsr, certExpiry, fingerprint, issueServerCert } from "@freighter/pki";
 import { isRole, type GitLinkRow, type PendingDomainRow, type Role, type StorageRow } from "@freighter/registry";
@@ -166,12 +166,12 @@ export function createApi(ctx: ApiContext): Api {
   /** The server an app lives on: its pin if it has one, else the requested server, else the default. */
   const serverOf = (event: H3Event, name: string) => ctx.registry.apps.get(name)?.server ?? requestedServer(event) ?? defaultServer();
   const agentFor = (event: H3Event, name: string) => ctx.agents.forServer(serverOf(event, name));
-  /** The `environment:` of an app.yaml, or nothing if it can't be read. */
-  const parseEnvironment = (manifestText: string): Record<string, string> => {
+  /** Every `environment:` value of an app.yaml's services, or nothing if it can't be read. */
+  const environmentOf = (manifestText: string): string[] => {
     try {
-      return parseManifest(manifestText, { legacy: true }).environment;
+      return environmentValues(parseManifest(manifestText, { legacy: true }));
     } catch {
-      return {};
+      return [];
     }
   };
   const origin = (event: H3Event) => {
@@ -271,7 +271,7 @@ export function createApi(ctx: ApiContext): Api {
     return { ...a, images: imagesOf(a.manifestText), imageDetails: imageDetailsOf(a.manifestText), registryLogins: ctx.registry.registryCredentials.appChoices(name), services: ctx.registry.services.list(name), deployments: ctx.registry.deployments.list({ app: name, limit: 5 }) };
   }));
 
-  // Variables: app.yaml's `environment:` gives the initial values, anything added here is laid over it. Connections are resolved.
+  // Variables, per service: app.yaml's `environment:` gives the initial values, anything added here is laid over it. Connections are resolved.
   router.get("/v1/apps/:app/variables", route("viewer", async (event) => {
     const name = appParam(event);
     const row = ctx.registry.apps.get(name);
@@ -279,36 +279,40 @@ export function createApi(ctx: ApiContext): Api {
     const facts = await ownFacts(ctx, name);
     if (!facts) return { variables: [] };
     const { peers, storages } = await buildConnections(ctx, name, row.server);
-    const resolved = resolveEnvironmentEach(facts, peers, storages);
     return {
-      variables: Object.entries(facts.environment)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([key, value]) => {
-          const r = resolved[key]!;
-          const source = key in facts.stored ? (key in facts.fromFile ? "override" : "added") : "app.yaml";
-          // credentials a connection resolves to are not shown
-          return { key, value, source, resolved: "value" in r && !r.secret ? r.value : null, secret: "value" in r && r.secret, error: "error" in r ? r.error : null, reference: findReferences(value).length > 0 };
-        }),
+      variables: Object.entries(facts.environment).flatMap(([service, env]) => {
+        const resolved = resolveEnvironmentEach(facts, service, peers, storages);
+        return Object.entries(env)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, value]) => {
+            const r = resolved[key]!;
+            const source = key in (facts.stored[service] ?? {}) ? (key in (facts.fromFile[service] ?? {}) ? "override" : "added") : "app.yaml";
+            // credentials a connection resolves to are not shown
+            return { service, key, value, source, resolved: "value" in r && !r.secret ? r.value : null, secret: "value" in r && r.secret, error: "error" in r ? r.error : null, reference: findReferences(value).length > 0 };
+          });
+      }),
     };
   }));
 
+  const serviceParam = (event: H3Event) => z.string().regex(IDENT_RE).parse(getRouterParam(event, "service"));
   const variableChange = async (event: H3Event, who: Principal, change: { set?: Record<string, string>; remove?: string[] }) => {
     const name = userAppParam(event);
+    const service = serviceParam(event);
     const server = serverOf(event, name);
     const key = Object.keys(change.set ?? {})[0] ?? change.remove?.[0];
     await pushConnections(ctx, server, name);
-    const r = await ctx.agents.forServer(server).call("variables.set", { app: name, ...change }, { timeoutMs: 5 * 60_000 });
-    audit(who, change.set ? "variable.set" : "variable.remove", name, { key }); // plain values, but not worth logging
+    const r = await ctx.agents.forServer(server).call("variables.set", { app: name, service, ...change }, { timeoutMs: 5 * 60_000 });
+    audit(who, change.set ? "variable.set" : "variable.remove", name, { service, key }); // plain values, but not worth logging
     await syncApp(ctx, server, name).catch(() => {});
     void jobs.cascade({ app: name }).catch(() => {}); // apps that read this app's variables follow
     return { ok: true, redeployed: r.deploy !== null };
   };
-  router.put("/v1/apps/:app/variables/:key", route("admin", async (event, who) => {
+  router.put("/v1/apps/:app/services/:service/variables/:key", route("admin", async (event, who) => {
     const key = envKey.parse(getRouterParam(event, "key"));
     const { value } = await body(event, z.object({ value: z.string().max(65_536) }));
     return variableChange(event, who, { set: { [key]: value } });
   }));
-  router.delete("/v1/apps/:app/variables/:key", route("admin", (event, who) => variableChange(event, who, { remove: [envKey.parse(getRouterParam(event, "key"))] })));
+  router.delete("/v1/apps/:app/services/:service/variables/:key", route("admin", (event, who) => variableChange(event, who, { remove: [envKey.parse(getRouterParam(event, "key"))] })));
 
   // Remove an app for good: from its server (units, routing, certificates, releases, shared data, secrets), then from here.
   // Typing the name is required of API clients too, so a stray DELETE can't do it.
@@ -468,7 +472,19 @@ export function createApi(ctx: ApiContext): Api {
     return { id: row.id, status: "queued" };
   }));
 
-  router.get("/v1/apps/:app/env", route("viewer", async (event) => agentFor(event, appParam(event)).call("env.list", { app: appParam(event) })));
+  router.get("/v1/apps/:app/services/:service/env", route("viewer", async (event) => {
+    const name = appParam(event);
+    const service = serviceParam(event);
+    const { names } = await agentFor(event, name).call("env.list", { app: name, service });
+    const text = ctx.registry.apps.get(name)?.manifestText;
+    let declared: string[] = [];
+    try {
+      declared = text ? (parseManifest(text, { legacy: true }).services[service]?.secrets ?? []) : [];
+    } catch {
+      // an unreadable manifest declares nothing
+    }
+    return { names, declared };
+  }));
   router.get("/v1/certs", route("viewer", async (event) => {
     const only = requestedServer(event);
     const certs: { server: string; hostname: string; expires: string | null }[] = [];
@@ -563,7 +579,15 @@ export function createApi(ctx: ApiContext): Api {
     const name = userAppParam(event);
     const text = ctx.registry.apps.get(name)?.manifestText;
     if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
-    return queueImageDeploy(event, who, name, text, "manual");
+    // A release written with a shared environment is released again in the per-service form.
+    let current = text;
+    try {
+      parseManifest(text);
+    } catch {
+      const { name: _name, source: _source, ...rest } = parseManifest(text, { legacy: true });
+      current = renderManifest(name, rest);
+    }
+    return queueImageDeploy(event, who, name, current, "manual");
   }));
 
   // Change the image (usually the tag) of some services and release it. Everything else in app.yaml stays as it was.
@@ -615,12 +639,13 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   // ---- administration (admin) ----
-  router.put("/v1/apps/:app/env/:key", route("admin", async (event, who) => {
+  router.put("/v1/apps/:app/services/:service/env/:key", route("admin", async (event, who) => {
     const name = userAppParam(event);
+    const service = serviceParam(event);
     const key = envKey.parse(getRouterParam(event, "key"));
     const { value } = await body(event, z.object({ value: z.string() }));
-    await agentFor(event, name).call("env.set", { app: name, key, value });
-    audit(who, "env.set", name, { key }); // never the value
+    await agentFor(event, name).call("env.set", { app: name, service, key, value });
+    audit(who, "env.set", name, { service, key }); // never the value
     return { ok: true };
   }));
 
@@ -876,7 +901,7 @@ export function createApi(ctx: ApiContext): Api {
     const cur = needStorage(event);
     const { confirm, forget } = await body(event, z.object({ confirm: z.string(), forget: z.boolean().optional() }));
     if (confirm !== cur.name) throw new ApiError(400, "bad_request", `to delete ${cur.name}, send its name as "confirm"`);
-    const users = ctx.registry.apps.list().filter((a) => a.manifestText && referencedStorages(parseEnvironment(a.manifestText)).includes(cur.name)).map((a) => a.name);
+    const users = ctx.registry.apps.list().filter((a) => a.manifestText && referencedStorages(environmentOf(a.manifestText)).includes(cur.name)).map((a) => a.name);
     if (users.length && !forget) throw new ApiError(409, "in_use", `${cur.name} is used by ${users.join(", ")}; remove those references first`);
     const app = storageApp(cur.name);
     if (ctx.registry.deployments.list({ app, limit: 20 }).some((x) => x.status === "queued" || x.status === "running")) throw new ApiError(409, "conflict", `${cur.name} has a deployment in progress; wait for it to finish`);
@@ -979,7 +1004,7 @@ export function createApi(ctx: ApiContext): Api {
     keyFingerprint: l.sshKeyId ? "" : l.keyFingerprint,
     webhookUrl: `${origin(event)}/api/v1/hooks/${l.app}`,
     sshKeyId: l.sshKeyId,
-    settings: l.settings,
+    settings: foldSharedEnvironment(l.settings),
     sshKey: l.sshKeyId ? (() => { const k = ctx.registry.sshKeys.get(l.sshKeyId!); return k ? { id: k.id, name: k.name, fingerprint: k.fingerprint } : null; })() : null,
     lastDeliveryAt: l.lastDeliveryAt,
     lastDeliveryResult: l.lastDeliveryResult,

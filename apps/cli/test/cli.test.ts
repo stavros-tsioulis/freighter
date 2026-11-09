@@ -33,8 +33,8 @@ describe("freighter cli", () => {
     expect(d.stdout).toMatch(/deployed hello as r\d{8}-\d{6}/);
     expect(readlinkSync(`${prefix}/srv/apps/hello/current`)).toMatch(/^releases\/r/);
     expect(run("status", "hello", "--prefix", prefix).stdout).toContain("web");
-    expect(run("env", "set", "hello", "A=1", "--prefix", prefix).status).toBe(0);
-    expect(run("env", "list", "hello", "--prefix", prefix).stdout).toBe("A\n");
+    expect(run("env", "set", "hello", "web", "A=1", "--prefix", prefix).status).toBe(0);
+    expect(run("env", "list", "hello", "web", "--prefix", prefix).stdout).toBe("A\n");
   });
   it("lists releases and rolls back", () => {
     const prefix = mkdtempSync(join(tmpdir(), "freighter-cli-"));

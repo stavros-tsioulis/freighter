@@ -95,28 +95,28 @@ async function readStdin(): Promise<string> {
 }
 
 const envSet = defineCommand({
-  meta: { name: "set", description: "Set a secret: KEY=VALUE, or KEY with the value on stdin" },
-  args: { app: { type: "positional", required: true }, pair: { type: "positional", required: true }, ...common },
+  meta: { name: "set", description: "Set a service's secret: KEY=VALUE, or KEY with the value on stdin" },
+  args: { app: { type: "positional", required: true }, service: { type: "positional", required: true }, pair: { type: "positional", required: true }, ...common },
   run: ({ args }) =>
     guard(async () => {
       const i = args.pair.indexOf("=");
       const key = i === -1 ? args.pair : args.pair.slice(0, i);
       const value = i === -1 ? await readStdin() : args.pair.slice(i + 1);
-      await setEnv(await depsFrom(args), args.app, key, value);
-      console.log(`set ${key} for ${args.app}`);
+      await setEnv(await depsFrom(args), args.app, args.service, key, value);
+      console.log(`set ${key} for ${args.app}/${args.service}`);
     }),
 });
 
 const envList = defineCommand({
-  meta: { name: "list", description: "List secret names (never values)" },
-  args: { app: { type: "positional", required: true }, ...common },
+  meta: { name: "list", description: "List a service's secret names (never values)" },
+  args: { app: { type: "positional", required: true }, service: { type: "positional", required: true }, ...common },
   run: ({ args }) =>
     guard(async () => {
-      for (const n of await listEnvNames(await depsFrom(args), args.app)) console.log(n);
+      for (const n of await listEnvNames(await depsFrom(args), args.app, args.service)) console.log(n);
     }),
 });
 
 export const env = defineCommand({
-  meta: { name: "env", description: "Manage an app's secrets file" },
+  meta: { name: "env", description: "Manage a service's secrets" },
   subCommands: { set: envSet, list: envList },
 });

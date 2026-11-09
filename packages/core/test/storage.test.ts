@@ -20,16 +20,16 @@ describe("storageManifest", () => {
     expect(svc).toMatchObject({ port: 20005, restart: "always", proxy: { timeout: "30m" } });
     expect(splitCommand(svc.command!).slice(0, 2)).toEqual(["sh", "-c"]);
     expect(svc.command).toContain("serve s3");
-    expect(m.environment.FR_TARGET).toBe(`:local:${h.deps.layout.appsRoot}/storage-uploads/shared/data`);
-    expect(m.secrets).toEqual(["RCLONE_AUTH_KEY"]);
+    expect(svc.environment.FR_TARGET).toBe(`:local:${h.deps.layout.appsRoot}/storage-uploads/shared/data`);
+    expect(svc.secrets).toEqual(["RCLONE_AUTH_KEY"]);
   });
   it("describes SFTP and SMB backends in environment, with only the password as a secret", async () => {
     const h = await makeDeps();
     const a = parseManifest(storageManifest(h.deps, spec(sftp), 20005));
-    expect(a.environment).toMatchObject({ FR_TARGET: "remote:s3", RCLONE_CONFIG_REMOTE_TYPE: "sftp", RCLONE_CONFIG_REMOTE_HOST: "files.example.com", RCLONE_CONFIG_REMOTE_USER: "backup" });
-    expect(a.secrets).toEqual(["RCLONE_AUTH_KEY", "RCLONE_CONFIG_REMOTE_PASS"]);
+    expect(a.services.s3!.environment).toMatchObject({ FR_TARGET: "remote:s3", RCLONE_CONFIG_REMOTE_TYPE: "sftp", RCLONE_CONFIG_REMOTE_HOST: "files.example.com", RCLONE_CONFIG_REMOTE_USER: "backup" });
+    expect(a.services.s3!.secrets).toEqual(["RCLONE_AUTH_KEY", "RCLONE_CONFIG_REMOTE_PASS"]);
     const b = parseManifest(storageManifest(h.deps, spec(smb), 20005));
-    expect(b.environment).toMatchObject({ FR_TARGET: "remote:media/buckets", RCLONE_CONFIG_REMOTE_TYPE: "smb", RCLONE_CONFIG_REMOTE_DOMAIN: "WORKGROUP" });
+    expect(b.services.s3!.environment).toMatchObject({ FR_TARGET: "remote:media/buckets", RCLONE_CONFIG_REMOTE_TYPE: "smb", RCLONE_CONFIG_REMOTE_DOMAIN: "WORKGROUP" });
     expect(JSON.stringify(b)).not.toMatch(/PASS"?:/);
   });
 });
@@ -42,7 +42,7 @@ describe("applyStorage", () => {
     expect(r.units).toEqual(["freighter-storage-uploads--s3.service"]);
     expect(h.unitText(r.units[0]!)).toContain("Environment=PORT=20000\n");
     expect((await stat(`${h.deps.layout.appsRoot}/storage-uploads/shared/data`)).isDirectory()).toBe(true);
-    const env = await readFile(`${h.deps.layout.envDir}/storage-uploads.env`, "utf8");
+    const env = await readFile(`${h.deps.layout.envDir}/storage-uploads/s3.env`, "utf8");
     expect(env).toContain('RCLONE_AUTH_KEY="AKIAEXAMPLE1,s3cr3t-s3cr3t-s3cr3t"');
     expect(h.unitText(r.units[0]!)).not.toContain("s3cr3t");
     expect(h.calls).toContainEqual(["chown", "-R", "storage-uploads:storage-uploads", `${h.deps.layout.appsRoot}/storage-uploads/shared/data`, `${h.deps.layout.appsRoot}/storage-uploads/shared/cache`]);
@@ -59,7 +59,7 @@ describe("applyStorage", () => {
   it("hands rclone an obscured password, pins the SFTP host key and writes the private key root-readable only for its user", async () => {
     const h = await makeDeps();
     await applyStorage(h.deps, spec(sftp), { secrets: { password: "hunter2" } });
-    const env = await readFile(`${h.deps.layout.envDir}/storage-uploads.env`, "utf8");
+    const env = await readFile(`${h.deps.layout.envDir}/storage-uploads/s3.env`, "utf8");
     expect(env).toContain('RCLONE_CONFIG_REMOTE_PASS="obscured(hunter2)"');
     const dir = `${h.deps.layout.appsRoot}/storage-uploads/shared/ssh`;
     expect(await readFile(`${dir}/known_hosts`, "utf8")).toBe("files.example.com ssh-ed25519 AAAAC3Nza\n");

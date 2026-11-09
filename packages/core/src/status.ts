@@ -7,7 +7,7 @@ import { readState, resolveUnit } from "./state.ts";
 
 export async function loadCurrentManifest(d: Deps, app: string): Promise<Manifest> {
   try {
-    return parseManifest(await readFile(`${currentLink(d, app)}/app.yaml`, "utf8"));
+    return parseManifest(await readFile(`${currentLink(d, app)}/app.yaml`, "utf8"), { legacy: true });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new Error(`app "${app}" is not deployed`);
     throw e;

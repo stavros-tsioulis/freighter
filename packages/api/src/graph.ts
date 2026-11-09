@@ -101,7 +101,7 @@ export function buildGraph(ctx: ApiContext, projectId: string | null) {
       if (e.attr === "internal" && target.server !== byName.get(e.from.app)?.server) return `${e.to.app} runs on another server; use .url`;
       return null;
     }
-    if (isEnvAttr(e.attr) && !(e.attr in (manifests.get(e.to.app)?.environment ?? {}))) return `${e.attr} is not set in the environment of ${e.to.app}`;
+    if (isEnvAttr(e.attr) && !(e.attr in (manifests.get(e.to.app)?.services[e.to.service]?.environment ?? {}))) return `${e.attr} is not set in the environment of ${e.to.service}`;
     return null;
   };
 

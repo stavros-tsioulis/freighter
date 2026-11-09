@@ -25,11 +25,24 @@ describe("parseManifest validation", () => {
     expect(() => parseManifest("name: a\nservices:\n  w--b:\n    command: x\n")).toThrow();
   });
   it("rejects bad env keys and secrets", () => {
-    expect(() => parseManifest(`${base}environment:\n  lower: x\n`)).toThrow();
-    expect(() => parseManifest(`${base}secrets:\n  - "A B"\n`)).toThrow();
+    expect(() => parseManifest(`${base}    environment:\n      lower: x\n`)).toThrow();
+    expect(() => parseManifest(`${base}    secrets:\n      - "A B"\n`)).toThrow();
   });
   it("rejects a name used as both env and secret", () => {
-    expect(() => parseManifest(`${base}environment:\n  K: v\nsecrets:\n  - K\n`)).toThrow(/both/);
+    expect(() => parseManifest(`${base}    environment:\n      K: v\n    secrets:\n      - K\n`)).toThrow(/both/);
+  });
+  it("keeps environment and secrets per service", () => {
+    const m = parseManifest("name: a\nservices:\n  web:\n    command: x\n    environment:\n      A: '1'\n    secrets: [S]\n  job:\n    command: y\n");
+    expect(m.services.web).toMatchObject({ environment: { A: "1" }, secrets: ["S"] });
+    expect(m.services.job).toMatchObject({ environment: {}, secrets: [] });
+  });
+  it("refuses a shared environment (it belongs to each service now), but folds it into the services of old releases", () => {
+    const text = `${base}  job:\n    command: y\n    environment:\n      A: own\nenvironment:\n  A: shared\n  B: shared\nsecrets:\n  - S\n`;
+    expect(() => parseManifest(text)).toThrow(/belong to each service/);
+    const m = parseManifest(text, { legacy: true });
+    expect(m.services.web).toMatchObject({ environment: { A: "shared", B: "shared" }, secrets: ["S"] });
+    expect(m.services.job).toMatchObject({ environment: { A: "own", B: "shared" }, secrets: ["S"] });
+    expect("environment" in m).toBe(false);
   });
 });
 

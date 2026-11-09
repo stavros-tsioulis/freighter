@@ -30,13 +30,12 @@ services:
     command: node .output/server/index.mjs
     healthcheck: { path: /health }
     resources: { memory: 256M, cpu: 0.5 }
+    environment:
+      NODE_ENV: production
+    secrets:
+      - DATABASE_URL
   worker:
     command: node dist/worker.js
-
-environment:
-  NODE_ENV: production
-secrets:
-  - DATABASE_URL
 ```
 
 Push it to a Git branch, upload it as a `.tar.gz`, or run `freighter deploy` on the server. Each service becomes a systemd unit with memory and CPU limits, its own Unix user and a read-only view of the system. Add `shop.example.com` on the app's Domains tab and Freighter routes it through HAProxy with a Let's Encrypt certificate.

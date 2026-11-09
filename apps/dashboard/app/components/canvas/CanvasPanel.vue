@@ -122,7 +122,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
         </TabPanel>
         <TabPanel value="logs"><AppLogsTab v-if="app" :app="app" /></TabPanel>
         <TabPanel value="domains"><AppDomainsTab v-if="app" :app="app" /></TabPanel>
-        <TabPanel value="env"><AppEnvTab v-if="app" :app="app" /></TabPanel>
+        <TabPanel value="env"><AppEnvTab v-if="app" :app="app" :service="selection.service" /></TabPanel>
         <TabPanel value="deployments"><AppDeploymentsTab v-if="app" :app="app" /></TabPanel>
       </TabPanels>
     </Tabs>

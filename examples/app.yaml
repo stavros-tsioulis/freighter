@@ -22,17 +22,19 @@ services:
       path: /health
       interval: 10s
     restart: on-failure
+    environment:
+      NODE_ENV: production
+    secrets:
+      - DATABASE_URL
+      - SESSION_SECRET
 
   worker:
     command: node dist/worker.js
     resources:
       memory: 128M
+    environment:
+      NODE_ENV: production
+    secrets:
+      - DATABASE_URL
 
 # Domains are not set here: add them on the app (dashboard → app → Domains, `freighter domain add`, or the API).
-
-environment:
-  NODE_ENV: production
-
-secrets:
-  - DATABASE_URL
-  - SESSION_SECRET

@@ -2,12 +2,18 @@
 import type { AppRow } from "~/types";
 import { ENV_KEY_RE } from "~/utils/validation";
 
-const props = defineProps<{ app: AppRow }>();
+/** A service's variables and secrets. Without `service` (an app was picked), the service is chosen here. */
+const props = defineProps<{ app: AppRow; service?: string }>();
 const { can } = useSession();
 const appName = computed(() => props.app.name);
-const { data: names, isLoading } = useEnvNames(appName);
+const serviceNames = computed(() => (props.app.services ?? []).map((s) => s.name));
+const picked = ref("");
+const current = computed(() => props.service ?? (serviceNames.value.includes(picked.value) ? picked.value : (serviceNames.value[0] ?? "")));
+const { data: env, isLoading } = useEnvNames(appName, current);
+const names = computed(() => env.value?.names ?? []);
 const setEnv = useSetEnv(appName);
-const { data: variables, isLoading: loadingVars } = useVariables(appName);
+const { data: allVariables, isLoading: loadingVars } = useVariables(appName);
+const variables = computed(() => (allVariables.value ?? []).filter((v) => v.service === current.value));
 const change = useVariableChange(appName);
 
 // ---- variables ----
@@ -24,7 +30,7 @@ function openVar(v?: { key: string; value: string }) {
   showVar.value = true;
 }
 function saveVar() {
-  change.mutate({ key: varKey.value, value: varValue.value }, { onSuccess: () => (showVar.value = false) });
+  change.mutate({ service: current.value, key: varKey.value, value: varValue.value }, { onSuccess: () => (showVar.value = false) });
 }
 
 const show = ref(false);
@@ -33,11 +39,7 @@ const value = ref("");
 const keyError = computed(() => (key.value && !ENV_KEY_RE.test(key.value) ? "Use UPPER_SNAKE_CASE" : ""));
 const valid = computed(() => ENV_KEY_RE.test(key.value) && value.value.length > 0 && !/[\r\n]/.test(value.value));
 
-const declared = computed(() => {
-  const m = /^secrets:\s*\n((?:\s+-\s*\S+\s*\n?)+)/m.exec(props.app.manifestText ?? "");
-  return m ? [...m[1]!.matchAll(/-\s*(\S+)/g)].map((x) => x[1]!) : [];
-});
-const missing = computed(() => declared.value.filter((d) => !(names.value ?? []).includes(d)));
+const missing = computed(() => (env.value?.declared ?? []).filter((d) => !names.value.includes(d)));
 
 function open(k = "") {
   key.value = k;
@@ -45,13 +47,17 @@ function open(k = "") {
   show.value = true;
 }
 function save() {
-  setEnv.mutate({ key: key.value, value: value.value }, { onSuccess: () => { show.value = false; value.value = ""; } });
+  setEnv.mutate({ service: current.value, key: key.value, value: value.value }, { onSuccess: () => { show.value = false; value.value = ""; } });
 }
 </script>
 
 <template>
   <div class="flex flex-col gap-8">
-    <section aria-labelledby="vars-h" class="flex flex-col gap-3">
+    <div v-if="!service && serviceNames.length > 1">
+      <SelectButton :model-value="current" :options="serviceNames" :allow-empty="false" size="small" aria-label="Service" @update:model-value="(v: string | null) => v && (picked = v)" />
+    </div>
+    <p v-if="!current" class="text-sm text-muted-color">No services yet</p>
+    <section v-else aria-labelledby="vars-h" class="flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2">
         <h3 id="vars-h" class="font-display font-semibold text-[1.35rem] leading-tight">Variables</h3>
         <Button v-if="can('admin')" label="Add variable" icon="pi pi-plus" size="small" @click="openVar()" />
@@ -71,14 +77,14 @@ function save() {
             <span v-if="v.source !== 'added'" class="text-xs text-muted-color whitespace-nowrap">{{ v.source === "override" ? "overridden" : "app.yaml" }}</span>
             <template v-if="can('admin')">
               <Button icon="pi pi-pencil" text rounded size="small" severity="secondary" :aria-label="`Edit ${v.key}`" @click="openVar(v)" />
-              <Button v-if="v.source !== 'app.yaml'" :icon="v.source === 'override' ? 'pi pi-undo' : 'pi pi-trash'" text rounded size="small" severity="secondary" :aria-label="v.source === 'override' ? `Reset ${v.key} to app.yaml` : `Remove ${v.key}`" :title="v.source === 'override' ? 'Back to the app.yaml value' : 'Remove'" :loading="change.isPending.value && change.variables.value?.key === v.key" @click="change.mutate({ key: v.key })" />
+              <Button v-if="v.source !== 'app.yaml'" :icon="v.source === 'override' ? 'pi pi-undo' : 'pi pi-trash'" text rounded size="small" severity="secondary" :aria-label="v.source === 'override' ? `Reset ${v.key} to app.yaml` : `Remove ${v.key}`" :title="v.source === 'override' ? 'Back to the app.yaml value' : 'Remove'" :loading="change.isPending.value && change.variables.value?.key === v.key" @click="change.mutate({ service: current, key: v.key })" />
             </template>
           </div>
         </li>
       </ul>
     </section>
 
-    <section aria-labelledby="secrets-h" class="flex flex-col gap-3">
+    <section v-if="current" aria-labelledby="secrets-h" class="flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2">
         <h3 id="secrets-h" class="font-display font-semibold text-[1.35rem] leading-tight">Secrets</h3>
         <Button v-if="can('admin')" label="Set secret" icon="pi pi-plus" size="small" @click="open()" />
@@ -101,7 +107,7 @@ function save() {
         </div>
         <div class="flex flex-col gap-1">
           <label for="var-value" class="text-sm font-medium">Value</label>
-          <InputText id="var-value" v-model="varValue" class="font-mono" autocomplete="off" />
+          <ReferenceInput id="var-value" v-model="varValue" :app="appName" />
         </div>
         <button type="submit" class="hidden" />
       </form>
