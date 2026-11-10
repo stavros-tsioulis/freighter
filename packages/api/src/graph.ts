@@ -95,7 +95,7 @@ export function buildGraph(ctx: ApiContext, projectId: string | null) {
     if (!target) return `app "${e.to.app}" is not in this project`;
     const svc = target.services.find((s) => s.name === e.to.service);
     if (!svc) return `app "${e.to.app}" has no service "${e.to.service}"`;
-    if (e.attr === "domain" || e.attr === "url") return svc.hostnames.length ? null : `${e.to.service} has no domain yet`;
+    if (e.attr === "domain" || e.attr === "url") return null; // no domain resolves to an empty string
     if (e.attr === "internal" || e.attr === "port" || e.attr === "PORT") {
       if (svc.port === null) return `${e.to.service} has no port`;
       if (e.attr === "internal" && target.server !== byName.get(e.from.app)?.server) return `${e.to.app} runs on another server; use .url`;

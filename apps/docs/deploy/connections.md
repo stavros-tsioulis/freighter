@@ -28,7 +28,7 @@ The syntax is `@service.attribute`, or `@app/service.attribute` for another app.
 | `port` | the service's port |
 | *any `environment:` name* | that value from the service's own `environment:`, with its own connections resolved |
 
-Values are filled in when the app goes live (a deploy, rollback or domain change), using the ports and domains in force then. If a connection can't be resolved, the deploy fails before anything is touched and says which one and why: no domain yet, no port, no such service. Secrets can't be referenced, because they are write-only.
+Values are filled in when the app goes live (a deploy, rollback or domain change), using the ports and domains in force then. A service with no domain gives an empty string for `.domain` and `.url`. Any other connection that can't be resolved fails the deploy before anything is touched, and says which one and why: no port, no such service. Secrets can't be referenced, because they are write-only.
 
 ## When something changes
 

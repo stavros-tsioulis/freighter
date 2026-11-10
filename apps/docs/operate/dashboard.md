@@ -20,7 +20,7 @@ Opening a project shows its **canvas**. The header stays the same when you switc
 
 The canvas draws every app of the project as a box holding its services, and an arrow from a service to each service it [connects to](/deploy/connections). Click a service or an app to open its panel: state, address, release, its connections, start/stop/restart, and tabs for logs, domains, variables and deployments. The open item is in the URL (`?node=`), so a link opens the same view; press <kbd>Esc</kbd> to close the panel.
 
-Drag an app's box to arrange the canvas; boxes snap to the grid. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no domain or port, is on another server for `.internal`, or isn't in the project); the panel says why.
+Drag an app's box to arrange the canvas; boxes snap to the grid. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no port, is on another server for `.internal`, or isn't in the project); the panel says why.
 
 The **Deploy** button is on the Overview and project pages. It asks what to deploy, then shows that kind's form: a **Git repository** (admin), a **Container image** (see [Deploy images](/deploy/images)) or an **Archive** (both deployer). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync.
 

@@ -58,6 +58,9 @@ watch(visible, (v) => {
   deploy.reset();
 });
 
+const pristine = JSON.stringify(blank());
+const { request } = useDiscardGuard(visible, () => !deploymentId.value && (name.value !== "" || JSON.stringify(form.value) !== pristine));
+
 async function start() {
   try {
     const r = await deploy.mutateAsync({ name: name.value, settings: toSettings(form.value), server: pinned.value ? undefined : server.value || undefined, logins: chosenLogins.value });
@@ -79,7 +82,7 @@ async function openApp() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal header="Deploy an image" :style="{ width: '44rem' }" :closable="!deploy.isPending.value">
+  <Dialog :visible="visible" modal header="Deploy an image" :style="{ width: '44rem' }" :closable="!deploy.isPending.value" @update:visible="request">
     <div v-if="!deploymentId" class="flex flex-col gap-4">
       <Message v-if="!choices.length" severity="warn" :closable="false">
         This control server runs no apps of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline" @click="visible = false">Add a server</NuxtLink> first.
@@ -121,7 +124,7 @@ async function openApp() {
     <template #footer>
       <template v-if="!deploymentId">
         <Button label="Back" icon="pi pi-arrow-left" severity="secondary" text class="mr-auto" :disabled="deploy.isPending.value" @click="emit('back')" />
-        <Button label="Cancel" severity="secondary" text @click="visible = false" />
+        <Button label="Cancel" severity="secondary" text @click="request()" />
         <Button label="Pull and deploy" icon="pi pi-cloud-download" :disabled="!ready" :loading="deploy.isPending.value" @click="start" />
       </template>
       <template v-else>

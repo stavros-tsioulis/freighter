@@ -23,9 +23,12 @@ describe("resolveEnvironment", () => {
       MAIL: "a@b.c",
     });
   });
-  it("fails clearly on a missing domain, port or service", () => {
-    const bare = facts({ name: "a", domains: [], environment: { web: { X: "@api.url" } } });
-    expect(() => resolveEnvironment(bare, "web")).toThrow(/X: @api.url: service "api" has no domain yet/);
+  it("resolves a missing domain to an empty string", () => {
+    const bare = facts({ name: "a", domains: [], environment: { web: { X: "@api.url", Y: "@api.domain", Z: "https://@api.domain/x" } } });
+    expect(resolveEnvironment(bare, "web")).toEqual({ X: "", Y: "", Z: "https:///x" });
+  });
+  it("fails clearly on a missing port or service", () => {
+    const bare = facts({ name: "a", domains: [], environment: { web: { X: "@api.port" } } });
     expect(() => resolveEnvironment({ ...bare, environment: { web: { X: "@api.port" } } }, "web")).toThrow(/has no port/);
     expect(() => resolveEnvironment({ ...bare, environment: { web: { X: "@nope.port" } } }, "web")).toThrow(/no service "nope"/);
   });
@@ -64,7 +67,7 @@ services:
   });
   it("fails the deploy before touching anything when a connection can't be resolved", async () => {
     const h = await makeDeps();
-    await expect(deploy(h.deps, { manifestText: manifest, source: await artifact() })).rejects.toThrow(/@api.url: service "api" has no domain yet/);
+    await expect(deploy(h.deps, { manifestText: manifest.replace("@api.url", "@nope.port"), source: await artifact() })).rejects.toThrow(/@nope.port/);
     expect(h.unitFiles()).toEqual([]);
   });
 });
@@ -72,8 +75,8 @@ services:
 describe("resolveEnvironmentEach", () => {
   it("returns a result per entry instead of stopping at the first broken one", async () => {
     const { resolveEnvironmentEach } = await import("../src/index.ts");
-    const r = resolveEnvironmentEach(facts({ name: "a", domains: [{ hostname: "h.example.com", service: "web", tls: "auto" }], environment: { web: { GOOD: "@web.domain", BAD: "@api.url", PLAIN: "x" } } }), "web");
-    expect(r).toEqual({ GOOD: { value: "h.example.com", secret: false }, BAD: { error: expect.stringMatching(/^BAD: @api.url: .*no domain/) }, PLAIN: { value: "x", secret: false } });
+    const r = resolveEnvironmentEach(facts({ name: "a", domains: [{ hostname: "h.example.com", service: "web", tls: "auto" }], environment: { web: { GOOD: "@web.domain", BAD: "@api.port", PLAIN: "x" } } }), "web");
+    expect(r).toEqual({ GOOD: { value: "h.example.com", secret: false }, BAD: { error: expect.stringMatching(/^BAD: @api.port: /) }, PLAIN: { value: "x", secret: false } });
   });
 });
 

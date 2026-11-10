@@ -37,6 +37,7 @@ function reset() {
   server.value = first.value;
 }
 watch(visible, (v) => v && reset());
+const { request } = useDiscardGuard(visible, () => !deploymentId.value && (!!file.value || name.value !== (props.app ?? "")));
 
 function onFile(e: Event) {
   file.value = (e.target as HTMLInputElement).files?.[0] ?? null;
@@ -57,7 +58,7 @@ async function submit() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal :header="app ? `Deploy ${app} from an archive` : 'Deploy an archive'" :style="{ width: '32rem' }" :closable="!uploading">
+  <Dialog :visible="visible" modal :header="app ? `Deploy ${app} from an archive` : 'Deploy an archive'" :style="{ width: '32rem' }" :closable="!uploading" @update:visible="request">
     <div class="flex flex-col gap-4">
       <Message v-if="!pinned && !choices.length" severity="warn" :closable="false">
         This control server runs no apps of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline" @click="visible = false">Add a server</NuxtLink> first.
@@ -83,7 +84,7 @@ async function submit() {
     </div>
     <template #footer>
       <Button v-if="!app && !deploymentId" label="Back" icon="pi pi-arrow-left" severity="secondary" text class="mr-auto" :disabled="uploading" @click="emit('back')" />
-      <Button :label="deploymentId ? 'Close' : 'Cancel'" severity="secondary" text :disabled="uploading" @click="visible = false" />
+      <Button :label="deploymentId ? 'Close' : 'Cancel'" severity="secondary" text :disabled="uploading" @click="request()" />
       <Button v-if="!deploymentId" label="Upload and deploy" :disabled="!canSubmit" :loading="uploading" @click="submit" />
     </template>
   </Dialog>

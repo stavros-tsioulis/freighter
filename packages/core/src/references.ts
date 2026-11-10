@@ -83,7 +83,7 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
       case "domain":
       case "url": {
         const dom = owner.domains.find((x) => x.service === ref.service);
-        if (!dom) throw new ReferenceError(`${ref.text}: service "${ref.service}"${where} has no domain yet`);
+        if (!dom) return plain(""); // no domain (yet): empty, so a value can fall back on it
         return plain(ref.attr === "domain" ? dom.hostname : `${dom.tls === "auto" ? "https" : "http"}://${dom.hostname}`);
       }
       case "internal":

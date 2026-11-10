@@ -55,6 +55,8 @@ watch(visible, (v) => {
   deploy.reset();
 });
 
+const { request } = useDiscardGuard(visible, () => !result.value && (repository.value.trim() !== "" || appName.value !== "" || !!sshKeyId.value));
+
 async function start() {
   try {
     const r = await deploy.mutateAsync({ repository: repository.value.trim(), branch: branch.value!, sshKeyId: sshKeyId.value, server: server.value, settings: toSettings(form.value), ...(manual.value ? { appName: appName.value } : {}) });
@@ -70,7 +72,7 @@ async function openApp() {
 </script>
 
 <template>
-  <Dialog v-model:visible="visible" modal header="Deploy from Git" :style="{ width: manual || info?.valid ? '48rem' : '40rem' }" :closable="!deploy.isPending.value">
+  <Dialog :visible="visible" modal header="Deploy from Git" :style="{ width: manual || info?.valid ? '48rem' : '40rem' }" :closable="!deploy.isPending.value" @update:visible="request">
     <div v-if="!result" class="flex flex-col gap-4">
       <Message v-if="!choices.length" severity="warn" :closable="false">
         This control server runs no apps of its own, and no server is enrolled yet. <NuxtLink to="/servers" class="underline" @click="visible = false">Add a server</NuxtLink> first.
@@ -125,7 +127,7 @@ async function openApp() {
     <template #footer>
       <template v-if="!result">
         <Button label="Back" icon="pi pi-arrow-left" severity="secondary" text class="mr-auto" :disabled="deploy.isPending.value" @click="emit('back')" />
-        <Button label="Cancel" severity="secondary" text @click="visible = false" />
+        <Button label="Cancel" severity="secondary" text @click="request()" />
         <Button label="Deploy" icon="pi pi-cloud-upload" :disabled="!ready" :loading="deploy.isPending.value" @click="start" />
       </template>
       <Button v-else label="Open app" icon="pi pi-arrow-right" @click="openApp" />
