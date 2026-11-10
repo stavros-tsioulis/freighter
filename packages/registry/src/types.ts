@@ -98,8 +98,21 @@ export interface MetricSampleRow {
   cpuNanos: number | null;
   restarts: number;
 }
+/** One reading of a server's machine. */
+export interface HostSampleRow {
+  at: string;
+  load1: number;
+  cpus: number | null;
+  memUsed: number;
+  memTotal: number;
+  diskUsed: number | null;
+  diskTotal: number | null;
+}
 export interface HostStatus {
   hostname: string;
+  cpus?: number;
+  os?: string;
+  files?: { enabled: boolean; readOnly: boolean };
   uptimeSeconds: number;
   load1: number;
   memTotal: number;

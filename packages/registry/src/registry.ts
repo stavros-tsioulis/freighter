@@ -12,6 +12,7 @@ import {
   type DeploymentRow,
   type HistoryEntryLike,
   type GitLinkRow,
+  type HostSampleRow,
   type HostStatus,
   type ServerRow,
   type PendingDomainRow,
@@ -335,6 +336,12 @@ export interface Registry {
     /** Samples for an app at or after `sinceIso`, ordered by service then time. */
     series(app: string, sinceIso: string): MetricSampleRow[];
     /** Delete samples older than `beforeIso`; returns how many. */
+    prune(beforeIso: string): number;
+  };
+  hostSamples: {
+    add(server: string, row: Omit<HostSampleRow, "at">, at?: string): void;
+    /** A server's readings at or after `sinceIso`, oldest first. */
+    series(server: string, sinceIso: string): HostSampleRow[];
     prune(beforeIso: string): number;
   };
   audit: {
@@ -809,6 +816,20 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
           }),
         ),
       prune: (beforeIso) => Number(run("DELETE FROM metrics_samples WHERE at < ?", beforeIso).changes),
+    },
+
+    hostSamples: {
+      add(server, r, at) {
+        run(
+          "INSERT INTO host_samples (server, at, load1, cpus, mem_used, mem_total, disk_used, disk_total) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          server, at ?? now(), r.load1, r.cpus, r.memUsed, r.memTotal, r.diskUsed, r.diskTotal,
+        );
+      },
+      series: (server, sinceIso) =>
+        all("SELECT * FROM host_samples WHERE server = ? AND at >= ? ORDER BY at", server, sinceIso).map(
+          (r): HostSampleRow => ({ at: r.at as string, load1: r.load1 as number, cpus: r.cpus as number | null, memUsed: r.mem_used as number, memTotal: r.mem_total as number, diskUsed: r.disk_used as number | null, diskTotal: r.disk_total as number | null }),
+        ),
+      prune: (beforeIso) => Number(run("DELETE FROM host_samples WHERE at < ?", beforeIso).changes),
     },
 
     audit: {

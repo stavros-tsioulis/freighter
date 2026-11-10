@@ -271,4 +271,18 @@ export const migrations: string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  `
+  -- How each server's machine was doing: sampled with the apps' metrics.
+  CREATE TABLE host_samples (
+    server TEXT NOT NULL,
+    at TEXT NOT NULL,
+    load1 REAL NOT NULL,
+    cpus INTEGER,
+    mem_used INTEGER NOT NULL,
+    mem_total INTEGER NOT NULL,
+    disk_used INTEGER,
+    disk_total INTEGER
+  );
+  CREATE INDEX host_samples_server_at ON host_samples (server, at);
+  `,
 ];

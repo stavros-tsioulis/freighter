@@ -32,6 +32,8 @@ export * from "./variables.ts";
 export * from "./shared.ts";
 export * from "./appconfig.ts";
 export * from "./volumes.ts";
+export * from "./files.ts";
+export * from "./zip.ts";
 export * from "./configure.ts";
 export * from "./storage.ts";
 export * from "./reapply.ts";

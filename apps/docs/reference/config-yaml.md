@@ -40,6 +40,9 @@ agent:
   artifactsDir: /var/lib/freighter/artifacts
   upgradeDir: /var/lib/freighter/upgrade
   maxArtifactMb: 200
+  files:
+    enabled: true
+    readOnly: false
   remote:
     enabled: false
     listen: 0.0.0.0
@@ -120,6 +123,8 @@ Let's Encrypt certificates for `tls: auto` domains.
 | `artifactsDir` | `/var/lib/freighter/artifacts` | Where uploads wait until they're deployed. They're deleted afterwards. |
 | `upgradeDir` | `/var/lib/freighter/upgrade` | State, backup and log of the last [remote upgrade](/install/remote-server#upgrading-a-server). |
 | `maxArtifactMb` | `200` | The largest artifact this agent accepts from a remote control server. |
+| `files.enabled` | `true` | The [file explorer](/operate/files). Off: the agent refuses every file operation. |
+| `files.readOnly` | `false` | The file explorer may look and download, not change anything. |
 | `remote.enabled` | `false` | Serve the agent over mutual TLS. `freighter-agent enroll` turns this on. |
 | `remote.listen` | `0.0.0.0` | Address to listen on. |
 | `remote.port` | `7443` | Port to listen on. |

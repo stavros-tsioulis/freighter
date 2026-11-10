@@ -6,7 +6,8 @@ import { finished } from "node:stream/promises";
 import type { Duplex } from "node:stream";
 import type { Deps } from "@freighter/core";
 import { LineReader, ops, request, type Reply, type WireError } from "@freighter/protocol";
-import { dispatch, type Handlers } from "./handlers.ts";
+import { classify, dispatch, explorer, type Handlers } from "./handlers.ts";
+import { createUpload, openForDownload, zipStream } from "@freighter/core";
 
 const reply = (socket: Duplex, r: Reply) => {
   if (!socket.destroyed) socket.write(JSON.stringify(r) + "\n");
@@ -64,6 +65,72 @@ function handlePut(d: Deps, socket: Duplex, reader: LineReader, id: string, rawA
   })();
 }
 
+/** `fs.write`: a header line, then exactly `size` raw bytes, which become the file once they have all arrived. */
+function handleFsWrite(d: Deps, socket: Duplex, reader: LineReader, id: string, rawArgs: unknown) {
+  const parsed = ops["fs.write"].args.safeParse(rawArgs);
+  if (!parsed.success) return rejectAndClose(socket, id, { code: "bad_request", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
+  const { path, size, overwrite } = parsed.data;
+  try {
+    explorer(d, true);
+  } catch (e) {
+    return rejectAndClose(socket, id, classify(e));
+  }
+  // The bytes are already on their way; readRaw has to be called before the next line is read, so the sink is set up
+  // behind a Writable that waits for it.
+  let sink: Awaited<ReturnType<typeof createUpload>> | undefined;
+  const ready = createUpload(path, overwrite).then((s) => (sink = s));
+  const dest = new Writable({
+    write(chunk: Buffer, _enc, cb) {
+      ready.then(() => (sink!.dest.write(chunk) ? cb() : void sink!.dest.once("drain", () => cb())), cb);
+    },
+    final(cb) {
+      ready.then(() => sink!.dest.end(() => cb()), cb);
+    },
+  });
+  dest.on("error", () => {}); // reported through the await below
+  const received = reader.readRaw(size, dest);
+  received.catch(() => {}); // reported through the await below
+  (socket as unknown as { setTimeout?: (ms: number, cb: () => void) => void }).setTimeout?.(120_000, () => socket.destroy());
+  void (async () => {
+    try {
+      await ready; // a refused name or folder is reported even if the bytes are still coming
+      await received;
+      dest.end();
+      await finished(dest);
+      await sink!.commit();
+      reply(socket, { id, ok: true, result: {} });
+    } catch (e) {
+      await sink?.abort().catch(() => {});
+      rejectAndClose(socket, id, classify(e));
+    }
+  })();
+}
+
+/** `fs.read` and `fs.archive`: the reply line, then the bytes, then the connection is closed. */
+function handleFsStream(d: Deps, socket: Duplex, id: string, op: "fs.read" | "fs.archive", rawArgs: unknown) {
+  void (async () => {
+    try {
+      explorer(d);
+      if (op === "fs.read") {
+        const { path } = ops["fs.read"].args.parse(rawArgs);
+        const file = await openForDownload(path);
+        socket.write(JSON.stringify({ id, ok: true, result: { size: file.size, mtimeMs: file.mtimeMs } } satisfies Reply) + "\n");
+        file.stream.on("error", () => socket.destroy());
+        file.stream.pipe(socket as never);
+      } else {
+        const { paths } = ops["fs.archive"].args.parse(rawArgs);
+        socket.write(JSON.stringify({ id, ok: true, result: {} } satisfies Reply) + "\n");
+        const zip = zipStream(paths);
+        zip.on("error", () => socket.destroy());
+        zip.pipe(socket as never);
+      }
+      socket.on("close", () => undefined);
+    } catch (e) {
+      rejectAndClose(socket, id, classify(e));
+    }
+  })();
+}
+
 /** Serve one client connection (unix or TLS): JSON request lines in, JSON replies out. */
 export function serveConnection(socket: Duplex, d: Deps, handlers: Handlers): void {
   socket.on("error", () => {});
@@ -75,6 +142,8 @@ export function serveConnection(socket: Duplex, d: Deps, handlers: Handlers): vo
         const req = request.parse(JSON.parse(line));
         id = req.id;
         if (req.op === "artifact.put") return handlePut(d, socket, reader, id, req.args);
+        if (req.op === "fs.write") return handleFsWrite(d, socket, reader, id, req.args);
+        if (req.op === "fs.read" || req.op === "fs.archive") return handleFsStream(d, socket, id, req.op, req.args);
       } catch {
         /* fall through: dispatch() produces the proper error reply */
       }

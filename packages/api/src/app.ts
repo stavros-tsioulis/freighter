@@ -1411,6 +1411,118 @@ export function createApi(ctx: ApiContext): Api {
     setResponseStatus(event, 202);
     return view;
   }));
+  // How a server's machine has been doing: load, memory and disk, sampled with the apps' metrics.
+  router.get("/v1/servers/:name/metrics", route("viewer", (event) => {
+    const name = sName(event);
+    needServer(name);
+    const { minutes } = z.object({ minutes: z.coerce.number().int().min(1).max(24 * 60).default(60) }).parse(getQuery(event));
+    const since = new Date(Date.now() - minutes * 60_000).toISOString();
+    return { points: ctx.registry.hostSamples.series(name, since) };
+  }));
+
+  // ---- the file explorer: every file on a server, as root. Admins only; changes and downloads are in the audit log. ----
+  const fsAgent = (event: H3Event) => {
+    const name = sName(event);
+    const server = needServer(name);
+    if (server.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${name}" has not been enrolled yet`);
+    return { name, agent: ctx.agents.forServer(name) };
+  };
+  /** An agent from before the file explorer says it doesn't know the operation; say what to do instead. */
+  const fsCall = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof AgentError && /unknown operation/.test(e.message)) throw new ApiError(409, "conflict", "this server's agent predates the file explorer. Upgrade it first");
+      throw e;
+    }
+  };
+  const fsPathParam = z.string().min(1).max(4096);
+  const fsPathsBody = z.array(fsPathParam).min(1).max(1000);
+  const fsTouched = (paths: string[]) => (paths.length > 20 ? [...paths.slice(0, 20), `… and ${paths.length - 20} more`] : paths);
+  const attachment = (name: string) => `attachment; filename="${name.replace(/[^\x20-\x7e]|["\\]/g, "_")}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+  const download = (event: H3Event, stream: Readable, name: string, size?: number) =>
+    new Response(Readable.toWeb(stream) as never, {
+      headers: { "content-type": "application/octet-stream", "content-disposition": attachment(name), "cache-control": "no-store", "x-content-type-options": "nosniff", ...(size === undefined ? {} : { "content-length": String(size) }) },
+    });
+
+  router.get("/v1/servers/:name/fs", route("admin", (event) => {
+    const { agent } = fsAgent(event);
+    const { path } = z.object({ path: fsPathParam.default("/") }).parse(getQuery(event));
+    return fsCall(() => agent.call("fs.list", { path }, { timeoutMs: 60_000 }));
+  }));
+  router.post("/v1/servers/:name/fs/mkdir", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const { path } = await body(event, z.object({ path: fsPathParam }));
+    await fsCall(() => agent.call("fs.mkdir", { path }, { timeoutMs: 30_000 }));
+    audit(who, "file.mkdir", undefined, { server: name, path });
+    return { ok: true };
+  }));
+  router.post("/v1/servers/:name/fs/rename", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ path: fsPathParam, name: z.string().min(1).max(255) }));
+    const r = await fsCall(() => agent.call("fs.rename", b, { timeoutMs: 30_000 }));
+    audit(who, "file.rename", undefined, { server: name, path: b.path, to: r.path });
+    return r;
+  }));
+  for (const op of ["copy", "move"] as const) {
+    router.post(`/v1/servers/:name/fs/${op}`, route("admin", async (event, who) => {
+      const { name, agent } = fsAgent(event);
+      const b = await body(event, z.object({ paths: fsPathsBody, to: fsPathParam, onConflict: z.enum(["fail", "overwrite", "rename"]).optional() }));
+      const r = await fsCall(() => agent.call(op === "copy" ? "fs.copy" : "fs.move", b, { timeoutMs: 6 * 3_600_000 }));
+      audit(who, `file.${op}`, undefined, { server: name, paths: fsTouched(b.paths), to: b.to, done: r.done.length, failed: r.failed.length });
+      return r;
+    }));
+  }
+  router.post("/v1/servers/:name/fs/delete", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ paths: fsPathsBody }));
+    const r = await fsCall(() => agent.call("fs.delete", b, { timeoutMs: 3_600_000 }));
+    audit(who, "file.delete", undefined, { server: name, paths: fsTouched(b.paths), done: r.done.length, failed: r.failed.length });
+    return r;
+  }));
+  // Upload one file: the body is the file. `path` is where it goes; the browser sends one request per file.
+  router.put("/v1/servers/:name/fs/upload", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const q = z.object({ path: fsPathParam, overwrite: z.enum(["0", "1"]).default("0") }).parse(getQuery(event));
+    const size = Number(getHeader(event, "content-length"));
+    if (!Number.isInteger(size) || size < 0) throw new ApiError(411, "length_required", "send the file with a Content-Length");
+    const web = getRequestWebStream(event);
+    const source = web ? Readable.fromWeb(web as never) : Readable.from([]);
+    if (size > 0 && !web) throw new ApiError(400, "bad_request", "the request has no body");
+    await fsCall(() => agent.writeFile({ path: q.path, size, overwrite: q.overwrite === "1" }, source, { timeoutMs: 2 * 3_600_000 }));
+    audit(who, "file.upload", undefined, { server: name, path: q.path, bytes: size, overwrite: q.overwrite === "1" });
+    return { ok: true, path: q.path, size };
+  }));
+  router.get("/v1/servers/:name/fs/download", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const { path } = z.object({ path: fsPathParam }).parse(getQuery(event));
+    const { result, body: stream } = await fsCall(() => agent.openStream("fs.read", { path }));
+    audit(who, "file.download", undefined, { server: name, path, bytes: result.size });
+    return download(event, stream, path.split("/").pop() || "download", result.size);
+  }));
+  // A zip of several paths: the browser downloads it by following a link, which can't carry a body, so the paths are
+  // registered first and the link holds a ticket that works for a minute.
+  const tickets = new Map<string, { server: string; paths: string[]; who: string; expires: number }>();
+  router.post("/v1/servers/:name/fs/archive", route("admin", async (event, who) => {
+    const { name } = fsAgent(event);
+    const { paths } = await body(event, z.object({ paths: fsPathsBody }));
+    const now = Date.now();
+    for (const [k, t] of tickets) if (t.expires < now) tickets.delete(k);
+    const ticket = randomBytes(24).toString("base64url");
+    tickets.set(ticket, { server: name, paths, who: who.id, expires: now + 60_000 });
+    const base = paths.length === 1 ? paths[0]!.split("/").pop() || "root" : "files";
+    return { ticket, name: `${name}-${base}.zip` };
+  }));
+  router.get("/v1/servers/:name/fs/archive/:ticket", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const t = tickets.get(getRouterParam(event, "ticket") ?? "");
+    if (!t || t.expires < Date.now() || t.server !== name || t.who !== who.id) throw new ApiError(404, "not_found", "this download link has expired; start it again");
+    const { body: stream } = await fsCall(() => agent.openStream("fs.archive", { paths: t.paths }));
+    audit(who, "file.archive", undefined, { server: name, paths: fsTouched(t.paths) });
+    const base = t.paths.length === 1 ? t.paths[0]!.split("/").pop() || "root" : "files";
+    return download(event, stream, `${name}-${base}.zip`);
+  }));
+
   router.post("/v1/servers/:name/updates/check", route("admin", async (event) => {
     const name = sName(event);
     needServer(name);

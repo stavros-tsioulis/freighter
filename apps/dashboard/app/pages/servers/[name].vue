@@ -18,6 +18,17 @@ const { data: controlCommit } = useControlVersion();
 useHead({ title: computed(() => `${name.value} - Servers - Freighter`) });
 
 const isAdmin = computed(() => can("admin"));
+
+// The open tab, and the folder the file explorer is in, live in the URL so a reload or a shared link lands on the same view.
+const TABS = ["overview", "monitoring", "files", "software", "features", "connection"] as const;
+const tab = computed({
+  get: () => (TABS.includes(route.query.tab as never) ? String(route.query.tab) : "overview"),
+  set: (t: string) => void router.replace({ query: { ...(t === "files" ? route.query : { ...route.query, path: undefined }), tab: t === "overview" ? undefined : t } }),
+});
+const filesPath = computed({
+  get: () => (typeof route.query.path === "string" && route.query.path.startsWith("/") ? route.query.path : "/"),
+  set: (p: string) => void router.replace({ query: { ...route.query, path: p === "/" ? undefined : p } }),
+});
 const remote = computed(() => server.value?.kind === "remote");
 const usable = computed(() => !!server.value && server.value.status !== "pending");
 
@@ -91,6 +102,21 @@ const certDays = computed(() => daysUntil(s.value?.certExpiresAt));
 const certText = computed(() => (certDays.value === null ? "None" : certDays.value < 0 ? "Expired" : `${certDays.value} days left`));
 const certTone = computed(() => (certDays.value === null || certDays.value < 7 ? "text-red-600 dark:text-red-400" : certDays.value < 30 ? "text-amber-600 dark:text-amber-400" : ""));
 const memUsed = computed(() => (s.value?.host ? formatBytes(s.value.host.memTotal - s.value.host.memFree) : "–"));
+const pctOf = (used: number, total: number | null | undefined) => (total ? used / total : 0);
+const tone = (f: number) => (f > 0.9 ? "bad" : f > 0.75 ? "warn" : "ok");
+const meters = computed(() => {
+  const h = s.value?.host;
+  if (!h) return [];
+  const memF = pctOf(h.memTotal - h.memFree, h.memTotal);
+  const diskUsed = h.diskTotalBytes != null && h.diskFreeBytes != null ? h.diskTotalBytes - h.diskFreeBytes : null;
+  const diskF = diskUsed != null ? pctOf(diskUsed, h.diskTotalBytes) : 0;
+  const loadF = h.cpus ? h.load1 / h.cpus : Math.min(1, h.load1);
+  return [
+    { label: "Load", value: h.load1.toFixed(2), fraction: loadF, tone: tone(loadF), detail: h.cpus ? `${h.cpus} CPUs` : "1 minute" },
+    { label: "Memory", value: `${Math.round(memF * 100)}%`, fraction: memF, tone: tone(memF), detail: `${formatBytes(h.memTotal - h.memFree)} of ${formatBytes(h.memTotal)}` },
+    { label: "Disk", value: diskUsed != null ? `${Math.round(diskF * 100)}%` : "–", fraction: diskF, tone: tone(diskF), detail: diskUsed != null ? `${formatBytes(diskUsed)} of ${formatBytes(h.diskTotalBytes)}` : "unknown" },
+  ];
+});
 const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 </script>
 
@@ -123,8 +149,26 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
       </Message>
       <Message v-else-if="s.lastError" severity="error" size="small"><span :title="s.lastError">{{ s.lastError }}</span></Message>
 
+      <Tabs v-model:value="tab" lazy>
+        <TabList>
+          <Tab value="overview">Overview</Tab>
+          <Tab v-if="usable" value="monitoring">Monitoring</Tab>
+          <Tab v-if="isAdmin && usable" value="files">Files</Tab>
+          <Tab v-if="isAdmin && usable" value="software">Software</Tab>
+          <Tab v-if="isAdmin && usable" value="features">Features</Tab>
+          <Tab v-if="isAdmin && remote" value="connection">Connection</Tab>
+        </TabList>
+        <TabPanels>
+          <TabPanel value="overview">
+            <div class="flex flex-col gap-8">
       <section class="flex flex-col gap-3">
-        <h2 class="font-display font-semibold text-[1.2rem]">Machine</h2>
+        <div v-if="s.host" class="grid gap-3 sm:grid-cols-3" aria-label="Resources">
+          <div v-for="m in meters" :key="m.label" class="meter">
+            <div class="flex items-baseline justify-between gap-2"><span class="text-[0.8rem] text-muted-color">{{ m.label }}</span><span class="num font-semibold">{{ m.value }}</span></div>
+            <div class="bar" role="meter" :aria-label="m.label" :aria-valuenow="Math.round(m.fraction * 100)" aria-valuemin="0" aria-valuemax="100"><span :class="m.tone" :style="{ width: `${Math.round(Math.min(1, m.fraction) * 100)}%` }" /></div>
+            <span class="text-xs text-muted-color">{{ m.detail }}</span>
+          </div>
+        </div>
         <Facts>
           <Fact label="Hostname" :title="s.hostname ?? ''">{{ s.hostname ?? "–" }}</Fact>
           <template v-if="s.host">
@@ -141,6 +185,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
         </Facts>
       </section>
 
+
       <section class="flex flex-col gap-3">
         <h2 class="font-display font-semibold text-[1.2rem]">Apps on this server</h2>
         <p v-if="!hosted.length" class="text-muted-color text-sm">None yet.</p>
@@ -153,8 +198,18 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
         </ul>
       </section>
 
-      <section v-if="isAdmin && usable" class="flex flex-col gap-3">
-        <h2 class="font-display font-semibold text-[1.2rem]">Agent and software</h2>
+
+            </div>
+          </TabPanel>
+          <TabPanel v-if="usable" value="monitoring"><ServerMonitoringTab :server="s" /></TabPanel>
+          <TabPanel v-if="isAdmin && usable" value="files">
+            <Message v-if="s.status !== 'online'" severity="warn" size="small">The server is {{ s.status }}; its files can't be reached right now.</Message>
+            <Message v-else-if="s.host && !s.host.files" severity="info" size="small">This agent predates the file explorer. Upgrade it first.</Message>
+            <Message v-else-if="s.host?.files && !s.host.files.enabled" severity="info" size="small">The file explorer is turned off on this server (<code>agent.files.enabled</code> in its config.yaml).</Message>
+            <ServerFileExplorer v-else v-model:path="filesPath" :server="name" :read-only="s.host?.files?.readOnly" />
+          </TabPanel>
+          <TabPanel v-if="isAdmin && usable" value="software">
+            <div class="flex flex-col gap-3">
         <Message v-if="softwareError" severity="error" size="small">{{ (softwareError as Error).message }}</Message>
         <Message v-else-if="software && !software.supported" severity="warn" size="small">{{ software.reason }}</Message>
         <Facts>
@@ -164,6 +219,60 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           <Fact v-if="remote" label="Agent certificate"><span :class="certTone">{{ certText }}</span></Fact>
         </Facts>
 
+        <div v-if="behind" class="flex flex-wrap items-center gap-3 text-sm">
+          <span class="text-amber-600 dark:text-amber-400">This server runs an older version than this dashboard.</span>
+          <Button label="Upgrade…" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
+        </div>
+        <div v-if="software?.upgrade" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span class="text-muted-color">Last upgrade</span>
+          <StatusTag :state="software.upgrade.state" />
+          <span class="text-muted-color">{{ software.upgrade.updatedAt ? timeAgo(software.upgrade.updatedAt) : "" }}</span>
+          <span v-if="software.upgrade.message" class="w-full text-muted-color">{{ software.upgrade.message }}</span>
+          <Button v-if="upgrading" label="Follow it" text size="small" @click="showUpgrade = true" />
+        </div>
+
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-3">
+          <div class="flex flex-wrap items-end gap-3">
+            <div class="flex flex-col gap-1">
+              <label for="up-ref" class="text-sm font-medium">Check for updates</label>
+              <InputText id="up-ref" v-model="ref_" placeholder="main" autocomplete="off" class="w-48" :invalid="!validRef" :disabled="!software?.supported" @keydown.enter="validRef && runCheck()" />
+            </div>
+            <Button label="Check for updates" icon="pi pi-cloud-download" size="small" severity="secondary" :disabled="!validRef || !software?.supported || upgrading" :loading="check.isPending.value" @click="runCheck" />
+          </div>
+          <small class="text-muted-color">
+            The server asks the repository it was installed from, using its own git and network. A branch, tag or commit; empty means <code>main</code>. Nothing on the server changes.
+          </small>
+
+          <template v-if="result">
+            <div class="flex flex-col gap-1 border-t border-[var(--fr-line)] pt-3 text-sm">
+              <p :class="result.state === 'behind' ? 'font-medium' : ''">
+                {{ stateText }}
+                <span class="text-muted-color">Checked {{ timeAgo(result.checkedAt) }}.</span>
+              </p>
+              <p class="text-muted-color">
+                Installed: <code>{{ short(result.installed?.commit) }}</code><span v-if="result.installed"> {{ result.installed.subject }} ({{ date(result.installed.committedAt) }})</span>
+              </p>
+              <p v-if="result.state !== 'up-to-date'" class="text-muted-color">
+                {{ result.ref }}: <code>{{ short(result.latest.commit) }}</code> {{ result.latest.subject }} ({{ date(result.latest.committedAt) }})
+              </p>
+              <p v-if="result.target && result.target !== result.latest.commit.slice(0, 12)" class="text-muted-color">
+                This dashboard runs <code>{{ short(result.target) }}</code>, which is not the same commit as {{ result.ref }}.
+              </p>
+            </div>
+            <ul v-if="result.commits.length" class="text-sm flex flex-col gap-1">
+              <li v-for="c in result.commits" :key="c.sha" class="flex gap-3"><code class="text-muted-color">{{ c.sha }}</code><span>{{ c.subject }}</span></li>
+              <li v-if="result.behind && result.behind > result.commits.length" class="text-muted-color">… and {{ result.behind - result.commits.length }} more</li>
+            </ul>
+            <div v-if="remote && result.state === 'behind' && server?.status === 'online'">
+              <Button :label="`Upgrade to ${result.ref}…`" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
+            </div>
+          </template>
+        </div>
+
+            </div>
+          </TabPanel>
+          <TabPanel v-if="isAdmin && usable" value="features">
+            <div class="flex flex-col gap-3">
         <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Containers">
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 class="font-medium">Containers</h3>
@@ -225,57 +334,10 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           </template>
         </div>
 
-        <div v-if="behind" class="flex flex-wrap items-center gap-3 text-sm">
-          <span class="text-amber-600 dark:text-amber-400">This server runs an older version than this dashboard.</span>
-          <Button label="Upgrade…" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
-        </div>
-        <div v-if="software?.upgrade" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-          <span class="text-muted-color">Last upgrade</span>
-          <StatusTag :state="software.upgrade.state" />
-          <span class="text-muted-color">{{ software.upgrade.updatedAt ? timeAgo(software.upgrade.updatedAt) : "" }}</span>
-          <span v-if="software.upgrade.message" class="w-full text-muted-color">{{ software.upgrade.message }}</span>
-          <Button v-if="upgrading" label="Follow it" text size="small" @click="showUpgrade = true" />
-        </div>
 
-        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-3">
-          <div class="flex flex-wrap items-end gap-3">
-            <div class="flex flex-col gap-1">
-              <label for="up-ref" class="text-sm font-medium">Check for updates</label>
-              <InputText id="up-ref" v-model="ref_" placeholder="main" autocomplete="off" class="w-48" :invalid="!validRef" :disabled="!software?.supported" @keydown.enter="validRef && runCheck()" />
             </div>
-            <Button label="Check for updates" icon="pi pi-cloud-download" size="small" severity="secondary" :disabled="!validRef || !software?.supported || upgrading" :loading="check.isPending.value" @click="runCheck" />
-          </div>
-          <small class="text-muted-color">
-            The server asks the repository it was installed from, using its own git and network. A branch, tag or commit; empty means <code>main</code>. Nothing on the server changes.
-          </small>
-
-          <template v-if="result">
-            <div class="flex flex-col gap-1 border-t border-[var(--fr-line)] pt-3 text-sm">
-              <p :class="result.state === 'behind' ? 'font-medium' : ''">
-                {{ stateText }}
-                <span class="text-muted-color">Checked {{ timeAgo(result.checkedAt) }}.</span>
-              </p>
-              <p class="text-muted-color">
-                Installed: <code>{{ short(result.installed?.commit) }}</code><span v-if="result.installed"> {{ result.installed.subject }} ({{ date(result.installed.committedAt) }})</span>
-              </p>
-              <p v-if="result.state !== 'up-to-date'" class="text-muted-color">
-                {{ result.ref }}: <code>{{ short(result.latest.commit) }}</code> {{ result.latest.subject }} ({{ date(result.latest.committedAt) }})
-              </p>
-              <p v-if="result.target && result.target !== result.latest.commit.slice(0, 12)" class="text-muted-color">
-                This dashboard runs <code>{{ short(result.target) }}</code>, which is not the same commit as {{ result.ref }}.
-              </p>
-            </div>
-            <ul v-if="result.commits.length" class="text-sm flex flex-col gap-1">
-              <li v-for="c in result.commits" :key="c.sha" class="flex gap-3"><code class="text-muted-color">{{ c.sha }}</code><span>{{ c.subject }}</span></li>
-              <li v-if="result.behind && result.behind > result.commits.length" class="text-muted-color">… and {{ result.behind - result.commits.length }} more</li>
-            </ul>
-            <div v-if="remote && result.state === 'behind' && server?.status === 'online'">
-              <Button :label="`Upgrade to ${result.ref}…`" icon="pi pi-arrow-up" size="small" @click="showUpgrade = true" />
-            </div>
-          </template>
-        </div>
-      </section>
-
+          </TabPanel>
+          <TabPanel v-if="isAdmin && remote" value="connection">
       <section v-if="isAdmin && remote" class="flex flex-col gap-3">
         <h2 class="font-display font-semibold text-[1.2rem]">Connection</h2>
         <div class="flex flex-wrap items-center gap-2 text-sm">
@@ -284,6 +346,10 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           <span v-if="s.appCount > 0" class="text-muted-color">A server with apps can't be removed.</span>
         </div>
       </section>
+
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
     </template>
 
     <UpgradeDialog v-if="showUpgrade" v-model="showUpgrade" :server="name" />
@@ -296,3 +362,12 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
     </Dialog>
   </div>
 </template>
+
+<style scoped>
+.meter { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.7rem 0.95rem; background: var(--fr-panel); border: 1px solid var(--fr-line); border-radius: var(--p-border-radius-lg); }
+.bar { height: 6px; border-radius: 999px; background: var(--fr-line); overflow: hidden; }
+.bar span { display: block; height: 100%; border-radius: 999px; transition: width 0.4s; }
+.bar .ok { background: var(--p-primary-color); }
+.bar .warn { background: #d97706; }
+.bar .bad { background: #dc2626; }
+</style>

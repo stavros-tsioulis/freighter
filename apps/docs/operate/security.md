@@ -47,6 +47,15 @@ A compromised agent controls its own server, including the apps and secrets on i
 
 There's no revocation list. The control server decides which agents it talks to, and agents accept only the single client identity.
 
+## The file explorer
+
+The [file explorer](/operate/files) shows every file on a server, and the agent runs as root, so this is the most powerful thing an admin token can do. It reads and changes anything the machine has: keys, certificates, the registry database, other apps' data.
+
+- Only the **admin** role can use it. Each request is checked, and changes, uploads and downloads are in the audit log with the paths (never file contents).
+- It can be turned off on a server (`agent.files.enabled: false`) or limited to looking and downloading (`agent.files.readOnly: true`), in that server's `config.yaml`. The setting lives on the server, so a stolen token can't undo it.
+- It refuses to delete or move the system's top-level folders, and to delete a folder with a remote volume mounted inside it.
+- Anything root creates through it belongs to the owner of the folder it goes in.
+
 ## Git
 
 - Imported SSH keys are encrypted at rest with AES-256-GCM. The key for that lives in `/var/lib/freighter/secret.key`, next to the registry, so back both up together.

@@ -159,6 +159,15 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 | `GET /servers/:name/upgrade` | whether the agent can upgrade itself, its version against the control plane's, and the state and log of the last upgrade | admin |
 | `POST /servers/:name/updates/check` | `{ref?}`. The server's agent runs git against its repository and reports whether `ref` (default `main`) has newer commits than what is installed, with the newest of them. Changes nothing. | admin |
 | `POST /servers/:name/upgrade` | `{ref?}`. Starts an upgrade of a remote server (default ref: the control plane's own commit). `202` with the same body as above. `{containers: true}` instead installs Podman at the version already installed (the installer's `--with-containers`); `409` if the agent predates it, `400` for the local server. | admin |
+| `GET /servers/:name/metrics` | `?minutes=` (default 60, up to 1440). The machine's readings, oldest first: `load1`, `cpus`, `memUsed`, `memTotal`, `diskUsed`, `diskTotal` | viewer |
+| `GET /servers/:name/fs` | `?path=` (default `/`). The [file explorer](/operate/files): a folder's `entries` (`name`, `type`, `size`, `mtimeMs`, `mode`, `owner`, `group`, `link`), its `parent`, and whether the list was `truncated` | admin |
+| `POST /servers/:name/fs/mkdir` | `{path}` | admin |
+| `POST /servers/:name/fs/rename` | `{path, name}` | admin |
+| `POST /servers/:name/fs/copy`, `…/move` | `{paths, to, onConflict?}` with `onConflict` one of `fail` (default), `overwrite`, `rename`. Returns `{done, failed: [{path, error}]}`; items are independent | admin |
+| `POST /servers/:name/fs/delete` | `{paths}`. Same result | admin |
+| `PUT /servers/:name/fs/upload` | `?path=` the file's full path, `&overwrite=1` to replace. The body is the file, with a `Content-Length`. Streamed to the server and put in place when complete | admin |
+| `GET /servers/:name/fs/download` | `?path=`. The file, streamed | admin |
+| `POST /servers/:name/fs/archive` | `{paths}`. Returns `{ticket, name}`; `GET /servers/:name/fs/archive/:ticket` within a minute streams a zip of them (folders included, links skipped and listed in the zip) | admin |
 | `DELETE /servers/:name` | not `local`, and not while apps are pinned | admin |
 | `POST /enroll` | **public**: `{token, csr}`. An agent redeems its token for a certificate. | token |
 

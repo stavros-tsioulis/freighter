@@ -80,6 +80,24 @@ const commit = z.object({ sha: z.string(), subject: z.string(), author: z.string
 const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().min(1).max(100), auth: z.object({ sshKey: z.string().min(40).max(20000) }).optional() };
 
 /** The entire privileged surface of the agent: operation name -> argument and result schemas. */
+const fsPath = z.string().min(1).max(4096);
+const fsPaths = z.array(fsPath).min(1).max(1000);
+const fsConflict = z.enum(["fail", "overwrite", "rename"]);
+const fsBulk = z.object({ done: z.array(z.string()), failed: z.array(z.object({ path: z.string(), error: z.string() })) });
+const fsEntry = z.object({
+  name: z.string(),
+  type: z.enum(["dir", "file", "link", "other"]),
+  size: z.number(),
+  mtimeMs: z.number(),
+  mode: z.number(),
+  uid: z.number(),
+  gid: z.number(),
+  owner: z.string().nullable(),
+  group: z.string().nullable(),
+  link: z.object({ target: z.string(), type: z.enum(["dir", "file", "other", "missing"]) }).optional(),
+});
+const fsListing = z.object({ path: z.string(), parent: z.string().nullable(), entries: z.array(fsEntry), truncated: z.boolean() });
+
 export const ops = {
   ping: {
     args: z.object({}),
@@ -109,6 +127,11 @@ export const ops = {
       storage: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
       /** Whether this host can mount SMB and NFS volumes. Absent on agents that predate volumes. */
       mounts: z.object({ smb: z.boolean(), nfs: z.boolean() }).optional(),
+      /** Logical CPUs, and the operating system as `uname` would say. Absent on agents that predate the file explorer. */
+      cpus: z.number().optional(),
+      os: z.string().optional(),
+      /** Whether the file explorer is on, and whether it may change anything. */
+      files: z.object({ enabled: z.boolean(), readOnly: z.boolean() }).optional(),
     }),
   },
   /** Header line only; `size` raw bytes follow on the same connection (see framing.ts). */
@@ -302,6 +325,20 @@ export const ops = {
     args: z.object({ app, manifestText: z.string().min(1).max(262_144), logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
     result: z.object({ deploy: deployResult.nullable() }),
   },
+  // ---- the file explorer: every file on the server, as root. Admins only (the API enforces it). ----
+  /** A folder's entries. */
+  "fs.list": { args: z.object({ path: fsPath }), result: fsListing },
+  "fs.mkdir": { args: z.object({ path: fsPath }), result: z.object({}) },
+  "fs.rename": { args: z.object({ path: fsPath, name: z.string().min(1).max(255) }), result: z.object({ path: z.string() }) },
+  "fs.copy": { args: z.object({ paths: fsPaths, to: fsPath, onConflict: fsConflict.default("fail") }), result: fsBulk },
+  "fs.move": { args: z.object({ paths: fsPaths, to: fsPath, onConflict: fsConflict.default("fail") }), result: fsBulk },
+  "fs.delete": { args: z.object({ paths: fsPaths }), result: fsBulk },
+  /** Header line, then `size` raw bytes that become the file (written beside it and renamed in when complete). */
+  "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false) }), result: z.object({}) },
+  /** The reply line is followed by `size` raw bytes of the file. */
+  "fs.read": { args: z.object({ path: fsPath }), result: z.object({ size: z.number(), mtimeMs: z.number() }) },
+  /** The reply line is followed by a ZIP of the paths, until the connection closes. */
+  "fs.archive": { args: z.object({ paths: fsPaths }), result: z.object({}) },
   /** The remote volumes an app's configuration declares: what is mounted, and whether an SMB password is set. Agents with "volumes" only. */
   "volumes.status": {
     args: z.object({ app }),
@@ -402,4 +439,4 @@ export type Reply = { id: string; ok: true; result: unknown } | { id: string; ok
 export const MAX_LINE_BYTES = 1_048_576;
 
 /** Operations that carry a raw byte stream after the header line; the generic dispatcher must not run them. */
-export const RAW_OPS: ReadonlySet<string> = new Set(["artifact.put"]);
+export const RAW_OPS: ReadonlySet<string> = new Set(["artifact.put", "fs.write", "fs.read", "fs.archive"]);

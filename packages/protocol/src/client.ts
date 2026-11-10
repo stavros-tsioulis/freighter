@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
+import { PassThrough, type Readable } from "node:stream";
 import { connect as netConnect, isIP, type Socket } from "node:net";
 import { checkServerIdentity, connect as tlsConnect } from "node:tls";
 import { LineReader } from "./framing.ts";
@@ -25,6 +26,10 @@ export interface AgentClient {
   call<N extends OpName>(op: N, args: OpArgs<N>, opts?: { timeoutMs?: number }): Promise<OpResult<N>>;
   /** Upload a file into the agent's artifact spool as `<id>.tar.gz`; resolves with its path on the agent host. */
   putArtifact(id: string, filePath: string, opts?: { timeoutMs?: number }): Promise<{ path: string }>;
+  /** `fs.write`: send `size` bytes from `body`; resolves once the agent has put the file in place. */
+  writeFile(args: OpArgs<"fs.write">, body: Readable, opts?: { timeoutMs?: number }): Promise<void>;
+  /** `fs.read` or `fs.archive`: the reply, and the bytes that follow it. Destroy `body` to stop early. */
+  openStream<N extends "fs.read" | "fs.archive">(op: N, args: OpArgs<N>, opts?: { timeoutMs?: number }): Promise<{ result: OpResult<N>; body: Readable }>;
 }
 
 function open(target: AgentTarget): { socket: Socket; where: string } {
@@ -103,6 +108,63 @@ export function createAgentClient(target: string | AgentTarget, defaults: { time
       const parsed = ops[op].result.safeParse(raw);
       if (!parsed.success) throw new AgentError("internal", `agent reply for ${op} did not match the protocol`);
       return parsed.data as OpResult<typeof op>;
+    },
+    async writeFile(args, body, opts) {
+      await exchange("fs.write", args, opts?.timeoutMs ?? 2 * 3_600_000, (socket) => {
+        body.on("error", () => socket.destroy());
+        body.pipe(socket, { end: false });
+      });
+    },
+    openStream(op, args, opts) {
+      const id = `${process.pid}-${++counter}`;
+      const idleMs = opts?.timeoutMs ?? 120_000;
+      return new Promise((resolve, reject) => {
+        const { socket, where } = open(t);
+        let settled = false;
+        let buf: Buffer = Buffer.alloc(0);
+        let body: PassThrough | undefined;
+        const fail = (e: AgentError) => {
+          if (body) return void body.destroy(e);
+          if (settled) return;
+          settled = true;
+          socket.destroy();
+          reject(e);
+        };
+        socket.setTimeout(idleMs, () => fail(new AgentError("timeout", `agent stopped answering ${op}`)));
+        socket.on("error", (e: NodeJS.ErrnoException) => fail(new AgentError("unavailable", `cannot reach agent at ${where}: ${e.code ?? e.message}`)));
+        const onData = (chunk: Buffer) => {
+          buf = Buffer.concat([buf, chunk]);
+          const i = buf.indexOf(0x0a);
+          if (i === -1) {
+            if (buf.length > MAX_LINE_BYTES) fail(new AgentError("internal", `agent reply exceeded ${MAX_LINE_BYTES} bytes`));
+            return;
+          }
+          socket.off("data", onData);
+          let reply: Reply;
+          try {
+            reply = JSON.parse(buf.subarray(0, i).toString("utf8")) as Reply;
+          } catch {
+            return fail(new AgentError("internal", "agent sent invalid JSON"));
+          }
+          if (!reply.ok) {
+            settled = true;
+            socket.destroy();
+            return reject(new AgentError(reply.error.code, reply.error.message, reply.error));
+          }
+          const parsed = ops[op].result.safeParse(reply.result);
+          if (!parsed.success) return fail(new AgentError("internal", `agent reply for ${op} did not match the protocol`));
+          settled = true;
+          socket.setTimeout(0); // a slow reader pauses the socket; that is not the agent going quiet
+          body = new PassThrough();
+          const rest = buf.subarray(i + 1);
+          if (rest.length > 0) body.write(rest);
+          socket.pipe(body);
+          body.on("close", () => socket.destroy());
+          resolve({ result: parsed.data as OpResult<typeof op>, body });
+        };
+        socket.on("data", onData);
+        socket.write(JSON.stringify({ id, op, args }) + "\n");
+      });
     },
     async putArtifact(id, filePath, opts) {
       const [info, sha256] = await Promise.all([

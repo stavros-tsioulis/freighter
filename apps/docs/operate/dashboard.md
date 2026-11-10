@@ -54,7 +54,18 @@ Admins see **Delete app** in the app's header. The dialog lists what goes: the s
 
 Every server with its status (*Online*, *Offline*, *Waiting to enroll*, *Error*), the last error if any, and a strip of facts: hostname, uptime, load, memory used, free disk, number of apps, last contact, agent version and, for remote servers, how long their certificate has left. Admins can add servers, **Check now**, **Re-enroll**, **Upgrade** a remote server's agent to the version the dashboard runs (with progress, log and automatic rollback), and remove servers that have no apps.
 
-Select a server's name to open its page. It shows the machine (hostname, uptime, load, memory, disk), the apps pinned to it (and whether it can run container images), and, for admins, the agent and software: the version the agent runs next to the one the dashboard runs, whether HAProxy is Freighter's own or yours, the outcome of the last upgrade, and the agent certificate. Under *Agent and software*, **Containers** says whether the server can run [container images](/deploy/images); when Podman is missing, **Add container support…** installs it by re-running the installer on that server with `--with-containers`, at the version it already runs, with the same progress, log and automatic rollback as an upgrade. (For the machine the dashboard runs on, it shows the installer command to run instead.) The controls are **Check now**, **Check for updates**, **Upgrade**, **Restart agent**, **Re-enroll** and **Remove server**. **Check for updates** has the server itself ask the repository it was installed from, with its own git and network, whether `main` (or a branch, tag or commit you type) has newer commits than it runs, and lists them. It changes nothing on the server.
+Select a server's name to open its page, which has tabs:
+
+| Tab | What's there | Role |
+| --- | --- | --- |
+| **Overview** | the machine (hostname, uptime, load, memory and disk as meters, what is installed) and the apps pinned to it | viewer |
+| **Monitoring** | load, memory and disk over 15 minutes, an hour, six hours or a day, with the value under the pointer. The control plane reads the machine every 15 seconds and keeps six hours | viewer |
+| **Files** | the [file explorer](/operate/files): every file on the server | admin |
+| **Software** | the version the agent runs next to the one the dashboard runs, whether HAProxy is Freighter's own or yours, the outcome of the last upgrade, and **Check for updates** | admin |
+| **Features** | what the server can do beyond the basics, each with an **Add … support** button that re-runs the installer on that server, at the version it already runs, with the same progress, log and automatic rollback as an upgrade: **Containers** (Podman, for [container images](/deploy/images)), **S3 storage** (rclone) and **Remote volumes** (SMB and NFS tools). For the machine the dashboard runs on, it shows the installer command to run instead | admin |
+| **Connection** | re-enroll, remove (remote servers) | admin |
+
+The open tab, and the folder the file explorer is in, are part of the URL. The controls are **Check now**, **Check for updates**, **Upgrade**, **Restart agent**, **Re-enroll** and **Remove server**. **Check for updates** has the server itself ask the repository it was installed from, with its own git and network, whether `main` (or a branch, tag or commit you type) has newer commits than it runs, and lists them. It changes nothing on the server.
 
 ## Certificates
 

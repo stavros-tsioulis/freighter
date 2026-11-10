@@ -52,6 +52,8 @@ export const hostConfigSchema = z.object({
       /** State, backup and log of the last remote upgrade. */
       upgradeDir: z.string().default("/var/lib/freighter/upgrade"),
       maxArtifactMb: z.number().positive().default(200),
+      /** The file explorer: everything on this server, as root. `readOnly` allows looking and downloading only. */
+      files: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
       /** Optional mutual-TLS listener so a control plane on another host can manage this one. */
       remote: z
         .object({

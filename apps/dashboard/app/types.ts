@@ -107,6 +107,11 @@ export interface HostStatus {
   storage?: { available: boolean; version?: string };
   /** Whether the server can mount SMB and NFS volumes. Absent on agents that predate volumes. */
   mounts?: { smb: boolean; nfs: boolean };
+  /** Logical CPUs and the operating system. Absent on agents that predate the file explorer. */
+  cpus?: number;
+  os?: string;
+  /** Whether the file explorer is on, and whether it may change anything. */
+  files?: { enabled: boolean; readOnly: boolean };
 }
 export interface ServerRow {
   name: string;
@@ -347,4 +352,37 @@ export interface StorageTest {
   ok: boolean;
   error?: string;
   hostKey?: { line: string; fingerprint: string; type: string };
+}
+
+/** An entry of a folder on a server (the file explorer). */
+export interface FsEntry {
+  name: string;
+  type: "dir" | "file" | "link" | "other";
+  size: number;
+  mtimeMs: number;
+  mode: number;
+  uid: number;
+  gid: number;
+  owner: string | null;
+  group: string | null;
+  link?: { target: string; type: "dir" | "file" | "other" | "missing" };
+}
+export interface FsListing {
+  path: string;
+  parent: string | null;
+  entries: FsEntry[];
+  truncated: boolean;
+}
+export interface FsBulk {
+  done: string[];
+  failed: { path: string; error: string }[];
+}
+export interface HostSample {
+  at: string;
+  load1: number;
+  cpus: number | null;
+  memUsed: number;
+  memTotal: number;
+  diskUsed: number | null;
+  diskTotal: number | null;
 }

@@ -1,5 +1,5 @@
 import { copyFile, rm, realpath, stat, statfs } from "node:fs/promises";
-import { hostname, freemem, loadavg, totalmem, uptime } from "node:os";
+import { arch, cpus, hostname, freemem, loadavg, release, totalmem, type, uptime } from "node:os";
 import { sep } from "node:path";
 import { parseManifest } from "@freighter/manifest";
 import {
@@ -39,6 +39,13 @@ import {
   storageAvailable,
   readVariables,
   getConfig,
+  FileError,
+  listDir,
+  makeDir,
+  renamePath,
+  copyPaths,
+  movePaths,
+  deletePaths,
   mountSupport,
   setVolumePassword,
   volumeStatus,
@@ -59,7 +66,9 @@ import { RAW_OPS, ops, type OpName, type OpResult, type Reply, type WireError, r
 import type { z } from "zod";
 import { ZodError } from "zod";
 
-export type Handlers = { [N in Exclude<OpName, "artifact.put">]: (args: z.output<(typeof ops)[N]["args"]>) => Promise<OpResult<N>> };
+/** Operations followed (or answered) by raw bytes are served by the connection itself. */
+export type RawOp = "artifact.put" | "fs.write" | "fs.read" | "fs.archive";
+export type Handlers = { [N in Exclude<OpName, RawOp>]: (args: z.output<(typeof ops)[N]["args"]>) => Promise<OpResult<N>> };
 
 /** Resolve an artifact path and make sure it is a regular file inside the spool directory. */
 async function checkArtifact(d: Deps, artifact: string): Promise<string> {
@@ -76,6 +85,12 @@ async function checkArtifact(d: Deps, artifact: string): Promise<string> {
 }
 
 export class BadRequest extends Error {}
+
+/** The file explorer can be turned off for a server, or limited to looking and downloading. */
+export function explorer(d: Deps, changes = false): void {
+  if (!d.config.agent.files.enabled) throw new FileError("bad_request", "the file explorer is turned off on this server (agent.files.enabled in its config.yaml)");
+  if (changes && d.config.agent.files.readOnly) throw new FileError("bad_request", "the file explorer is read-only on this server (agent.files.readOnly in its config.yaml)");
+}
 
 function toDeployResult(r: Awaited<ReturnType<typeof deploy>>): OpResult<"app.deploy"> {
   return {
@@ -107,7 +122,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "volumes", "connections", "variables", "reapply", "app.config", ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "volumes", "connections", "variables", "reapply", "app.config", ...(d.config.agent.files.enabled ? ["files"] : []), ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -132,7 +147,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d) };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -156,6 +171,31 @@ export function createHandlers(d: Deps): Handlers {
           throw e;
         }),
       );
+    },
+    async "fs.list"({ path }) {
+      explorer(d);
+      return listDir(path);
+    },
+    async "fs.mkdir"({ path }) {
+      explorer(d, true);
+      await makeDir(path);
+      return {};
+    },
+    async "fs.rename"({ path, name }) {
+      explorer(d, true);
+      return { path: await renamePath(path, name) };
+    },
+    async "fs.copy"({ paths, to, onConflict }) {
+      explorer(d, true);
+      return copyPaths(paths, to, onConflict);
+    },
+    async "fs.move"({ paths, to, onConflict }) {
+      explorer(d, true);
+      return movePaths(paths, to, onConflict);
+    },
+    async "fs.delete"({ paths }) {
+      explorer(d, true);
+      return deletePaths(paths);
     },
     async "volumes.status"({ app }) {
       const text = await getConfig(d, app);
@@ -315,6 +355,7 @@ export function classify(e: unknown): WireError {
     return { code: "deploy_failed", message: e.message, rolledBackTo: e.rolledBackTo, releaseId: e.releaseId, historyAt: e.historyAt };
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
+  if (e instanceof FileError) return { code: e.code, message: e.message };
   if (e instanceof UpgradeError) return { code: /in progress/.test(e.message) ? "conflict" : "bad_request", message: e.message };
   if (e instanceof BadRequest || e instanceof SettingsError) return { code: "bad_request", message: e.message };
   if (e instanceof ZodError) {
@@ -337,7 +378,7 @@ export async function dispatch(handlers: Handlers, line: string): Promise<Reply>
     id = req.id;
     if (!(req.op in ops)) throw new BadRequest(`unknown operation "${req.op}"`);
     if (RAW_OPS.has(req.op)) throw new BadRequest(`${req.op} must be sent as an upload`);
-    const op = req.op as Exclude<OpName, "artifact.put">;
+    const op = req.op as Exclude<OpName, RawOp>;
     const args = ops[op].args.parse(req.args ?? {});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await (handlers[op] as (a: any) => Promise<unknown>)(args);

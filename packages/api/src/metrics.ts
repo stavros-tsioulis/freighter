@@ -43,6 +43,22 @@ export async function sampleOnce(ctx: ApiContext): Promise<number> {
           t.toISOString(),
         );
         total += samples.length;
+        // and how the machine itself is doing (an agent without it just has no history)
+        const host = await ctx.agents.forServer(server.name).call("host.status", {}, { timeoutMs: 10_000 }).catch(() => null);
+        if (host) {
+          ctx.registry.hostSamples.add(
+            server.name,
+            {
+              load1: host.load1,
+              cpus: host.cpus ?? null,
+              memUsed: host.memTotal - host.memFree,
+              memTotal: host.memTotal,
+              diskUsed: host.diskTotalBytes !== null && host.diskFreeBytes !== null ? host.diskTotalBytes - host.diskFreeBytes : null,
+              diskTotal: host.diskTotalBytes,
+            },
+            t.toISOString(),
+          );
+        }
       } catch {
         /* an unreachable server simply has no sample this round */
       }
@@ -50,5 +66,6 @@ export async function sampleOnce(ctx: ApiContext): Promise<number> {
   );
   const keepMs = (ctx.metricsRetentionHours ?? 6) * 3_600_000;
   ctx.registry.metrics.prune(new Date(t.getTime() - keepMs).toISOString());
+  ctx.registry.hostSamples.prune(new Date(t.getTime() - keepMs).toISOString());
   return total;
 }

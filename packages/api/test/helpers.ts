@@ -7,6 +7,7 @@ import { AgentError, type AgentClient, type OpArgs, type OpName, type OpResult }
 import { PkiStore } from "@freighter/pki";
 import { openRegistry, type Role } from "@freighter/registry";
 import { toWebHandler } from "h3";
+import { Readable } from "node:stream";
 import { createApi, type ApiContext } from "../src/index.ts";
 
 export const sleepMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -101,8 +102,29 @@ export function fakeAgent() {
       calls.push({ op: "putArtifact", args: { id, filePath } });
       return { path: `/remote-spool/${id}.tar.gz` };
     },
+    async writeFile(args, body) {
+      calls.push({ op: "fs.write", args });
+      const parts: Buffer[] = [];
+      for await (const c of body) parts.push(Buffer.from(c as Buffer));
+      const bytes = Buffer.concat(parts);
+      uploads.push({ args, bytes });
+      if (uploadError) throw uploadError;
+    },
+    async openStream(op, args) {
+      calls.push({ op, args });
+      const h = streams[op];
+      if (!h) throw new Error(`no fake stream for ${op}`);
+      return h(args) as never;
+    },
   };
-  return { agent, calls, handlers };
+  /** What `fs.write` received, and an error for it to fail with. */
+  const uploads: { args: unknown; bytes: Buffer }[] = [];
+  let uploadError: Error | null = null;
+  const streams: Record<string, (args: any) => { result: unknown; body: Readable }> = {
+    "fs.read": () => ({ result: { size: 5, mtimeMs: 1 }, body: Readable.from([Buffer.from("hello")]) }),
+    "fs.archive": () => ({ result: {}, body: Readable.from([Buffer.from("PK-zip")]) }),
+  };
+  return { agent, calls, handlers, streams, uploads, failUploads: (e: Error | null) => void (uploadError = e) };
 }
 
 export async function makeApi(opts: { maxUploadBytes?: number; publicIps?: string[] } = {}) {
