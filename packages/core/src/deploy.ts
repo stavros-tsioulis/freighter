@@ -81,6 +81,16 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
   const manifestText = stored ?? opts.manifestText;
 
   const hasImages = Object.keys(imageServices(manifest)).length > 0;
+  const first = !opts.dryRun && (await currentRelease(d, app)) === null;
+  /** A first deploy that fails keeps its services: they are what the next attempt, and the secrets to set, are about. */
+  const keepFirst = async () => {
+    if (!first || (stored && opts.config !== "replace")) return;
+    await ensureApp(d, app);
+    await writeConfig(d, app, manifestText);
+  };
+  let domains: Domain[];
+  let previousDomains: Domain[];
+  try {
   if (hasImages && !(await containersAvailable(d)).available) throw new Error(NO_CONTAINERS_MESSAGE);
   if (opts.source === undefined && Object.values(manifest.services).some((s) => s.image === undefined)) {
     throw new Error("an artifact is required: this app has services that run a command");
@@ -94,11 +104,15 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
   const noPassword = await missingVolumePasswords(d, manifest);
   if (noPassword.length > 0) throw new Error(`missing passwords for volumes of ${app}: ${noPassword.join(", ")} (set them on the app's Settings tab)`);
 
-  const previousDomains = await readDomains(d, app);
-  const domains: Domain[] = opts.domains ? parseDomains(opts.domains) : previousDomains;
+  previousDomains = await readDomains(d, app);
+  domains = opts.domains ? parseDomains(opts.domains) : previousDomains;
   const problems = routingProblems(manifest, domains);
   if (problems.length > 0) throw new Error(problems.join("; "));
   await assertHostnamesFree(d, app, domains);
+  } catch (e) {
+    await keepFirst().catch(() => undefined);
+    throw e;
+  }
 
   const routed = routedServices(domains);
   const warnings: string[] = routingWarnings(manifest, domains);
@@ -140,6 +154,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     await writeFile(`${releaseDir(d, app, releaseId)}/app.yaml`, manifestText);
     if (opts.meta) await writeFile(`${releaseDir(d, app, releaseId)}/.freighter-source.json`, JSON.stringify(opts.meta));
 
+    if (previous === null) await keepFirst();
     const changesDomains = opts.domains !== undefined;
     let live;
     try {

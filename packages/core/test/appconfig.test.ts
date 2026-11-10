@@ -1,6 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { configPath, deploy, getConfig, rollback, setConfig } from "../src/index.ts";
+import { configPath, deploy, getConfig, rollback, setConfig, setEnv } from "../src/index.ts";
 import { artifact, makeDeps } from "./helpers.ts";
 
 const yaml = (extra = "", cmd = "node server.mjs") => `name: shop\nservices:\n  web:\n    command: ${cmd}\n    port: 3100\n${extra}`;
@@ -22,10 +22,13 @@ describe("app.yaml as an init file", () => {
     expect(same.warnings.join()).not.toMatch(/not applied/);
   });
 
-  it("a failed first deploy leaves nothing behind to be mistaken for the configuration", async () => {
+  it("a failed first deploy keeps the services, so the secrets can be set and the deploy retried", async () => {
     const h = await makeDeps();
-    await expect(deploy(h.deps, { manifestText: yaml("    secrets: [TOKEN]\n"), source: await artifact() })).rejects.toThrow(/missing secrets/);
-    expect(await getConfig(h.deps, "shop")).toBeNull();
+    const text = yaml("    secrets: [TOKEN]\n");
+    await expect(deploy(h.deps, { manifestText: text, source: await artifact() })).rejects.toThrow(/missing secrets/);
+    expect(await getConfig(h.deps, "shop")).toContain("TOKEN");
+    await setEnv(h.deps, "shop", "web", "TOKEN", "t");
+    await expect(deploy(h.deps, { manifestText: text, source: await artifact() })).resolves.toBeTruthy();
   });
 
   it("an app deployed before configuration was kept takes its current release's app.yaml", async () => {

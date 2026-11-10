@@ -784,7 +784,7 @@ export function useDeployImages() {
   return useMutation({
     mutationFn: async (v: { name: string; settings: AppSettings; server?: string; /** host -> user name, where a registry has several logins */ logins?: Record<string, string> }) => {
       const { text } = await api<{ text: string }>("/manifest/render", { method: "POST", body: { name: v.name, settings: v.settings } });
-      return api<{ id: string }>(`/apps/${v.name}/image-deployments`, { method: "POST", body: { manifest: text, ...(v.logins && Object.keys(v.logins).length ? { logins: v.logins } : {}) }, query: v.server ? { server: v.server } : undefined });
+      return api<{ id: string }>(`/apps/${v.name}/image-deployments`, { method: "POST", body: { manifest: text, replaceConfig: true, ...(v.logins && Object.keys(v.logins).length ? { logins: v.logins } : {}) }, query: v.server ? { server: v.server } : undefined });
     },
     onSuccess: () => refreshApps(qc),
   });

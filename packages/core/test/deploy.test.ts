@@ -48,11 +48,11 @@ describe("deploy", () => {
     expect((await readdir(`${app}/releases`)).sort()).toEqual([a.releaseId, b.releaseId]);
   });
 
-  it("aborts before any change when secrets are missing", async () => {
-    const { deps, calls } = await makeDeps();
+  it("aborts before any release when secrets are missing, keeping the configuration", async () => {
+    const { deps, mutating } = await makeDeps();
     await expect(deploy(deps, { manifestText: MANIFEST, source: await artifact() })).rejects.toThrow(/missing secrets.*TOKEN/);
-    expect(calls).toEqual([]);
-    await expect(readdir(deps.layout.appsRoot)).rejects.toThrow();
+    expect(mutating().filter((c) => c[0] === "systemctl")).toEqual([]);
+    expect(await readdir(`${deps.layout.appsRoot}/hello`)).toContain("config.yaml");
   });
 
   it("removes units for dropped services only for the same app", async () => {

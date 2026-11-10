@@ -114,7 +114,7 @@ describe("host-level checks", () => {
       /hostname shop\.example\.com is already used by app "shop"/,
     );
     expect(h.mutating().filter((c) => c[0] === "systemctl")).toEqual([]);
-    expect(await readdir(h.deps.layout.appsRoot)).toEqual(["shop"]); // nothing was created for the refused app
+    expect(await readdir(`${h.deps.layout.appsRoot}/other`)).toContain("config.yaml"); // its configuration was kept
   });
 
   it("two apps get different ports", async () => {
