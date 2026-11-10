@@ -164,7 +164,10 @@ export function renderUnit(input: RenderInput): string {
     line("WorkingDirectory", input.release ? releasePath(layout, app, input.release) : workingDir(layout, app)),
     line("ExecStart", toExecStart(splitCommand(def.command!))),
   ];
-  // The loopback default first, then static env, then the secrets file so it can override, then PORT which always wins.
+  // ProtectHome hides the user's real home, so tools that cache under $HOME (corepack and pnpm, npm, pip) get the app's
+  // writable shared directory instead. Set first, so `environment:` can still override it.
+  svc.push(line("Environment", `HOME=${sharedDir(layout, app)}`));
+  // The loopback default next, then static env, then the secrets file so it can override, then PORT which always wins.
   if (input.loopback && port !== undefined) svc.push(line("Environment", "HOST=127.0.0.1"));
   for (const [k, v] of Object.entries(input.environment ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
     if (!/^[A-Z_][A-Z0-9_]*$/.test(k)) throw new Error(`invalid environment key "${k}"`);

@@ -30,7 +30,7 @@ ReadWritePaths=/srv/apps/<app>/shared
 TasksMax=512
 ```
 
-and with `MemoryMax` and `CPUQuota` when `resources` sets them. Apps can't see each other's secrets, because each env file is root-owned and read by systemd.
+and with `MemoryMax` and `CPUQuota` when `resources` sets them. `HOME` is `/srv/apps/<app>/shared`, because the real home is hidden: tools that cache under it (corepack, pnpm, npm) write there. Set `HOME` in `environment:` to change it. Apps can't see each other's secrets, because each env file is root-owned and read by systemd.
 
 This is process isolation on a shared kernel, not a VM. It's well suited to apps you wrote or trust, and not to running untrusted code.
 

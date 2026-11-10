@@ -21,6 +21,7 @@ User=myapp
 Group=myapp
 WorkingDirectory=/srv/apps/myapp/current
 ExecStart=/usr/bin/env node .output/server/index.mjs
+Environment=HOME=/srv/apps/myapp/shared
 Environment="NODE_ENV=production"
 EnvironmentFile=-/etc/freighter/apps/myapp/web.env
 Environment=PORT=3100
