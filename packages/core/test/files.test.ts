@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { cleanPath, copyPaths, createUpload, deletePaths, listDir, makeDir, movePaths, openForDownload, renamePath, zipStream } from "../src/index.ts";
+import { cleanPath, copyPaths, createUpload, deletePaths, extractPaths, isArchive, listDir, makeDir, movePaths, openForDownload, renamePath, zipStream } from "../src/index.ts";
 
 async function tree() {
   const root = await mkdtemp(join(tmpdir(), "freighter-files-"));
@@ -191,5 +191,90 @@ describe("zip", () => {
     const files = readZip(await drain(zipStream([`${root}/empty`, `${root}/zero`])));
     expect([...files.keys()]).toEqual(["empty/", "zero"]);
     expect(files.get("zero")!.length).toBe(0);
+  });
+});
+
+describe("extractPaths", () => {
+  const have = (tool: string) => { try { execFileSync("sh", ["-c", `command -v ${tool}`]); return true; } catch { return false; } };
+  async function source() {
+    const root = await mkdtemp(join(tmpdir(), "freighter-extract-"));
+    await mkdir(`${root}/src/inner`, { recursive: true });
+    await writeFile(`${root}/src/hello.txt`, "hello");
+    await writeFile(`${root}/src/inner/deep.txt`, "deep");
+    return root;
+  }
+
+  it("knows archives by their extension", () => {
+    for (const n of ["a.zip", "a.TAR", "a.tar.gz", "a.tgz", "a.tar.bz2", "a.tar.xz", "a.tar.zst", "a.7z", "a.rar", "a.gz"]) expect(isArchive(n), n).toBe(true);
+    for (const n of ["a.txt", "a", "targz", "a.zipx.bak"]) expect(isArchive(n), n).toBe(false);
+  });
+
+  it("unpacks tar and tar.gz into a folder named after the archive, beside it", async () => {
+    const root = await source();
+    execFileSync("tar", ["-cf", `${root}/plain.tar`, "-C", `${root}/src`, "."]);
+    execFileSync("tar", ["-czf", `${root}/site.tar.gz`, "-C", `${root}/src`, "."]);
+    const r = await extractPaths([`${root}/plain.tar`, `${root}/site.tar.gz`], undefined);
+    expect(r.failed).toEqual([]);
+    expect(r.done).toEqual([`${root}/plain`, `${root}/site`]);
+    expect(await readFile(`${root}/site/inner/deep.txt`, "utf8")).toBe("deep");
+    expect(await readFile(`${root}/plain/hello.txt`, "utf8")).toBe("hello");
+  });
+
+  it.runIf(have("zip") && have("unzip"))("unpacks zip", async () => {
+    const root = await source();
+    execFileSync("zip", ["-qr", `${root}/z.zip`, "."], { cwd: `${root}/src` });
+    const r = await extractPaths([`${root}/z.zip`], undefined);
+    expect(r.failed).toEqual([]);
+    expect(await readFile(`${root}/z/inner/deep.txt`, "utf8")).toBe("deep");
+  });
+
+  it.runIf(have("7zz") || have("7z"))("unpacks 7z", async () => {
+    const root = await source();
+    execFileSync(have("7zz") ? "7zz" : "7z", ["a", `${root}/s.7z`, "."], { cwd: `${root}/src`, stdio: "ignore" });
+    const r = await extractPaths([`${root}/s.7z`], undefined);
+    expect(r.failed).toEqual([]);
+    expect(await readFile(`${root}/s/hello.txt`, "utf8")).toBe("hello");
+  });
+
+  it("unpacks a single compressed file", async () => {
+    const root = await source();
+    execFileSync("gzip", [`${root}/src/hello.txt`]);
+    const r = await extractPaths([`${root}/src/hello.txt.gz`], undefined);
+    expect(r.failed).toEqual([]);
+    expect(await readFile(`${root}/src/hello.txt/hello.txt`, "utf8")).toBe("hello");
+  });
+
+  it("deals with an existing folder like a copy would, and can extract elsewhere", async () => {
+    const root = await source();
+    execFileSync("tar", ["-czf", `${root}/site.tar.gz`, "-C", `${root}/src`, "."]);
+    await extractPaths([`${root}/site.tar.gz`], undefined);
+    expect((await extractPaths([`${root}/site.tar.gz`], undefined, "fail")).failed[0]?.error).toMatch(/already exists/);
+    expect((await extractPaths([`${root}/site.tar.gz`], undefined, "rename")).done).toEqual([`${root}/site copy`]);
+    await writeFile(`${root}/site/hello.txt`, "changed");
+    expect((await extractPaths([`${root}/site.tar.gz`], undefined, "overwrite")).done).toEqual([`${root}/site`]);
+    expect(await readFile(`${root}/site/hello.txt`, "utf8")).toBe("hello");
+    await mkdir(`${root}/elsewhere`);
+    expect((await extractPaths([`${root}/site.tar.gz`], `${root}/elsewhere`)).done).toEqual([`${root}/elsewhere/site`]);
+  });
+
+  it("reports what is wrong, and leaves nothing half-made behind", async () => {
+    const root = await source();
+    await writeFile(`${root}/bad.tar.gz`, "this is not an archive");
+    await writeFile(`${root}/notes.txt`, "x");
+    const r = await extractPaths([`${root}/bad.tar.gz`, `${root}/notes.txt`, `${root}/nope.zip`, `${root}/src`], undefined);
+    expect(r.done).toEqual([]);
+    expect(r.failed.map((f) => f.path)).toEqual([`${root}/bad.tar.gz`, `${root}/notes.txt`, `${root}/nope.zip`, `${root}/src`]);
+    expect(r.failed[1]!.error).toMatch(/not an archive/);
+    expect(existsSync(`${root}/bad`)).toBe(false);
+  });
+
+  it("does not let an archive write outside its folder", async () => {
+    const root = await source();
+    await mkdir(`${root}/evil/x`, { recursive: true });
+    await writeFile(`${root}/evil/outside.txt`, "boo");
+    // GNU tar refuses members that climb out; bsdtar strips them. Either way nothing lands beside the folder.
+    execFileSync("tar", ["-cf", `${root}/evil.tar`, "-C", `${root}/evil/x`, "../outside.txt"]);
+    await extractPaths([`${root}/evil.tar`], undefined).catch(() => {});
+    expect(existsSync(`${root}/outside.txt`)).toBe(false);
   });
 });

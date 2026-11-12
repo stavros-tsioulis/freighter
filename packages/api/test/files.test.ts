@@ -12,6 +12,7 @@ describe("file explorer", () => {
       ["POST", "/v1/servers/local/fs/rename"],
       ["POST", "/v1/servers/local/fs/copy"],
       ["POST", "/v1/servers/local/fs/move"],
+      ["POST", "/v1/servers/local/fs/extract"],
       ["POST", "/v1/servers/local/fs/delete"],
       ["PUT", "/v1/servers/local/fs/upload?path=/tmp/x"],
       ["GET", "/v1/servers/local/fs/download?path=/etc/passwd"],
@@ -50,15 +51,17 @@ describe("file explorer", () => {
     t.handlers["fs.copy"] = (a: { paths: string[] }) => ({ done: a.paths.map((p) => `/dst${p}`), failed: [] });
     t.handlers["fs.move"] = () => ({ done: ["/dst/a"], failed: [{ path: "/b", error: "/b: already exists" }] });
     t.handlers["fs.delete"] = (a: { paths: string[] }) => ({ done: a.paths, failed: [] });
+    t.handlers["fs.extract"] = (a: { paths: string[] }) => ({ done: a.paths.map((p) => p.replace(/\.tar\.gz$/, "")), failed: [] });
     const post = (op: string, json: unknown) => t.request(`/v1/servers/local/fs/${op}`, { method: "POST", token: t.tokens.admin, json });
     expect((await post("mkdir", { path: "/srv/new" })).status).toBe(200);
     expect((await post("rename", { path: "/srv/a", name: "b" })).json.path).toBe("/srv/b");
     expect((await post("copy", { paths: ["/a", "/b"], to: "/dst", onConflict: "rename" })).json.done).toEqual(["/dst/a", "/dst/b"]);
     expect((await post("move", { paths: ["/a", "/b"], to: "/dst" })).json.failed).toHaveLength(1);
     expect((await post("delete", { paths: ["/tmp/x"] })).json.done).toEqual(["/tmp/x"]);
+    expect((await post("extract", { paths: ["/srv/site.tar.gz"] })).json.done).toEqual(["/srv/site"]);
     expect((await post("delete", { paths: [] })).status).toBe(400);
     expect((await post("copy", { paths: ["/a"], to: "/d", onConflict: "bogus" })).status).toBe(400);
-    expect(t.registry.audit.list().map((a) => a.action).reverse()).toEqual(["file.mkdir", "file.rename", "file.copy", "file.move", "file.delete"]);
+    expect(t.registry.audit.list().map((a) => a.action).reverse()).toEqual(["file.mkdir", "file.rename", "file.copy", "file.move", "file.delete", "file.extract"]);
     expect(t.registry.audit.list().find((a) => a.action === "file.move")!.detail).toMatchObject({ server: "local", to: "/dst", done: 1, failed: 1 });
   });
 

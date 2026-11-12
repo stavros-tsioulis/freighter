@@ -49,6 +49,8 @@ async function submit() {
   try {
     const { id } = await uploadArtifact(name.value, file.value, (f) => (progress.value = f), pinned.value ? undefined : server.value || undefined);
     deploymentId.value = id;
+    notify.started(name.value);
+    visible.value = false;
   } catch (e) {
     notify.fail("Upload failed", e);
   } finally {

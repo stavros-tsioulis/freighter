@@ -54,11 +54,14 @@ export function sortEntries(entries: FsEntry[], key: SortKey, desc: boolean): Fs
 /** Whether double-clicking opens it as a folder. */
 export const opensAsFolder = (e: FsEntry) => e.type === "dir" || (e.type === "link" && e.link?.type === "dir");
 
+/** Whether the file explorer can extract a file of this name (the agent decides the same way). */
+export const isArchive = (name: string) => /\.(zip|tar|tar\.(gz|bz2|xz|zst)|tgz|tbz2?|txz|tzst|7z|rar|gz|bz2|xz)$/i.test(name);
+
 export function entryIcon(e: FsEntry): string {
   if (opensAsFolder(e)) return e.type === "link" ? "pi pi-folder-plus" : "pi pi-folder";
   if (e.type === "link") return "pi pi-link";
   if (e.type === "other") return "pi pi-question-circle";
-  if (/\.(zip|tar|gz|tgz|xz|bz2|7z|rar)$/i.test(e.name)) return "pi pi-box";
+  if (isArchive(e.name)) return "pi pi-box";
   if (/\.(png|jpe?g|gif|webp|svg|avif|ico)$/i.test(e.name)) return "pi pi-image";
   if (/\.(log|txt|md|json|ya?ml|toml|conf|cfg|ini|env|sh|js|mjs|ts|py|service|mount)$/i.test(e.name)) return "pi pi-file-edit";
   return "pi pi-file";

@@ -107,6 +107,8 @@ export interface HostStatus {
   storage?: { available: boolean; version?: string };
   /** Whether the server can mount SMB and NFS volumes. Absent on agents that predate volumes. */
   mounts?: { smb: boolean; nfs: boolean };
+  /** Which archive tools the server has besides tar: unzip (zip) and 7z (7z, rar). Absent on agents that predate extraction. */
+  archives?: { unzip: boolean; sevenZip: boolean };
   /** Logical CPUs and the operating system. Absent on agents that predate the file explorer. */
   cpus?: number;
   os?: string;

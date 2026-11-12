@@ -127,6 +127,8 @@ export const ops = {
       storage: z.object({ available: z.boolean(), version: z.string().optional() }).optional(),
       /** Whether this host can mount SMB and NFS volumes. Absent on agents that predate volumes. */
       mounts: z.object({ smb: z.boolean(), nfs: z.boolean() }).optional(),
+      /** Which archive tools this host has (tar always): unzip for zip, 7z for 7z and rar. Absent on agents that predate extraction. */
+      archives: z.object({ unzip: z.boolean(), sevenZip: z.boolean() }).optional(),
       /** Logical CPUs, and the operating system as `uname` would say. Absent on agents that predate the file explorer. */
       cpus: z.number().optional(),
       os: z.string().optional(),
@@ -213,6 +215,8 @@ export const ops = {
       withStorage: z.boolean().optional(),
       /** Likewise with `--with-mounts` (cifs-utils and nfs-common, for SMB and NFS volumes). Agents with the "mounts.install" capability only. */
       withMounts: z.boolean().optional(),
+      /** Likewise with `--with-archives` (7z and unzip, for extracting archives in the file explorer). Agents with the "archives.install" capability only. */
+      withArchives: z.boolean().optional(),
     }),
     result: z.object({ started: z.literal(true) }),
   },
@@ -332,6 +336,8 @@ export const ops = {
   "fs.rename": { args: z.object({ path: fsPath, name: z.string().min(1).max(255) }), result: z.object({ path: z.string() }) },
   "fs.copy": { args: z.object({ paths: fsPaths, to: fsPath, onConflict: fsConflict.default("fail") }), result: fsBulk },
   "fs.move": { args: z.object({ paths: fsPaths, to: fsPath, onConflict: fsConflict.default("fail") }), result: fsBulk },
+  /** Unpack archives (by extension) into a folder named after each, in `to` or beside the archive. */
+  "fs.extract": { args: z.object({ paths: fsPaths, to: fsPath.optional(), onConflict: fsConflict.default("rename") }), result: fsBulk },
   "fs.delete": { args: z.object({ paths: fsPaths }), result: fsBulk },
   /** Header line, then `size` raw bytes that become the file (written beside it and renamed in when complete). */
   "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false) }), result: z.object({}) },

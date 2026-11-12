@@ -37,6 +37,7 @@ export function useFsActions(server: MaybeRef<string>) {
     rename: mutation((v: { path: string; name: string }) => api<{ path: string }>(`${base(s())}/rename`, { method: "POST", body: v }), "Could not rename"),
     copy: mutation((v: { paths: string[]; to: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/copy`, { method: "POST", body: v }), "Could not copy"),
     move: mutation((v: { paths: string[]; to: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/move`, { method: "POST", body: v }), "Could not move"),
+    extract: mutation((v: { paths: string[]; to?: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/extract`, { method: "POST", body: v }), "Could not extract"),
     remove: mutation((v: { paths: string[] }) => api<FsBulk>(`${base(s())}/delete`, { method: "POST", body: v }), "Could not delete"),
     refresh,
   };

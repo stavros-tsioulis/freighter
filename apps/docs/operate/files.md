@@ -14,11 +14,24 @@ Click to select, **Ctrl/⌘-click** to add, **Shift-click** for a range, **Ctrl/
 | --- | --- |
 | **Download** | a file as it is; a folder or several items as a zip, built while it streams (no temporary file, any size) |
 | **Copy**, **Cut**, **Paste** | **Ctrl/⌘+C, X, V** or the buttons. The clipboard follows you between folders. Pasting where a name is taken stops and asks: **Replace** or **Keep both** (the copy is named `name copy`). Copying into the same folder keeps both without asking |
+| **Extract** | shown when everything selected is an archive. Each one is unpacked into a folder named after it, beside it: `site.tar.gz` becomes `site/`. If that name is taken the folder is called `site copy`. See below |
 | **Rename** | **F2** |
 | **Delete** | **Delete**, after a confirmation. Folders go with everything in them |
 | **New folder** | |
 
 Right-click gives the same actions on the selection. Each item is handled on its own: if some fail (no permission, name taken), the rest still happen and you get a list of what didn't.
+
+## Extract
+
+By file extension: `.zip`, `.tar`, `.tar.gz` / `.tgz`, `.tar.bz2`, `.tar.xz`, `.tar.zst`, `.7z`, `.rar`, and single files compressed with `.gz`, `.bz2` or `.xz` (these give a folder holding the one file). What comes out belongs to the owner of the folder it lands in, not to whoever packed it.
+
+tar needs nothing extra. zip needs `unzip` (or 7z), and 7z and rar need 7z. The server's **Features** tab shows what is installed; **Add archive support…** installs 7z, unzip, bzip2 and zstd and restarts the agent, as for containers. On the machine the dashboard runs on, re-run its installer with `--with-archives`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-archives
+```
+
+An archive that can't be unpacked leaves nothing behind. Paths that climb out of the folder (`../`) are refused or stripped by the tools.
 
 ## Upload
 

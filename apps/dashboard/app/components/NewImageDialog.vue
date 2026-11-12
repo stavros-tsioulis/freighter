@@ -65,6 +65,8 @@ async function start() {
   try {
     const r = await deploy.mutateAsync({ name: name.value, settings: toSettings(form.value), server: pinned.value ? undefined : server.value || undefined, logins: chosenLogins.value });
     deploymentId.value = r.id;
+    notify.started(name.value);
+    visible.value = false;
   } catch (e) {
     notify.fail("Could not start the deployment", e);
   }
@@ -77,7 +79,7 @@ function tryAgain() {
 }
 async function openApp() {
   visible.value = false;
-  await navigateTo(`/apps/${name.value}`);
+  await navigateTo(`/apps/${name.value}?tab=deployments`);
 }
 </script>
 

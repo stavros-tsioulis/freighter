@@ -367,6 +367,20 @@ describe("upgrading a remote server", () => {
     expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-storage", detail: { server: "vps-1" } });
   });
 
+  it("adds archive support (7z and unzip) the same way", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] });
+    expect((await upgrade(t, { archives: true })).json.error.message).toMatch(/predates archive support/);
+    expect((await upgrade(t, { archives: true }, "local")).json.error.message).toMatch(/--with-archives/);
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images", "archives.install"] });
+    expect((await upgrade(t, { archives: true })).status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ withArchives: true });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-archives" });
+  });
+
   it("adds mount support for SMB and NFS volumes the same way", async () => {
     const t = await makeApi();
     const agent = await online(t);

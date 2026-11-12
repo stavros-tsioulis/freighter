@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -44,6 +45,10 @@ describe("file explorer over the agent protocol", () => {
     expect((await client.call("fs.rename", { path: `${dir}/new/docs`, name: "papers" })).path).toBe(`${dir}/new/papers`);
     await client.call("fs.move", { paths: [`${dir}/new/papers`], to: `${dir}` });
     expect(existsSync(`${dir}/papers/a.txt`)).toBe(true);
+    execFileSync("tar", ["-czf", `${dir}/docs.tar.gz`, "-C", dir, "docs"]);
+    const unpacked = await client.call("fs.extract", { paths: [`${dir}/docs.tar.gz`] });
+    expect(unpacked.done).toEqual([`${dir}/docs copy`]); // `docs` is taken, so the default is to keep both
+    expect(existsSync(`${dir}/docs copy/docs/a.txt`)).toBe(true);
     const gone = await client.call("fs.delete", { paths: [`${dir}/new`, `${dir}/missing`] });
     expect(gone.done).toEqual([`${dir}/new`]);
     expect(gone.failed).toHaveLength(1);

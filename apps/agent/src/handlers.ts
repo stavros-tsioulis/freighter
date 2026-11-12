@@ -43,7 +43,9 @@ import {
   listDir,
   makeDir,
   renamePath,
+  archiveSupport,
   copyPaths,
+  extractPaths,
   movePaths,
   deletePaths,
   mountSupport,
@@ -122,15 +124,15 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "volumes", "connections", "variables", "reapply", "app.config", ...(d.config.agent.files.enabled ? ["files"] : []), ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "archives.install", "volumes", "connections", "variables", "reapply", "app.config", ...(d.config.agent.files.enabled ? ["files"] : []), ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
     async "upgrade.status"() {
       return upgradeStatus(d, await currentCommit());
     },
-    async "upgrade.start"({ ref, withContainers, withStorage, withMounts }) {
-      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers, withStorage, withMounts });
+    async "upgrade.start"({ ref, withContainers, withStorage, withMounts, withArchives }) {
+      await startUpgrade(d, ref ?? "main", await currentCommit(), { withContainers, withStorage, withMounts, withArchives });
       return { started: true as const };
     },
     async "upgrade.check"({ ref }) {
@@ -147,7 +149,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), archives: await archiveSupport(), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -192,6 +194,10 @@ export function createHandlers(d: Deps): Handlers {
     async "fs.move"({ paths, to, onConflict }) {
       explorer(d, true);
       return movePaths(paths, to, onConflict);
+    },
+    async "fs.extract"({ paths, to, onConflict }) {
+      explorer(d, true);
+      return extractPaths(paths, to, onConflict);
     },
     async "fs.delete"({ paths }) {
       explorer(d, true);

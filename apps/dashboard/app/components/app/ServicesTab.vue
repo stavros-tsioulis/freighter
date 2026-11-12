@@ -15,14 +15,13 @@ const { data: link } = useGitLink(appName);
 const gitDeploy = useGitAction(appName).deploy;
 const configDeploy = useDeployConfig(appName);
 const archiveOpen = ref(false);
-const deploymentId = ref<string | null>(null);
-const showDeployment = computed({ get: () => deploymentId.value !== null, set: (v: boolean) => { if (!v) deploymentId.value = null; } });
+const notify = useNotify();
 const servicesConfigured = computed(() => Object.values(config.value?.settings?.services ?? {}));
 const allImages = computed(() => servicesConfigured.value.length > 0 && servicesConfigured.value.every((x) => x.image !== undefined));
 /** Deploys are per app: this releases every service in its configuration, by whichever source the app has. */
 async function deployApp() {
-  if (link.value) deploymentId.value = (await gitDeploy.mutateAsync().catch(() => null))?.id ?? null;
-  else if (allImages.value && config.value?.text) deploymentId.value = (await configDeploy.mutateAsync(config.value.text).catch(() => null))?.id ?? null;
+  if (link.value) await gitDeploy.mutateAsync().then(() => notify.started(props.app.name)).catch(() => {});
+  else if (allImages.value && config.value?.text) await configDeploy.mutateAsync(config.value.text).then(() => notify.started(props.app.name)).catch(() => {});
   else archiveOpen.value = true;
 }
 const editing = ref<string | null>(null);
@@ -136,10 +135,6 @@ const url = (host: string) => `https://${host}`;
         </template>
       </Column>
     </DataTable>
-  <Dialog v-model:visible="showDeployment" modal header="Deploying" :style="{ width: '44rem' }">
-    <DeploymentStatus v-if="deploymentId" :id="deploymentId" />
-    <template #footer><Button label="Close" severity="secondary" text @click="showDeployment = false" /></template>
-  </Dialog>
   <DeployDialog v-model:visible="archiveOpen" :app="app.name" />
   <AppServiceDialog v-model:visible="adding" :app="app" />
   <AppServiceDialog v-model:visible="editOpen" :app="app" :service="editing ?? undefined" />

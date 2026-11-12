@@ -6,8 +6,8 @@ import { upgradeActive } from "~/composables/queries";
  * `containers`: install Podman (the installer's --with-containers) at the version that is installed, instead of upgrading.
  * `storage`: likewise for rclone (--with-storage), which serves S3 storages.
  */
-const props = defineProps<{ server: string; containers?: boolean; storage?: boolean; mounts?: boolean }>();
-const adding = computed(() => (props.containers ? "container" : props.storage ? "storage" : props.mounts ? "mount" : null));
+const props = defineProps<{ server: string; containers?: boolean; storage?: boolean; mounts?: boolean; archives?: boolean }>();
+const adding = computed(() => (props.containers ? "container" : props.storage ? "storage" : props.mounts ? "mount" : props.archives ? "archive" : null));
 const visible = defineModel<boolean>({ required: true });
 const qc = useQueryClient();
 
@@ -51,7 +51,7 @@ watch(finished, (f) => {
 });
 
 async function go() {
-  await start.mutateAsync(props.containers ? { server: props.server, containers: true } : props.storage ? { server: props.server, storage: true } : props.mounts ? { server: props.server, mounts: true } : { server: props.server, ref: custom.value && ref_.value.trim() ? ref_.value.trim() : undefined }).catch(() => null);
+  await start.mutateAsync(props.archives ? { server: props.server, archives: true } : props.containers ? { server: props.server, containers: true } : props.storage ? { server: props.server, storage: true } : props.mounts ? { server: props.server, mounts: true } : { server: props.server, ref: custom.value && ref_.value.trim() ? ref_.value.trim() : undefined }).catch(() => null);
 }
 </script>
 
@@ -89,6 +89,14 @@ async function go() {
           </div>
           <div v-else-if="mounts" class="flex flex-col gap-2 text-sm">
             <p><b>{{ server }}</b> runs <code>{{ short(view.commit) }}</code>. This installs cifs-utils and nfs-common, which mount SMB and NFS volumes. The version of Freighter doesn't change.</p>
+            <ul class="list-disc pl-5 text-muted-color flex flex-col gap-1">
+              <li>Freighter's installer runs again on the server, which takes a few minutes. It needs internet access.</li>
+              <li>Apps keep running. The agent is unavailable for a short while while it restarts.</li>
+              <li>If the install fails or this dashboard can't reach the agent afterwards, the previous agent is put back.</li>
+            </ul>
+          </div>
+          <div v-else-if="archives" class="flex flex-col gap-2 text-sm">
+            <p><b>{{ server }}</b> runs <code>{{ short(view.commit) }}</code>. This installs 7z, unzip, bzip2 and zstd, so the file explorer can extract 7z, rar, zip and tar archives. The version of Freighter doesn't change.</p>
             <ul class="list-disc pl-5 text-muted-color flex flex-col gap-1">
               <li>Freighter's installer runs again on the server, which takes a few minutes. It needs internet access.</li>
               <li>Apps keep running. The agent is unavailable for a short while while it restarts.</li>
@@ -137,7 +145,7 @@ async function go() {
       <Button
         v-if="view?.supported && !active"
         :label="finished ? 'Try again' : adding ? `Add ${adding} support` : 'Upgrade'"
-        :icon="containers ? 'pi pi-box' : storage ? 'pi pi-database' : mounts ? 'pi pi-folder' : 'pi pi-arrow-up'"
+        :icon="containers ? 'pi pi-box' : storage ? 'pi pi-database' : mounts ? 'pi pi-folder' : archives ? 'pi pi-file-export' : 'pi pi-arrow-up'"
         :disabled="!adding && (!validRef || (!custom && !view.target) || (!custom && !!view && !view.outdated && !finished))"
         :loading="start.isPending.value"
         @click="go"

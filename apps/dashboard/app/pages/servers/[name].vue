@@ -62,6 +62,7 @@ const showUpgrade = ref(false);
 const showContainers = ref(false);
 const showStorage = ref(false);
 const showMounts = ref(false);
+const showArchives = ref(false);
 const checkNow = useCheckServer();
 const restart = useRestartService();
 function askRestart() {
@@ -315,6 +316,26 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           </template>
         </div>
 
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Archives">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 class="font-medium">Archives</h3>
+            <Tag v-if="s.host?.archives?.sevenZip && s.host.archives.unzip" value="7z, zip and tar" severity="success" />
+            <Tag v-else-if="s.host" :value="s.host.archives ? (s.host.archives.sevenZip ? 'unzip missing' : 'zip and tar only') : 'Agent too old'" severity="warn" />
+          </div>
+          <p class="text-sm text-muted-color">Extract archives in the file explorer. tar is always there; zip needs unzip and 7z needs 7z.</p>
+          <template v-if="s.host && !(s.host.archives?.sevenZip && s.host.archives.unzip)">
+            <p v-if="!s.host.archives" class="text-sm text-muted-color">This agent predates archive support. Upgrade it first.</p>
+            <div v-else-if="remote && s.status === 'online'" class="flex flex-wrap items-center gap-3">
+              <Button label="Add archive support…" icon="pi pi-file-export" size="small" :disabled="upgrading" @click="showArchives = true" />
+              <small v-if="upgrading" class="text-muted-color">An upgrade is running; wait for it to finish.</small>
+            </div>
+            <div v-else-if="!remote" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
+              <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-archives</pre>
+            </div>
+          </template>
+        </div>
+
         <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Remote volumes">
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 class="font-medium">Remote volumes</h3>
@@ -356,6 +377,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
     <UpgradeDialog v-if="showContainers" v-model="showContainers" :server="name" containers />
     <UpgradeDialog v-if="showStorage" v-model="showStorage" :server="name" storage />
     <UpgradeDialog v-if="showMounts" v-model="showMounts" :server="name" mounts />
+    <UpgradeDialog v-if="showArchives" v-model="showArchives" :server="name" archives />
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>

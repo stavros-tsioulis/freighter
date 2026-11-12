@@ -56,3 +56,11 @@ describe("entries", () => {
     expect(items(3)).toBe("3 items");
   });
 });
+
+describe("isArchive", () => {
+  it("matches what the agent can extract", async () => {
+    const { isArchive } = await import("../app/utils/files");
+    for (const n of ["a.zip", "a.TAR", "a.tar.gz", "a.tgz", "a.tar.bz2", "a.tar.xz", "a.tar.zst", "a.7z", "a.rar", "a.gz"]) expect(isArchive(n), n).toBe(true);
+    for (const n of ["a.txt", "tar", "a.zipx"]) expect(isArchive(n), n).toBe(false);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { makeApi } from "./helpers.ts";
+import { makeApi, sleepMs } from "./helpers.ts";
 
 const TEXT = "name: shop\nservices:\n  web:\n    command: node server.js\n    port: 3000\n    environment:\n      A: one\n";
 const seed = (t: Awaited<ReturnType<typeof makeApi>>) => t.registry.apps.upsert({ name: "shop", server: "local", manifestText: TEXT, currentRelease: "r1", previousRelease: null, status: "deployed" });
@@ -29,7 +29,10 @@ describe("PUT /v1/apps/:app/config", () => {
     expect((await put(t.tokens.admin, { services: { web: { command: "x", secrets: ["lower"] } } })).status).toBe(400);
     t.handlers["app.config.set"] = () => ({ deploy: { app: "shop", releaseId: "r2", previous: "r1", units: [], removed: [], pruned: [], hostnames: [], warnings: [], verified: true } });
     const r = await put(t.tokens.admin);
-    expect(r.json).toMatchObject({ ok: true, redeployed: true });
+    expect(r.status).toBe(202);
+    expect(r.json).toMatchObject({ ok: true, status: "queued" });
+    for (let i = 0; i < 100 && t.registry.deployments.get(r.json.id)?.status !== "success"; i++) await sleepMs(20);
+    expect(t.registry.deployments.get(r.json.id)).toMatchObject({ status: "success", releaseId: "r2" });
     const call = t.calls.find((c) => c.op === "app.config.set")!;
     expect((call.args as { manifestText: string }).manifestText).toMatch(/^name: shop/m);
     expect((call.args as { manifestText: string }).manifestText).toMatch(/node other.js/);

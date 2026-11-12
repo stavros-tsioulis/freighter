@@ -23,6 +23,8 @@ export function useNotify() {
   const toast = useToast();
   return {
     ok: (summary: string, detail?: string) => toast.add({ severity: "success", summary, detail, life: 3500 }),
+    /** A deployment was queued: it carries on in the background, and the toast (group "link") links to its app's deployments tab; the detail is the app name. */
+    started: (app: string) => toast.add({ group: "link", severity: "success", summary: "Deployment started", detail: app, life: 8000 }),
     fail: (summary: string, e: unknown) => toast.add({ severity: "error", summary, detail: errorMessage(e), life: 7000 }),
   };
 }
@@ -348,8 +350,8 @@ export function useStartUpgrade() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean; /** Add cifs-utils and nfs-common (for SMB and NFS volumes). */ mounts?: boolean }) =>
-      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.containers ? { containers: true } : v.storage ? { storage: true } : v.mounts ? { mounts: true } : v.ref ? { ref: v.ref } : {} }),
+    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean; /** Add cifs-utils and nfs-common (for SMB and NFS volumes). */ mounts?: boolean; /** Add 7z and unzip (for extracting archives in the file explorer). */ archives?: boolean }) =>
+      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.archives ? { archives: true } : v.containers ? { containers: true } : v.storage ? { storage: true } : v.mounts ? { mounts: true } : v.ref ? { ref: v.ref } : {} }),
     onSuccess: (r, v) => {
       // The response already describes the new run: show it at once instead of the previous run until the next poll.
       qc.setQueryData(["server-upgrade", v.server], r);
@@ -517,9 +519,9 @@ export function useSaveConfig(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (settings: AppSettings) => api<{ ok: boolean; redeployed: boolean }>(`/apps/${toValue(app)}/config`, { method: "PUT", body: { settings } }),
-    onSuccess: (r) => {
-      notify.ok("Settings saved", r.redeployed ? "Redeployed with them" : undefined);
+    mutationFn: (settings: AppSettings) => api<{ ok: boolean; id: string }>(`/apps/${toValue(app)}/config`, { method: "PUT", body: { settings } }),
+    onSuccess: () => {
+      notify.started(toValue(app));
       for (const key of ["config", "app", "apps", "variables", "graph", "deployments"]) void qc.invalidateQueries({ queryKey: [key] });
     },
     onError: (e) => notify.fail("Could not save the settings", e),

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FsBulk, FsEntry } from "~/types";
 import { collectDropped, collectPicked, downloadArchive, fileDownloadUrl, startDownload, toUploads, useFsActions, useFsList, useUploader } from "~/composables/files";
-import { baseName, breadcrumbs, clashes, entryIcon, formatMode, items, joinPath, opensAsFolder, parentOf, resolveTyped, sortEntries, type SortKey } from "~/utils/files";
+import { baseName, breadcrumbs, clashes, entryIcon, formatMode, isArchive, items, joinPath, opensAsFolder, parentOf, resolveTyped, sortEntries, type SortKey } from "~/utils/files";
 import { formatBytes } from "~/utils/format";
 
 /** Every file on a server, as root: browse, upload, download, and act on several at once. */
@@ -73,6 +73,13 @@ async function paste() {
   if (!r) return;
   if (c.mode === "cut") clipboard.value = r.failed.length ? { ...c, paths: r.failed.map((f) => f.path) } : null;
   report(mode === "copy" ? "Copied" : "Moved", r, { mode, paths: c.paths, to });
+}
+// ---- extract ----
+const extractable = computed(() => chosen.value.length > 0 && chosen.value.every((e) => (e.type === "file" || (e.type === "link" && e.link?.type === "file")) && isArchive(e.name)));
+async function extract() {
+  if (!extractable.value) return;
+  const r = await actions.extract.mutateAsync({ paths: chosenPaths.value }).catch(() => null);
+  if (r) report("Extracted", r);
 }
 async function resolveClash(onConflict: "overwrite" | "rename") {
   const retry = problems.value?.retry;
@@ -178,6 +185,7 @@ const menuItems = computed(() => {
   return [
     ...(!many && e ? [{ label: opensAsFolder(e) ? "Open" : "Download", icon: opensAsFolder(e) ? "pi pi-folder-open" : "pi pi-download", command: () => open(e) }] : []),
     { label: "Download as zip", icon: "pi pi-box", command: () => void zip() },
+    ...(extractable.value ? [{ label: "Extract", icon: "pi pi-file-export", disabled: ro, command: () => void extract() }] : []),
     { separator: true },
     { label: "Copy", icon: "pi pi-copy", disabled: ro, command: () => copy() },
     { label: "Cut", icon: "pi pi-eraser", disabled: ro, command: () => cut() },
@@ -255,6 +263,7 @@ const errorText = computed(() => (error.value as Error | null)?.message ?? "");
         <Button label="Copy" icon="pi pi-copy" size="small" severity="secondary" text :disabled="!chosen.length" @click="copy()" />
         <Button label="Cut" icon="pi pi-eraser" size="small" severity="secondary" text :disabled="!chosen.length" @click="cut()" />
         <Button :label="clipboard && clipboard.server === server ? `Paste ${items(clipboard.paths.length)}` : 'Paste'" icon="pi pi-clipboard" size="small" severity="secondary" text :disabled="!canPaste" :loading="actions.copy.isPending.value || actions.move.isPending.value" @click="paste" />
+        <Button v-if="extractable" label="Extract" icon="pi pi-file-export" size="small" severity="secondary" text :loading="actions.extract.isPending.value" @click="extract" />
         <Button label="Rename" icon="pi pi-pencil" size="small" severity="secondary" text :disabled="chosen.length !== 1" @click="askRename()" />
         <Button label="Delete" icon="pi pi-trash" size="small" severity="danger" text :disabled="!chosen.length" :loading="actions.remove.isPending.value" @click="askDelete()" />
       </template>

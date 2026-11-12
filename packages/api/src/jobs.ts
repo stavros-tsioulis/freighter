@@ -26,6 +26,8 @@ export interface Jobs {
   enqueueDeploy(job: { id: string; app: string; server: string; artifactPath: string; manifestText: string }): void;
   /** Deploy an app made only of image services: the agent pulls the images, so there is no artifact. */
   enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string; replaceConfig?: boolean }): void;
+  /** Replace an app's configuration; a deployed app is redeployed with it (health-gated, rolled back on failure). */
+  enqueueConfig(job: { id: string; app: string; server: string; manifestText: string }): void;
   enqueueRollback(job: { id: string; app: string; server: string; release?: string }): void;
   enqueueGit(job: GitJob): void;
   /** Create or update the endpoint that serves a storage, from what the registry holds for it. */
@@ -196,6 +198,28 @@ export function createJobs(ctx: ApiContext): Jobs {
           .then((l) => ctx.registry.deployments.setLog(id, l.text))
           .catch(() => {});
       });
+    },
+
+    enqueueConfig({ id, app, server, manifestText }) {
+      enqueue(server, app, async () => {
+        ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
+        const agent = ctx.agents.forServer(server);
+        try {
+          await pushConnections(ctx, server, app);
+          const r = await agent.call("app.config.set", { app, manifestText, logId: id }, { timeoutMs: 30 * 60_000 });
+          ctx.registry.deployments.update(id, {
+            status: "success",
+            ...(r.deploy ? { releaseId: r.deploy.releaseId, previousRelease: r.deploy.previous, warnings: r.deploy.warnings, historyAt: r.deploy.historyAt } : {}),
+            finishedAt: now(),
+          });
+        } catch (e) {
+          ctx.registry.deployments.update(id, failure(e));
+        }
+        await agent
+          .call("build.log", { id, from: 0 })
+          .then((l) => ctx.registry.deployments.setLog(id, l.text))
+          .catch(() => {});
+      }, undefined, 0, id);
     },
 
     enqueueRollback({ id, app, server, release }) {

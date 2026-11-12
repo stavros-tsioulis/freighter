@@ -336,12 +336,13 @@ export function createApi(ctx: ApiContext): Api {
     checkSettings(name, settings);
     const text = renderManifest(name, settings as never);
     const server = serverOf(event, name);
-    await pushConnections(ctx, server, name);
-    const r = await ctx.agents.forServer(server).call("app.config.set", { app: name, manifestText: text }, { timeoutMs: 30 * 60_000 });
-    audit(who, "config.set", name, { server });
-    await syncApp(ctx, server, name).catch(() => {});
-    void jobs.cascade({ app: name }).catch(() => {});
-    return { ok: true, redeployed: r.deploy !== null };
+    // The redeploy runs in the background; the deployment follows it (and holds its log).
+    const id = randomUUID();
+    ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger: "manual" });
+    audit(who, "config.set", name, { server, deployment: id });
+    jobs.enqueueConfig({ id, app: name, server, manifestText: text });
+    setResponseStatus(event, 202);
+    return { ok: true, id, status: "queued" };
   }));
 
   // Remote volumes of the app (declared in its configuration): what is mounted, and whether an SMB password is set.
@@ -1399,15 +1400,15 @@ export function createApi(ctx: ApiContext): Api {
   router.post("/v1/servers/:name/upgrade", route("admin", async (event, who) => {
     const name = sName(event);
     needServer(name);
-    const { ref, containers, storage, mounts } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional(), mounts: z.boolean().optional() }));
+    const { ref, containers, storage, mounts, archives } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional(), mounts: z.boolean().optional(), archives: z.boolean().optional() }));
     let view;
     try {
-      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage, withMounts: mounts });
+      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage, withMounts: mounts, withArchives: archives });
     } catch (e) {
       if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
       throw e;
     }
-    audit(who, mounts ? "server.add-mounts" : storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage || mounts ? {} : { ref: ref ?? view.target }), from: view.commit });
+    audit(who, archives ? "server.add-archives" : mounts ? "server.add-mounts" : storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage || mounts || archives ? {} : { ref: ref ?? view.target }), from: view.commit });
     setResponseStatus(event, 202);
     return view;
   }));
@@ -1473,6 +1474,13 @@ export function createApi(ctx: ApiContext): Api {
       return r;
     }));
   }
+  router.post("/v1/servers/:name/fs/extract", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ paths: fsPathsBody, to: fsPathParam.optional(), onConflict: z.enum(["fail", "overwrite", "rename"]).optional() }));
+    const r = await fsCall(() => agent.call("fs.extract", b, { timeoutMs: 6 * 3_600_000 }));
+    audit(who, "file.extract", undefined, { server: name, paths: fsTouched(b.paths), ...(b.to ? { to: b.to } : {}), done: r.done.length, failed: r.failed.length });
+    return r;
+  }));
   router.post("/v1/servers/:name/fs/delete", route("admin", async (event, who) => {
     const { name, agent } = fsAgent(event);
     const b = await body(event, z.object({ paths: fsPathsBody }));

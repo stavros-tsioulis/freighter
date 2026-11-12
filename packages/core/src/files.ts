@@ -4,6 +4,8 @@ import { chown, lstat, mkdir, readFile, readdir, readlink, rename, rm, stat } fr
 import { posix } from "node:path";
 import { promisify } from "node:util";
 import type { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { spawn } from "node:child_process";
 import { assertNoMounts } from "./volumes.ts";
 
 const execFileP = promisify(execFile);
@@ -245,6 +247,141 @@ export async function copyPaths(paths: string[], to: string, onConflict: OnConfl
 export async function movePaths(paths: string[], to: string, onConflict: OnConflict = "fail"): Promise<BulkResult> {
   const toDir = await destination(to);
   return each(paths, (p) => place("move", p, toDir, onConflict));
+}
+
+// ---- extracting archives ----
+
+type Packer = "tar" | "zip" | "7z" | "gzip" | "bzip2" | "xz";
+const ARCHIVES: { re: RegExp; packer: Packer; tarFlag?: string }[] = [
+  { re: /\.(tar\.gz|tgz)$/i, packer: "tar", tarFlag: "-z" },
+  { re: /\.(tar\.bz2|tbz2|tbz)$/i, packer: "tar", tarFlag: "-j" },
+  { re: /\.(tar\.xz|txz)$/i, packer: "tar", tarFlag: "-J" },
+  { re: /\.(tar\.zst|tzst)$/i, packer: "tar", tarFlag: "--zstd" },
+  { re: /\.tar$/i, packer: "tar" },
+  { re: /\.zip$/i, packer: "zip" },
+  { re: /\.(7z|rar)$/i, packer: "7z" },
+  { re: /\.gz$/i, packer: "gzip" },
+  { re: /\.bz2$/i, packer: "bzip2" },
+  { re: /\.xz$/i, packer: "xz" },
+];
+const archiveOf = (name: string) => ARCHIVES.find((a) => a.re.test(name));
+/** Whether the file explorer can extract a file of this name. */
+export const isArchive = (name: string) => archiveOf(name) !== undefined;
+/** `backup.tar.gz` -> `backup`. */
+const stemOf = (name: string) => name.replace(archiveOf(name)?.re ?? /$^/, "") || name;
+
+const SEVEN = ["7zz", "7z", "7za"];
+async function run(cmd: string, args: string[]): Promise<{ ok: true } | { ok: false; missing: boolean; error: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
+    let err = "";
+    child.stderr.on("data", (c: Buffer) => { if (err.length < 4000) err += c.toString(); });
+    child.on("error", (e) => resolve({ ok: false, missing: (e as NodeJS.ErrnoException).code === "ENOENT", error: e.message }));
+    child.on("close", (code) => resolve(code === 0 || (code === 1 && cmd === "unzip") ? { ok: true } : { ok: false, missing: false, error: err.trim().split("\n").filter(Boolean).slice(-1)[0] ?? `exited with code ${code}` }));
+  });
+}
+/** Whether a tool is installed. */
+async function has(cmd: string): Promise<boolean> {
+  return (await new Promise<boolean>((resolve) => {
+    const child = spawn(cmd, ["--help"], { stdio: "ignore" });
+    child.on("error", () => resolve(false));
+    child.on("close", () => resolve(true));
+  }));
+}
+async function sevenZip(): Promise<string | null> {
+  for (const c of SEVEN) if (await has(c)) return c;
+  return null;
+}
+export const NO_7Z_MESSAGE = "7z is not installed on this server: add archive support from the Servers page";
+
+/** Unpack one archive into the empty (or merged-into) folder `dest`. */
+async function unpack(packer: Packer, tarFlag: string | undefined, from: string, dest: string, name: string): Promise<void> {
+  const fail = (r: { error: string; missing: boolean }, tool: string): never => {
+    throw new FileError("bad_request", `${from}: ${r.missing ? `${tool} is not installed on this server` : r.error}`);
+  };
+  switch (packer) {
+    case "tar": {
+      const r = await run("tar", ["-x", ...(tarFlag ? [tarFlag] : []), "--no-same-owner", "-f", from, "-C", dest]);
+      if (!r.ok) fail(r, "tar");
+      return;
+    }
+    case "zip": {
+      const r = await run("unzip", ["-q", "-o", from, "-d", dest]);
+      if (r.ok) return;
+      if (!r.missing) fail(r, "unzip");
+      const seven = await sevenZip();
+      if (!seven) throw new FileError("bad_request", `${from}: neither unzip nor 7z is installed on this server: add archive support from the Servers page`);
+      const z = await run(seven, ["x", "-y", `-o${dest}`, "--", from]);
+      if (!z.ok) fail(z, seven);
+      return;
+    }
+    case "7z": {
+      const seven = await sevenZip();
+      if (!seven) throw new FileError("bad_request", `${from}: ${NO_7Z_MESSAGE}`);
+      const r = await run(seven, ["x", "-y", `-o${dest}`, "--", from]);
+      if (!r.ok) fail(r, seven);
+      return;
+    }
+    default: {
+      // gzip, bzip2 and xz hold one file: the result is that file without the extension.
+      const out = createWriteStream(posix.join(dest, name), { flags: "wx" });
+      const child = spawn(packer, ["-dc", "--", from], { stdio: ["ignore", "pipe", "pipe"] });
+      let err = "";
+      child.stderr.on("data", (c: Buffer) => { if (err.length < 4000) err += c.toString(); });
+      const exit = new Promise<number | null>((resolve, reject) => { child.on("error", reject); child.on("close", resolve); });
+      await Promise.all([pipeline(child.stdout, out), exit.then((code) => { if (code !== 0) throw new Error(err.trim().split("\n").filter(Boolean).slice(-1)[0] ?? `exited with code ${code}`); })]).catch((e) => {
+        throw new FileError("bad_request", `${from}: ${(e as NodeJS.ErrnoException).code === "ENOENT" ? `${packer} is not installed on this server` : (e as Error).message}`);
+      });
+    }
+  }
+}
+
+/**
+ * Extract archives, each into a folder named after it (`site.tar.gz` -> `site/`) inside `to`, or beside the archive.
+ * What the folder holds belongs to whoever owns the folder it was made in. A folder that already exists is dealt with
+ * as for a copy: `rename` makes `site copy/`, `overwrite` extracts into it, `fail` refuses.
+ */
+export async function extractPaths(paths: string[], to: string | undefined, onConflict: OnConflict = "rename"): Promise<BulkResult> {
+  const toDir = to === undefined ? undefined : await destination(to);
+  return each(paths, async (raw) => {
+    const from = cleanPath(raw);
+    const info = await stat(from).catch((e) => wrap(e, from));
+    if (!info.isFile()) throw new FileError("bad_request", `${from}: not a file`);
+    const name = posix.basename(from);
+    const kind = archiveOf(name);
+    if (!kind) throw new FileError("bad_request", `${from}: not an archive Freighter can extract (zip, tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z, rar, gz, bz2, xz)`);
+    const dir = toDir ?? posix.dirname(from);
+    let stem = stemOf(name);
+    let dest = posix.join(dir, stem);
+    let created = true;
+    if (await lstat(dest).then(() => true, () => false)) {
+      if (onConflict === "fail") throw new FileError("conflict", `${dest}: already exists`);
+      if (onConflict === "rename") {
+        stem = await freeName(dir, stem);
+        dest = posix.join(dir, stem);
+      } else {
+        if (!(await stat(dest)).isDirectory()) throw new FileError("conflict", `${dest}: exists and is not a folder`);
+        created = false;
+      }
+    }
+    if (created) await mkdir(dest).catch((e) => wrap(e, dest));
+    try {
+      await unpack(kind.packer, kind.tarFlag, from, dest, stem);
+    } catch (e) {
+      if (created) await rm(dest, { recursive: true, force: true }).catch(() => {});
+      throw e;
+    }
+    if (process.getuid?.() === 0) {
+      const parent = await stat(dir).catch(() => null);
+      if (parent) await execFileP("chown", ["-R", "-h", `${parent.uid}:${parent.gid}`, "--", dest]).catch(() => {});
+    }
+    return dest;
+  });
+}
+
+/** Which archive tools this server has: tar always, unzip and 7z where installed. */
+export async function archiveSupport(): Promise<{ unzip: boolean; sevenZip: boolean }> {
+  return { unzip: await has("unzip"), sevenZip: (await sevenZip()) !== null };
 }
 
 export async function deletePaths(paths: string[]): Promise<BulkResult> {

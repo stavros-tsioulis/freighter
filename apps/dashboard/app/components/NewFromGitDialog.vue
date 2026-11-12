@@ -60,6 +60,7 @@ const { request } = useDiscardGuard(visible, () => !result.value && (repository.
 async function start() {
   try {
     const r = await deploy.mutateAsync({ repository: repository.value.trim(), branch: branch.value!, sshKeyId: sshKeyId.value, server: server.value, settings: toSettings(form.value), ...(manual.value ? { appName: appName.value } : {}) });
+    notify.started(r.app);
     result.value = { app: r.app, deploymentId: r.deployment.id, webhookSecret: r.webhookSecret, webhookUrl: r.link.webhookUrl };
   } catch (e) {
     notify.fail("Could not start the deployment", e);
@@ -67,7 +68,7 @@ async function start() {
 }
 async function openApp() {
   visible.value = false;
-  await navigateTo(`/apps/${result.value!.app}`);
+  await navigateTo(`/apps/${result.value!.app}?tab=deployments`);
 }
 </script>
 
@@ -113,7 +114,6 @@ async function openApp() {
     </div>
 
     <div v-else class="flex flex-col gap-3">
-      <DeploymentStatus :id="result.deploymentId" />
       <div class="border-t border-[var(--fr-line)] pt-3 flex flex-col gap-2">
         <p class="text-sm font-medium">Webhook (deploy on push)</p>
         <div class="grid grid-cols-[5rem_1fr] gap-2 text-sm">
