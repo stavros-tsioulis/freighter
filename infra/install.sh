@@ -24,6 +24,8 @@
 #   --with-containers      agent servers: also install Podman, so apps can be deployed as container images
 #                          (`image:` in app.yaml). Off by default; apps that run a command need none.
 #                          Upgrades keep it.                                         [FREIGHTER_WITH_CONTAINERS=1]
+#   --with-firewall        agent servers: also install ufw, so the dashboard can manage the firewall. Installing it
+#                          does not turn it on. Off by default. Safe to re-run.                [FREIGHTER_WITH_FIREWALL=1]
 #   --with-archives        agent servers: also install 7z, unzip, bzip2 and zstd, so the file explorer can extract
 #                          7z, rar, zip and the tar variants. Off by default. Safe to re-run.   [FREIGHTER_WITH_ARCHIVES=1]
 #   --with-mounts          agent servers: also install cifs-utils and nfs-common, so apps can use SMB and NFS volumes.
@@ -181,6 +183,8 @@ install_packages() {
 		pkgs="$pkgs unzip bzip2 zstd"
 		if apt-cache show 7zip >/dev/null 2>&1; then pkgs="$pkgs 7zip"; else pkgs="$pkgs p7zip-full"; fi
 	fi
+	# ufw is only installed: the dashboard turns it on, after it has made sure SSH and Freighter stay reachable.
+	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_FIREWALL" = 1 ]; then pkgs="$pkgs ufw"; fi
 	# rclone comes as a zip.
 	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_STORAGE" = 1 ]; then pkgs="$pkgs unzip"; fi
 	missing=
@@ -525,6 +529,7 @@ main() {
 	WITH_STORAGE=0; [ "${FREIGHTER_WITH_STORAGE:-0}" = 1 ] && WITH_STORAGE=1
 	WITH_MOUNTS=0; [ "${FREIGHTER_WITH_MOUNTS:-0}" = 1 ] && WITH_MOUNTS=1
 	WITH_ARCHIVES=0; [ "${FREIGHTER_WITH_ARCHIVES:-0}" = 1 ] && WITH_ARCHIVES=1
+	WITH_FIREWALL=0; [ "${FREIGHTER_WITH_FIREWALL:-0}" = 1 ] && WITH_FIREWALL=1
 	NO_START=0; DRY_RUN=0; HAPROXY_MANUAL=0; DL=; NODE_BIN=; NODE_ARCH=
 
 	while [ $# -gt 0 ]; do
@@ -546,6 +551,7 @@ main() {
 			--with-storage) WITH_STORAGE=1; shift ;;
 			--with-mounts) WITH_MOUNTS=1; shift ;;
 			--with-archives) WITH_ARCHIVES=1; shift ;;
+			--with-firewall) WITH_FIREWALL=1; shift ;;
 			--no-agent) HAS_AGENT=0; shift ;; # the default; kept for scripts written before it was
 			--no-start) NO_START=1; shift ;;
 			--dry-run) DRY_RUN=1; shift ;;

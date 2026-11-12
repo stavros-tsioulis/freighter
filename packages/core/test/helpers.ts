@@ -25,7 +25,7 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
   const calls: string[][] = [];
   const created = new Set<string>();
   const probed: string[] = [];
-  const ctl = { rclone: { version: "rclone v1.68.2" as string | null, lsdCode: 0, lsdStderr: "", keyscan: "" }, podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[], exposed: [] as number[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false };
+  const ctl = { rclone: { version: "rclone v1.68.2" as string | null, lsdCode: 0, lsdStderr: "", keyscan: "" }, podman: { installed: true, failPull: false, digest: "a".repeat(64), images: [] as string[], exposed: [] as number[] }, haproxyCheckCode: 0, busyPorts: new Set<number>(), issued: [] as string[], failIssue: false, ufw: { installed: true, active: false, sshd: "port 22\n", rules: [] as { to: string; action: string; direction: string; from: string; comment: string; v6: boolean }[], defaults: { incoming: "deny", outgoing: "allow" } } };
 
   const unitFiles = () => (existsSync(layout.unitDir) ? readdirSync(layout.unitDir).filter((f) => f.endsWith(".service")) : []);
   const unitText = (unit: string) => (existsSync(`${layout.unitDir}/${unit}`) ? readFileSync(`${layout.unitDir}/${unit}`, "utf8") : "");
@@ -41,6 +41,9 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
     if (cmd === "/usr/local/bin/rclone" && args[0] === "lsd") return { stdout: "", stderr: ctl.rclone.lsdStderr, code: ctl.rclone.lsdCode };
     if (cmd === "sh" && args.some((a) => a.includes("rclone obscure"))) return { stdout: `obscured(${opts?.env?.FR_PW})\n`, code: 0 };
     if (cmd === "ssh-keyscan") return { stdout: ctl.rclone.keyscan, code: 0 };
+    if (cmd === "sh" && args.some((a) => a.includes("command -v ufw"))) return { stdout: "", code: ctl.ufw.installed ? 0 : 1 };
+    if (cmd === "sshd") return { stdout: ctl.ufw.sshd, code: 0 };
+    if (cmd === "ufw") return fakeUfw(ctl.ufw, args);
     if (cmd === "useradd") created.add(args.at(-1)!);
     if (cmd === "id") return created.has(args.at(-1)!) ? { stdout: "1001\n", code: 0 } : { stdout: "", code: 1 }; // the app user exists once useradd ran
     if (cmd === "/usr/bin/podman") return ctl.podman.installed ? { stdout: "podman version 5.0.0\n", code: 0 } : { stdout: "", code: 127 };
@@ -148,3 +151,53 @@ export const routed = (name = "shop", host = "shop.example.com", tls: "auto" | "
   manifestText: routedManifest(name),
   domains: [{ hostname: host, service: "web", tls }],
 });
+
+/** Enough of ufw to read and change rules: the same output formats, the same arguments. */
+function fakeUfw(u: { installed: boolean; active: boolean; rules: { to: string; action: string; direction: string; from: string; comment: string; v6: boolean }[]; defaults: { incoming: string; outgoing: string } }, args: string[]): { stdout: string; stderr?: string; code: number } {
+  const a = args[0] === "--force" ? args.slice(1) : args;
+  if (a[0] === "status" && a[1] === "verbose") {
+    return { stdout: u.active ? `Status: active\nLogging: on (low)\nDefault: ${u.defaults.incoming} (incoming), ${u.defaults.outgoing} (outgoing), disabled (routed)\nNew profiles: skip\n` : "Status: inactive\n", code: 0 };
+  }
+  if (a[0] === "status" && a[1] === "numbered") {
+    if (!u.active) return { stdout: "Status: inactive\n", code: 0 };
+    const lines = u.rules.map((r, i) => `[${String(i + 1).padStart(2)}] ${(r.to + (r.v6 ? " (v6)" : "")).padEnd(26)}  ${`${r.action.toUpperCase()} ${r.direction.toUpperCase()}`.padEnd(11)}  ${r.from}${r.v6 ? " (v6)" : ""}${r.comment ? `  # ${r.comment}` : ""}`);
+    return { stdout: `Status: active\n\n     To                         Action      From\n     --                         ------      ----\n${lines.join("\n")}\n`, code: 0 };
+  }
+  if (a[0] === "enable") {
+    u.active = true;
+    return { stdout: "Firewall is active and enabled on system startup\n", code: 0 };
+  }
+  if (a[0] === "disable") {
+    u.active = false;
+    return { stdout: "Firewall stopped and disabled on system startup\n", code: 0 };
+  }
+  if (a[0] === "default") {
+    u.defaults[a[2] as "incoming" | "outgoing"] = a[1]!;
+    return { stdout: "Default policy changed\n", code: 0 };
+  }
+  if (a[0] === "delete") {
+    const n = Number(a[1]);
+    if (!u.rules[n - 1]) return { stdout: "", stderr: "ERROR: Could not find rule\n", code: 1 };
+    u.rules.splice(n - 1, 1);
+    return { stdout: "Rule deleted\n", code: 0 };
+  }
+  let at: number | undefined;
+  let b = a;
+  if (b[0] === "insert") {
+    at = Number(b[1]);
+    b = b.slice(2);
+  }
+  if (["allow", "deny", "reject", "limit"].includes(b[0]!)) {
+    const get = (k: string) => b[b.indexOf(k) + 1];
+    const has = (k: string) => b.includes(k);
+    const port = has("port") ? get("port") : undefined;
+    const proto = has("proto") ? get("proto") : undefined;
+    const to = port ? `${port}${proto ? `/${proto}` : ""}` : get("to") === "any" ? "Anywhere" : get("to")!;
+    const from = get("from") === "any" ? "Anywhere" : get("from")!;
+    const base = { to, action: b[0]!, direction: b[1] === "out" ? "out" : "in", from, comment: has("comment") ? get("comment")! : "" };
+    const twins = from === "Anywhere" && (get("to") === "any" || !!port) ? [{ ...base, v6: false }, { ...base, v6: true }] : [{ ...base, v6: false }];
+    u.rules.splice(at ? at - 1 : u.rules.length, 0, ...twins);
+    return { stdout: "Rule added\n", code: 0 };
+  }
+  return { stdout: "", stderr: `ERROR: unknown ufw command ${a.join(" ")}\n`, code: 1 };
+}

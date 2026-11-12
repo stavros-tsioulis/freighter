@@ -47,6 +47,7 @@ The script is plain POSIX `sh`. The whole body is wrapped in functions and calle
 | `--public-url <url>` | `FREIGHTER_PUBLIC_URL` | | The dashboard's URL, written to `api.publicUrl` (control only) |
 | `--with-agent` | `FREIGHTER_WITH_AGENT=1` | | Control role only: also run apps on this machine, through an agent of its own (and HAProxy, certbot). By default a control server only manages remote servers |
 | `--with-containers` | `FREIGHTER_WITH_CONTAINERS=1` | | Servers that run apps: also install Podman, so apps can be [deployed as images](/deploy/images). Upgrades keep it |
+| `--with-firewall` | `FREIGHTER_WITH_FIREWALL=1` | | Servers that run apps: also install ufw, for the [firewall](/operate/firewall) tab. It is installed off. Upgrades keep it |
 | `--haproxy auto\|dedicated\|existing` | `FREIGHTER_HAPROXY` | `auto` | Which HAProxy to use. `auto` uses the one already on the server, else sets up a dedicated one |
 | `--http-port <n>` | `FREIGHTER_HTTP_PORT` | `80` | The port HAProxy listens on for HTTP |
 | `--https-port <n>` | `FREIGHTER_HTTPS_PORT` | `443` | The port HAProxy listens on for HTTPS |

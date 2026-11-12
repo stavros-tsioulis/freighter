@@ -83,6 +83,16 @@ const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().mi
 const fsPath = z.string().min(1).max(4096);
 const fsPaths = z.array(fsPath).min(1).max(1000);
 const fsConflict = z.enum(["fail", "overwrite", "rename"]);
+const fwPolicy = z.enum(["allow", "deny", "reject"]);
+const fwStatus = z.object({
+  installed: z.boolean(),
+  active: z.boolean(),
+  defaults: z.object({ incoming: fwPolicy, outgoing: fwPolicy, routed: z.union([fwPolicy, z.literal("disabled")]) }).nullable(),
+  logging: z.string().nullable(),
+  rules: z.array(z.object({ number: z.number(), to: z.string(), action: z.enum(["allow", "deny", "reject", "limit"]), direction: z.enum(["in", "out", "fwd"]), from: z.string(), comment: z.string(), v6: z.boolean() })),
+  /** Ports the firewall must keep open for the server to stay manageable (SSH, the web ports, the agent). */
+  essential: z.array(z.object({ port: z.number(), what: z.string() })),
+});
 /** Logins for the registries images come from: used for the pulls of this one call, and never stored by the agent. */
 const registryAuth = z.array(z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255), password: z.string().min(1).max(4096) })).max(16).optional();
 /** A storage's name; with it a path is `/bucket/key` inside that storage instead of a path on the server. */
@@ -139,6 +149,8 @@ export const ops = {
       os: z.string().optional(),
       /** Whether the file explorer is on, and whether it may change anything. */
       files: z.object({ enabled: z.boolean(), readOnly: z.boolean() }).optional(),
+      /** Whether ufw is installed, and what this server allows of the firewall tab (readOnly: looking only). */
+      firewall: z.object({ installed: z.boolean(), enabled: z.boolean(), readOnly: z.boolean() }).optional(),
       /** Likewise for the process list (readOnly: no signals). */
       processes: z.object({ enabled: z.boolean(), readOnly: z.boolean() }).optional(),
     }),
@@ -225,6 +237,8 @@ export const ops = {
       withMounts: z.boolean().optional(),
       /** Likewise with `--with-archives` (7z and unzip, for extracting archives in the file explorer). Agents with the "archives.install" capability only. */
       withArchives: z.boolean().optional(),
+      /** Likewise with `--with-firewall` (ufw, for the firewall tab; installed, not turned on). Agents with the "firewall.install" capability only. */
+      withFirewall: z.boolean().optional(),
     }),
     result: z.object({ started: z.literal(true) }),
   },
@@ -391,6 +405,28 @@ export const ops = {
   },
   /** Send a signal to one process; `starttime` (from the list) must still match, so a reused pid is never hit. */
   "processes.signal": { args: z.object({ pid: z.number().int().positive(), starttime: z.number().int().nonnegative(), signal: z.enum(["TERM", "KILL", "HUP", "INT", "STOP", "CONT"]) }), result: z.object({}) },
+  // ---- the firewall (ufw). Admins only (the API enforces it). A change that would cut off SSH, the web ports or the agent is refused with `conflict` unless `acknowledged`. ----
+  "firewall.status": { args: z.object({}), result: fwStatus },
+  "firewall.add": {
+    args: z.object({
+      action: z.enum(["allow", "deny", "reject", "limit"]),
+      direction: z.enum(["in", "out"]).optional(),
+      proto: z.enum(["tcp", "udp", "any"]).optional(),
+      port: z.string().max(100).optional(),
+      from: z.string().max(60).optional(),
+      to: z.string().max(60).optional(),
+      comment: z.string().max(80).optional(),
+      position: z.number().int().min(1).max(500).optional(),
+      acknowledged: z.boolean().optional(),
+    }),
+    result: fwStatus,
+  },
+  /** `signature` is the rule as it was shown (see core's `signature`): a changed list is refused, since numbers move. */
+  "firewall.delete": { args: z.object({ number: z.number().int().min(1), signature: z.string().min(1).max(300), twin: z.boolean().optional(), acknowledged: z.boolean().optional() }), result: fwStatus },
+  /** Allow the essential ports (and `open`), then turn it on. */
+  "firewall.enable": { args: z.object({ open: z.array(z.number().int().min(1).max(65535)).max(50).optional() }), result: fwStatus },
+  "firewall.disable": { args: z.object({}), result: fwStatus },
+  "firewall.default": { args: z.object({ direction: z.enum(["incoming", "outgoing"]), policy: fwPolicy, acknowledged: z.boolean().optional() }), result: fwStatus },
   "fs.delete": { args: z.object({ paths: fsPaths }), result: fsBulk },
   /** Header line, then `size` raw bytes that become the file (written beside it and renamed in when complete). */
   "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false), storage: storageRef.optional() }), result: z.object({}) },

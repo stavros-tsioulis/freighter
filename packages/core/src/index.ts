@@ -42,3 +42,4 @@ export * from "./configure.ts";
 export * from "./storage.ts";
 export * from "./reapply.ts";
 export * from "./reconfigure.ts";
+export * from "./firewall.ts";

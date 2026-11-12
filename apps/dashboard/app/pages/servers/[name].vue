@@ -20,7 +20,7 @@ useHead({ title: computed(() => `${name.value} - Servers - Freighter`) });
 const isAdmin = computed(() => can("admin"));
 
 // The open tab, and the folder the file explorer is in, live in the URL so a reload or a shared link lands on the same view.
-const TABS = ["overview", "monitoring", "files", "software", "features", "connection"] as const;
+const TABS = ["overview", "monitoring", "files", "firewall", "software", "features", "connection"] as const;
 const tab = computed({
   get: () => (TABS.includes(route.query.tab as never) ? String(route.query.tab) : "overview"),
   set: (t: string) => void router.replace({ query: { ...(t === "files" ? route.query : { ...route.query, path: undefined }), tab: t === "overview" ? undefined : t } }),
@@ -63,6 +63,7 @@ const showContainers = ref(false);
 const showStorage = ref(false);
 const showMounts = ref(false);
 const showArchives = ref(false);
+const showFirewall = ref(false);
 const checkNow = useCheckServer();
 const restart = useRestartService();
 function askRestart() {
@@ -155,6 +156,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           <Tab value="overview">Overview</Tab>
           <Tab v-if="usable" value="monitoring">Monitoring</Tab>
           <Tab v-if="isAdmin && usable" value="files">Files</Tab>
+          <Tab v-if="isAdmin && usable" value="firewall">Firewall</Tab>
           <Tab v-if="isAdmin && usable" value="software">Software</Tab>
           <Tab v-if="isAdmin && usable" value="features">Features</Tab>
           <Tab v-if="isAdmin && remote" value="connection">Connection</Tab>
@@ -209,6 +211,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
             <Message v-else-if="s.host?.files && !s.host.files.enabled" severity="info" size="small">The file explorer is turned off on this server (<code>agent.files.enabled</code> in its config.yaml).</Message>
             <ServerFileExplorer v-else v-model:path="filesPath" :server="name" :read-only="s.host?.files?.readOnly" />
           </TabPanel>
+          <TabPanel v-if="isAdmin && usable" value="firewall"><ServerFirewall :server="name" :host="s.host" :online="s.status === 'online'" @install="remote ? (showFirewall = true) : (tab = 'features')" /></TabPanel>
           <TabPanel v-if="isAdmin && usable" value="software">
             <div class="flex flex-col gap-3">
         <Message v-if="softwareError" severity="error" size="small">{{ (softwareError as Error).message }}</Message>
@@ -336,6 +339,26 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           </template>
         </div>
 
+        <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Firewall">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h3 class="font-medium">Firewall</h3>
+            <Tag v-if="s.host?.firewall?.installed" value="ufw installed" severity="success" />
+            <Tag v-else-if="s.host" :value="s.host.firewall ? 'not installed' : 'Agent too old'" severity="warn" />
+          </div>
+          <p class="text-sm text-muted-color">Manage the server's firewall (ufw) from the Firewall tab. Installing it leaves it off.</p>
+          <template v-if="s.host && !s.host.firewall?.installed">
+            <p v-if="!s.host.firewall" class="text-sm text-muted-color">This agent predates the firewall. Upgrade it first.</p>
+            <div v-else-if="remote && s.status === 'online'" class="flex flex-wrap items-center gap-3">
+              <Button label="Add the firewall…" icon="pi pi-shield" size="small" :disabled="upgrading" @click="showFirewall = true" />
+              <small v-if="upgrading" class="text-muted-color">An upgrade is running; wait for it to finish.</small>
+            </div>
+            <div v-else-if="!remote" class="flex flex-col gap-1 text-sm">
+              <span class="text-muted-color">This is the machine the dashboard runs on, so re-run its installer there:</span>
+              <pre class="well !break-normal overflow-auto" tabindex="0">curl -fsSL https://raw.githubusercontent.com/stavros-tsioulis/freighter/main/infra/install.sh | sudo sh -s -- --with-agent --with-firewall</pre>
+            </div>
+          </template>
+        </div>
+
         <div class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] px-5 py-4 flex flex-col gap-2" aria-label="Remote volumes">
           <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
             <h3 class="font-medium">Remote volumes</h3>
@@ -378,6 +401,7 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
     <UpgradeDialog v-if="showStorage" v-model="showStorage" :server="name" storage />
     <UpgradeDialog v-if="showMounts" v-model="showMounts" :server="name" mounts />
     <UpgradeDialog v-if="showArchives" v-model="showArchives" :server="name" archives />
+    <UpgradeDialog v-if="showFirewall" v-model="showFirewall" :server="name" firewall />
     <Dialog v-model:visible="showEnrollment" modal header="Connect the server" :style="{ width: '40rem' }">
       <EnrollmentCommand v-if="enrollment" :info="enrollment" />
       <template #footer><Button label="Done" @click="showEnrollment = false" /></template>

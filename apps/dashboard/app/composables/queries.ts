@@ -350,8 +350,8 @@ export function useStartUpgrade() {
   const qc = useQueryClient();
   const notify = useNotify();
   return useMutation({
-    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean; /** Add cifs-utils and nfs-common (for SMB and NFS volumes). */ mounts?: boolean; /** Add 7z and unzip (for extracting archives in the file explorer). */ archives?: boolean }) =>
-      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.archives ? { archives: true } : v.containers ? { containers: true } : v.storage ? { storage: true } : v.mounts ? { mounts: true } : v.ref ? { ref: v.ref } : {} }),
+    mutationFn: (v: { server: string; ref?: string; /** Add Podman at the installed version instead of upgrading. */ containers?: boolean; /** Add rclone (for S3 storages) at the installed version instead of upgrading. */ storage?: boolean; /** Add cifs-utils and nfs-common (for SMB and NFS volumes). */ mounts?: boolean; /** Add 7z and unzip (for extracting archives in the file explorer). */ archives?: boolean; /** Add ufw (the firewall tab). It is installed, not turned on. */ firewall?: boolean }) =>
+      api<UpgradeView>(`/servers/${v.server}/upgrade`, { method: "POST", body: v.firewall ? { firewall: true } : v.archives ? { archives: true } : v.containers ? { containers: true } : v.storage ? { storage: true } : v.mounts ? { mounts: true } : v.ref ? { ref: v.ref } : {} }),
     onSuccess: (r, v) => {
       // The response already describes the new run: show it at once instead of the previous run until the next poll.
       qc.setQueryData(["server-upgrade", v.server], r);

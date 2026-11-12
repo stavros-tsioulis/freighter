@@ -16,6 +16,12 @@ describe("file explorer", () => {
       ["POST", "/v1/servers/local/fs/chown"],
       ["GET", "/v1/servers/local/fs/identities"],
       ["GET", "/v1/servers/local/processes"],
+      ["GET", "/v1/servers/local/firewall"],
+      ["POST", "/v1/servers/local/firewall/rules"],
+      ["POST", "/v1/servers/local/firewall/rules/delete"],
+      ["POST", "/v1/servers/local/firewall/enable"],
+      ["POST", "/v1/servers/local/firewall/disable"],
+      ["PUT", "/v1/servers/local/firewall/default"],
       ["POST", "/v1/servers/local/processes/signal"],
       ["POST", "/v1/servers/local/fs/delete"],
       ["PUT", "/v1/servers/local/fs/upload?path=/tmp/x"],
@@ -154,5 +160,41 @@ describe("the process list", () => {
       throw new t.AgentError("bad_request", 'unknown operation "processes.list"');
     };
     expect((await t.request("/v1/servers/local/processes", { token: t.tokens.admin })).status).toBe(409);
+  });
+});
+
+describe("the firewall", () => {
+  const status = { installed: true, active: true, defaults: { incoming: "deny", outgoing: "allow", routed: "disabled" }, logging: "on (low)", rules: [{ number: 1, to: "22/tcp", action: "allow", direction: "in", from: "Anywhere", comment: "", v6: false }], essential: [{ port: 22, what: "SSH" }] };
+  it("passes the agent's answers through, audits changes, and asks for confirmation instead of cutting a way in", async () => {
+    const t = await makeApi();
+    t.handlers["firewall.status"] = () => status;
+    t.handlers["firewall.add"] = () => status;
+    t.handlers["firewall.delete"] = () => status;
+    t.handlers["firewall.enable"] = () => status;
+    t.handlers["firewall.disable"] = () => ({ ...status, active: false });
+    t.handlers["firewall.default"] = () => status;
+    const as = (method: string, path: string, json?: unknown) => t.request(`/v1/servers/local/firewall${path}`, { method, token: t.tokens.admin, json });
+    expect((await as("GET", "")).json.rules).toHaveLength(1);
+    expect((await as("POST", "/rules", { action: "allow", proto: "tcp", port: "8080", from: "10.0.0.0/8", comment: "internal" })).status).toBe(200);
+    expect(t.calls.find((c) => c.op === "firewall.add")!.args).toMatchObject({ action: "allow", port: "8080", from: "10.0.0.0/8" });
+    expect((await as("POST", "/rules", { action: "nope" })).status).toBe(400);
+    expect((await as("POST", "/rules/delete", { number: 1, signature: "22/tcp|allow|in|Anywhere" })).status).toBe(200);
+    expect((await as("POST", "/enable", { open: [5432] })).status).toBe(200);
+    expect(t.calls.find((c) => c.op === "firewall.enable")!.args).toEqual({ open: [5432] });
+    expect((await as("POST", "/disable")).json.active).toBe(false);
+    expect((await as("PUT", "/default", { direction: "incoming", policy: "deny" })).status).toBe(200);
+    expect((await as("PUT", "/default", { direction: "sideways", policy: "deny" })).status).toBe(400);
+    expect(t.registry.audit.list().map((a) => a.action).filter((a) => a.startsWith("firewall.")).reverse()).toEqual(["firewall.add", "firewall.delete", "firewall.enable", "firewall.disable", "firewall.default"]);
+
+    t.handlers["firewall.delete"] = () => {
+      throw new t.AgentError("conflict", "removing this rule would cut off SSH (port 22), which Freighter or you reach this server by. Confirm to do it anyway.");
+    };
+    const refused = await as("POST", "/rules/delete", { number: 1, signature: "x" });
+    expect(refused.status).toBe(409);
+    expect(refused.json.error.code).toBe("lockout");
+    t.handlers["firewall.status"] = () => {
+      throw new t.AgentError("bad_request", 'unknown operation "firewall.status"');
+    };
+    expect((await as("GET", "")).json.error.message).toMatch(/predates the firewall/);
   });
 });

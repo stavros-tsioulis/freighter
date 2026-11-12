@@ -116,6 +116,8 @@ export interface HostStatus {
   files?: { enabled: boolean; readOnly: boolean };
   /** Likewise for the process list. */
   processes?: { enabled: boolean; readOnly: boolean };
+  /** Whether ufw is installed, and what this server allows of the firewall tab. Absent on agents that predate the firewall. */
+  firewall?: { installed: boolean; enabled: boolean; readOnly: boolean };
 }
 export interface ServerRow {
   name: string;
@@ -412,6 +414,26 @@ export interface ProcessList {
   memTotal: number;
   uptimeSeconds: number;
   processes: ProcessRow[];
+}
+export type FirewallPolicy = "allow" | "deny" | "reject";
+export interface FirewallRule {
+  number: number;
+  to: string;
+  action: "allow" | "deny" | "reject" | "limit";
+  direction: "in" | "out" | "fwd";
+  from: string;
+  comment: string;
+  /** The IPv6 twin ufw makes of a rule with no address. */
+  v6: boolean;
+}
+export interface FirewallStatus {
+  installed: boolean;
+  active: boolean;
+  defaults: { incoming: FirewallPolicy; outgoing: FirewallPolicy; routed: FirewallPolicy | "disabled" } | null;
+  logging: string | null;
+  rules: FirewallRule[];
+  /** Ports the firewall keeps open for the server to stay manageable. */
+  essential: { port: number; what: string }[];
 }
 export interface HostSample {
   at: string;

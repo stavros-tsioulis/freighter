@@ -60,6 +60,7 @@ export default defineConfig({
           { text: "Logs and metrics", link: "/operate/logs-metrics" },
           { text: "File explorer", link: "/operate/files" },
           { text: "Processes", link: "/operate/processes" },
+          { text: "Firewall", link: "/operate/firewall" },
           { text: "Server settings", link: "/operate/server-settings" },
           { text: "Users and tokens", link: "/operate/access" },
           { text: "Security model", link: "/operate/security" },

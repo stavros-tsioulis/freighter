@@ -43,6 +43,9 @@ agent:
   files:
     enabled: true
     readOnly: false
+  firewall:
+    enabled: true
+    readOnly: false
   remote:
     enabled: false
     listen: 0.0.0.0

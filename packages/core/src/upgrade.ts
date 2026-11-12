@@ -70,15 +70,18 @@ export interface UpgradeScriptOptions {
   withMounts?: boolean;
   /** Stay on the installed version and add 7z and unzip, for extracting archives in the file explorer: `--with-archives`. */
   withArchives?: boolean;
+  /** Stay on the installed version and add ufw, for the firewall tab: `--with-firewall`. It is installed, not turned on. */
+  withFirewall?: boolean;
 }
 
 /** What the installer is adding, for the messages: "container and storage", and the tools that brings. */
-function addition(o: Pick<UpgradeScriptOptions, "withContainers" | "withStorage" | "withMounts" | "withArchives">): { label: string; tools: string; plural: boolean } | null {
+function addition(o: Pick<UpgradeScriptOptions, "withContainers" | "withStorage" | "withMounts" | "withArchives" | "withFirewall">): { label: string; tools: string; plural: boolean } | null {
   const parts = [
     ...(o.withContainers ? [{ label: "container", tools: ["Podman"] }] : []),
     ...(o.withStorage ? [{ label: "storage", tools: ["rclone"] }] : []),
     ...(o.withMounts ? [{ label: "mount", tools: ["cifs-utils", "nfs-common"] }] : []),
     ...(o.withArchives ? [{ label: "archive", tools: ["7z", "unzip"] }] : []),
+    ...(o.withFirewall ? [{ label: "firewall", tools: ["ufw"] }] : []),
   ];
   if (parts.length === 0) return null;
   const join = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0]!);
@@ -110,6 +113,7 @@ WITH_CONTAINERS=${o.withContainers ? 1 : 0}
 WITH_STORAGE=${o.withStorage ? 1 : 0}
 WITH_MOUNTS=${o.withMounts ? 1 : 0}
 WITH_ARCHIVES=${o.withArchives ? 1 : 0}
+WITH_FIREWALL=${o.withFirewall ? 1 : 0}
 UNIT_DIR=\${FREIGHTER_UNIT_DIR:-/etc/systemd/system}
 POLL=\${FREIGHTER_POLL_SECONDS:-2}
 
@@ -184,6 +188,7 @@ if [ "$WITH_CONTAINERS" = 1 ]; then set -- "$@" --with-containers; fi
 if [ "$WITH_STORAGE" = 1 ]; then set -- "$@" --with-storage; fi
 if [ "$WITH_MOUNTS" = 1 ]; then set -- "$@" --with-mounts; fi
 if [ "$WITH_ARCHIVES" = 1 ]; then set -- "$@" --with-archives; fi
+if [ "$WITH_FIREWALL" = 1 ]; then set -- "$@" --with-firewall; fi
 ${
   add
     ? `set_state running "Adding ${add.label} support: installing ${add.tools}, and re-running the installer for $(printf '%s' "$TO" | cut -c1-12) (a few minutes)"`
@@ -251,7 +256,7 @@ export async function upgradeStatus(d: Deps, commit: string | null): Promise<Upg
 }
 
 /** Start upgrading to `ref`. Returns as soon as the upgrade is running on its own. */
-export async function startUpgrade(d: Deps, ref: string, commit: string | null, opts: { withContainers?: boolean; withStorage?: boolean; withMounts?: boolean; withArchives?: boolean } = {}): Promise<void> {
+export async function startUpgrade(d: Deps, ref: string, commit: string | null, opts: { withContainers?: boolean; withStorage?: boolean; withMounts?: boolean; withArchives?: boolean; withFirewall?: boolean } = {}): Promise<void> {
   const reason = unsupported(d);
   if (reason) throw new UpgradeError(reason);
   if (!validRef(ref)) throw new UpgradeError(`invalid ref "${ref}"`);
@@ -276,6 +281,7 @@ export async function startUpgrade(d: Deps, ref: string, commit: string | null, 
       withStorage: opts.withStorage,
       withMounts: opts.withMounts,
       withArchives: opts.withArchives,
+      withFirewall: opts.withFirewall,
     }),
     { mode: 0o700 },
   );

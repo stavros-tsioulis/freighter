@@ -381,6 +381,20 @@ describe("upgrading a remote server", () => {
     expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-archives" });
   });
 
+  it("adds the firewall (ufw) the same way", async () => {
+    const t = await makeApi();
+    const agent = await online(t);
+    agent.handlers["upgrade.status"] = () => status();
+    agent.handlers["upgrade.start"] = () => ({ started: true });
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images"] });
+    expect((await upgrade(t, { firewall: true })).json.error.message).toMatch(/predates the firewall/);
+    expect((await upgrade(t, { firewall: true }, "local")).json.error.message).toMatch(/--with-firewall/);
+    agent.handlers.ping = () => ({ version: "0.0.0", time: "2026-11-06T10:00:00.000Z", capabilities: ["images", "firewall.install"] });
+    expect((await upgrade(t, { firewall: true })).status).toBe(202);
+    expect(agent.calls.find((c) => c.op === "upgrade.start")?.args).toEqual({ withFirewall: true });
+    expect(t.registry.audit.list()[0]).toMatchObject({ action: "server.add-firewall" });
+  });
+
   it("adds mount support for SMB and NFS volumes the same way", async () => {
     const t = await makeApi();
     const agent = await online(t);

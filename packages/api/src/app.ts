@@ -1485,15 +1485,15 @@ export function createApi(ctx: ApiContext): Api {
   router.post("/v1/servers/:name/upgrade", route("admin", async (event, who) => {
     const name = sName(event);
     needServer(name);
-    const { ref, containers, storage, mounts, archives } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional(), mounts: z.boolean().optional(), archives: z.boolean().optional() }));
+    const { ref, containers, storage, mounts, archives, firewall } = await body(event, z.object({ ref: z.string().min(1).max(100).regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/).refine((r) => !r.includes(".."), "invalid ref").optional(), containers: z.boolean().optional(), storage: z.boolean().optional(), mounts: z.boolean().optional(), archives: z.boolean().optional(), firewall: z.boolean().optional() }));
     let view;
     try {
-      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage, withMounts: mounts, withArchives: archives });
+      view = await startServerUpgrade(ctx, name, ref, { withContainers: containers, withStorage: storage, withMounts: mounts, withArchives: archives, withFirewall: firewall });
     } catch (e) {
       if (e instanceof UpgradeRefused) throw new ApiError(e.status, e.status === 409 ? "conflict" : "bad_request", e.message);
       throw e;
     }
-    audit(who, archives ? "server.add-archives" : mounts ? "server.add-mounts" : storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage || mounts || archives ? {} : { ref: ref ?? view.target }), from: view.commit });
+    audit(who, firewall ? "server.add-firewall" : archives ? "server.add-archives" : mounts ? "server.add-mounts" : storage ? "server.add-storage" : containers ? "server.add-containers" : "server.upgrade", undefined, { server: name, ...(containers || storage || mounts || archives || firewall ? {} : { ref: ref ?? view.target }), from: view.commit });
     setResponseStatus(event, 202);
     return view;
   }));
@@ -1694,6 +1694,68 @@ export function createApi(ctx: ApiContext): Api {
     const { result, body: stream } = await fsCall(() => agent.openStream("fs.read", { path, storage: name }));
     audit(who, "storage.download", undefined, { storage: name, path, bytes: result.size });
     return download(event, stream, path.split("/").pop() || "download", result.size);
+  }));
+
+  // ---- the firewall of a server (ufw) ----
+  const fwCall = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof AgentError && /unknown operation/.test(e.message)) throw new ApiError(409, "conflict", "this server's agent predates the firewall. Upgrade it first");
+      // A change that would cut off a way in comes back to be confirmed, not as a plain refusal.
+      if (e instanceof AgentError && e.code === "conflict" && /Confirm to do it anyway\.$/.test(e.message)) throw new ApiError(409, "lockout", e.message);
+      throw e;
+    }
+  };
+  router.get("/v1/servers/:name/firewall", route("admin", (event) => {
+    const { agent } = fsAgent(event);
+    return fwCall(() => agent.call("firewall.status", {}, { timeoutMs: 60_000 }));
+  }));
+  const ruleBody = z.object({
+    action: z.enum(["allow", "deny", "reject", "limit"]),
+    direction: z.enum(["in", "out"]).optional(),
+    proto: z.enum(["tcp", "udp", "any"]).optional(),
+    port: z.string().trim().max(100).optional(),
+    from: z.string().trim().max(60).optional(),
+    to: z.string().trim().max(60).optional(),
+    comment: z.string().trim().max(80).optional(),
+    position: z.number().int().min(1).max(500).optional(),
+    acknowledged: z.boolean().optional(),
+  });
+  router.post("/v1/servers/:name/firewall/rules", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, ruleBody);
+    const r = await fwCall(() => agent.call("firewall.add", b, { timeoutMs: 60_000 }));
+    const { acknowledged, ...rule } = b;
+    audit(who, "firewall.add", undefined, { server: name, ...rule, ...(acknowledged ? { acknowledged } : {}) });
+    return r;
+  }));
+  router.post("/v1/servers/:name/firewall/rules/delete", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ number: z.number().int().min(1), signature: z.string().min(1).max(300), twin: z.boolean().optional(), acknowledged: z.boolean().optional() }));
+    const r = await fwCall(() => agent.call("firewall.delete", b, { timeoutMs: 60_000 }));
+    audit(who, "firewall.delete", undefined, { server: name, rule: b.signature, ...(b.acknowledged ? { acknowledged: true } : {}) });
+    return r;
+  }));
+  router.post("/v1/servers/:name/firewall/enable", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ open: z.array(z.number().int().min(1).max(65535)).max(50).optional() }));
+    const r = await fwCall(() => agent.call("firewall.enable", b, { timeoutMs: 120_000 }));
+    audit(who, "firewall.enable", undefined, { server: name, open: b.open ?? [] });
+    return r;
+  }));
+  router.post("/v1/servers/:name/firewall/disable", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const r = await fwCall(() => agent.call("firewall.disable", {}, { timeoutMs: 60_000 }));
+    audit(who, "firewall.disable", undefined, { server: name });
+    return r;
+  }));
+  router.put("/v1/servers/:name/firewall/default", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ direction: z.enum(["incoming", "outgoing"]), policy: z.enum(["allow", "deny", "reject"]), acknowledged: z.boolean().optional() }));
+    const r = await fwCall(() => agent.call("firewall.default", b, { timeoutMs: 60_000 }));
+    audit(who, "firewall.default", undefined, { server: name, direction: b.direction, policy: b.policy });
+    return r;
   }));
 
   // ---- the process list of a server ----

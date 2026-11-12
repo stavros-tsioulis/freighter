@@ -90,3 +90,23 @@ describe("canceled deployments", () => {
     expect(cancelable({ status: "success" }) || cancelable({ status: "failed" })).toBe(false);
   });
 });
+
+describe("firewall helpers", () => {
+  const rule = (n: number, to: string, from: string, over: Record<string, unknown> = {}) => ({ number: n, to, action: "allow" as const, direction: "in" as const, from, comment: "", v6: false, ...over });
+  it("name a rule apart from its number, and pair a rule with its IPv6 copy", async () => {
+    const { ruleSignature, v4Twin, hasV6Twin, describeTo, ruleProblem } = await import("../app/utils/firewall");
+    const rules = [rule(1, "22/tcp", "Anywhere"), rule(2, "5432/tcp", "10.0.0.0/8"), rule(3, "22/tcp (v6)", "Anywhere (v6)", { v6: true })];
+    expect(ruleSignature(rules[0]!)).toBe("22/tcp|allow|in|Anywhere");
+    expect(hasV6Twin(rules[0]!, rules)).toBe(true);
+    expect(hasV6Twin(rules[1]!, rules)).toBe(false);
+    expect(v4Twin(rules[2]!, rules)?.number).toBe(1);
+    expect(describeTo("22/tcp")).toBe("port 22, TCP");
+    expect(describeTo("80,443/tcp")).toBe("ports 80, 443, TCP");
+    expect(describeTo("6000:6007/udp (v6)")).toBe("ports 6000–6007, UDP");
+    expect(describeTo("Anywhere on eth0")).toBe("any port");
+    expect(ruleProblem({ port: "80", proto: "tcp", from: "10.0.0.0/8", to: "" })).toBe("");
+    expect(ruleProblem({ port: "99999", proto: "tcp", from: "", to: "" })).toMatch(/1 to 65535/);
+    expect(ruleProblem({ port: "8000:8100", proto: "any", from: "", to: "" })).toMatch(/TCP or UDP/);
+    expect(ruleProblem({ port: "", proto: "any", from: "evil.example.com", to: "" })).toMatch(/IP address/);
+  });
+});

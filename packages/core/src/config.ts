@@ -56,6 +56,8 @@ export const hostConfigSchema = z.object({
       files: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
       /** The process list: every process on this server. `readOnly` allows looking only (no signals). */
       processes: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
+      /** The firewall tab (ufw): rules for this server. `readOnly` allows looking only. */
+      firewall: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
       /** Optional mutual-TLS listener so a control plane on another host can manage this one. */
       remote: z
         .object({

@@ -127,3 +127,25 @@ describe.runIf(process.platform === "linux")("the process list over the agent pr
     await expect(client.call("processes.signal", { pid: 1, starttime: 1, signal: "KILL" })).rejects.toMatchObject({ code: "bad_request" });
   });
 });
+
+describe("the firewall over the agent protocol", () => {
+  it("reads and changes the rules, asks for confirmation before cutting a way in, and can be limited to looking", async () => {
+    const { client, deps } = await setup();
+    expect(await client.call("firewall.status", {})).toMatchObject({ installed: true, active: false });
+    const on = await client.call("firewall.enable", { open: [5432] });
+    expect(on.active).toBe(true);
+    expect(on.rules.map((r) => r.to)).toEqual(expect.arrayContaining(["22/tcp", "5432/tcp"]));
+    await expect(client.call("firewall.add", { action: "deny", proto: "tcp", port: "22" })).rejects.toMatchObject({ code: "conflict", message: expect.stringMatching(/Confirm to do it anyway/) });
+    await expect(client.call("firewall.add", { action: "allow", port: "99999", proto: "tcp" })).rejects.toMatchObject({ code: "bad_request" });
+    const after = await client.call("firewall.add", { action: "allow", proto: "tcp", port: "8080", comment: "app" });
+    expect(after.rules.some((r) => r.to === "8080/tcp" && r.comment === "app")).toBe(true);
+    const host = await client.call("host.status", {});
+    expect(host.firewall).toEqual({ installed: true, enabled: true, readOnly: false });
+
+    deps.config.agent.firewall = { enabled: true, readOnly: true };
+    expect((await client.call("firewall.status", {})).active).toBe(true);
+    await expect(client.call("firewall.disable", {})).rejects.toMatchObject({ code: "bad_request", message: expect.stringMatching(/read-only/) });
+    deps.config.agent.firewall = { enabled: false, readOnly: false };
+    await expect(client.call("firewall.status", {})).rejects.toMatchObject({ message: expect.stringMatching(/turned off/) });
+  });
+});
