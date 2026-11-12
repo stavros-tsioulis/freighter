@@ -78,7 +78,7 @@ export interface BuildResult {
  * Run the manifest's build commands in `dir`. On a real server that is a transient, sandboxed, resource-limited
  * systemd unit under the build user; under --prefix (no systemd) the script runs directly and unsandboxed.
  */
-export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: string; spec: BuildSpec }): Promise<BuildResult> {
+export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: string; spec: BuildSpec; signal?: AbortSignal }): Promise<BuildResult> {
   const started = Date.now();
   const script = ["set -e", ...o.spec.commands].join("\n");
   const timeoutMs = parseDuration(o.spec.timeout);
@@ -87,12 +87,15 @@ export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: 
 
   let r: { code: number; timedOut: boolean };
   if (d.dev) {
-    r = await d.runLogged("sh", ["-ec", script], { logFile, cwd: o.dir, env: buildEnv(d, o.app), timeoutMs });
+    r = await d.runLogged("sh", ["-ec", script], { logFile, cwd: o.dir, env: buildEnv(d, o.app), timeoutMs, signal: o.signal });
   } else {
     const user = d.config.git.buildUser;
     await d.run("chown", ["-R", `${user}:${user}`, buildCacheDir(d, o.app)]);
     // +30 s: let systemd's own RuntimeMaxSec fire first so the unit is cleaned up properly.
-    r = await d.runLogged("systemd-run", [...sandboxArgs(d, o), "/bin/sh", "-ec", script], { logFile, timeoutMs: timeoutMs + 30_000 });
+    // Stopping the transient unit is what ends the build; the systemd-run client just waits for it.
+    const stop = () => void d.run("systemctl", ["stop", `freighter-build-${o.buildId.slice(0, 8)}.service`]).catch(() => undefined);
+    o.signal?.addEventListener("abort", stop, { once: true });
+    r = await d.runLogged("systemd-run", [...sandboxArgs(d, o), "/bin/sh", "-ec", script], { logFile, timeoutMs: timeoutMs + 30_000, signal: o.signal });
   }
   const seconds = Math.round((Date.now() - started) / 100) / 10;
   const timedOut = r.timedOut || (r.code !== 0 && Date.now() - started >= timeoutMs);

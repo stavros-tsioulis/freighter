@@ -1,4 +1,5 @@
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { stopIfCanceled } from "./operations.ts";
 import { containerHome, containerRuntimeDir, volumeDir, PODMAN } from "@freighter/systemd";
 import { imageServices, type Manifest } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
@@ -48,11 +49,11 @@ export const NO_CONTAINERS_MESSAGE =
   "this server cannot run images: Podman is not installed (re-run the installer with FREIGHTER_WITH_CONTAINERS=1, or install podman, uidmap and passt)";
 
 /** Run podman as the app's user (rootless), with its own HOME and runtime directory. */
-async function podman(d: Deps, app: string, args: string[], timeoutMs?: number) {
+async function podman(d: Deps, app: string, args: string[], timeoutMs?: number, signal?: AbortSignal) {
   return d.run(
     "runuser",
     ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
-    { timeoutMs },
+    { timeoutMs, signal },
   );
 }
 
@@ -134,7 +135,7 @@ export interface PullResult {
  * Pull the images of a manifest as the app's user and resolve each to the digest that was pulled, so the release runs
  * exactly that content no matter what the tag points to later.
  */
-export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, "services">, opts: { auth?: RegistryAuth[]; log?: DeployLog } = {}): Promise<PullResult> {
+export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, "services">, opts: { auth?: RegistryAuth[]; log?: DeployLog; signal?: AbortSignal } = {}): Promise<PullResult> {
   const log = opts.log ?? noLog;
   const wanted = imageServices(manifest);
   const images: Record<string, string> = {};
@@ -181,7 +182,8 @@ export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, 
         args.push("--authfile", authFile);
       }
       await log(`==> pulling ${ref} (for ${service})`);
-      const r = await podman(d, app, [...args, ref], 15 * 60_000);
+      stopIfCanceled(opts.signal);
+      const r = await podman(d, app, [...args, ref], 15 * 60_000, opts.signal);
       if (r.code !== 0) {
         const why = (r.stderr ?? "").trim().split("\n").slice(-3).join(" | ");
         throw new Error(`pulling ${ref} failed (exit code ${r.code})${why ? `: ${why}` : ""}`);

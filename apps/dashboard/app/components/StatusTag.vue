@@ -23,6 +23,7 @@ const STATES: Record<string, [Tone, string]> = {
   queued: ["busy", "Queued"],
   running: ["busy", "In progress"],
   success: ["ok", "Succeeded"],
+  canceled: ["idle", "Canceled"],
   // servers
   online: ["ok", "Online"],
   offline: ["bad", "Offline"],

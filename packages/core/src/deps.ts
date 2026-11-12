@@ -21,7 +21,7 @@ export interface Deps {
   /** Always runs for real, even under --prefix: read-mostly tools such as git, ssh-keygen and tar. */
   exec: Run;
   /** Run a command with combined output streamed to a (size-capped) log file. Always real. */
-  runLogged: (cmd: string, args: string[], o: { logFile: string; cwd?: string; env?: Record<string, string>; timeoutMs?: number }) => Promise<{ code: number; timedOut: boolean }>;
+  runLogged: (cmd: string, args: string[], o: { logFile: string; cwd?: string; env?: Record<string, string>; timeoutMs?: number; signal?: AbortSignal }) => Promise<{ code: number; timedOut: boolean }>;
   now: () => Date;
   isRoot: boolean;
   /** Dev/prefix mode: nothing real runs, so certificates are skipped. */
@@ -52,7 +52,7 @@ export const runLogged: Deps["runLogged"] = (cmd, args, o) =>
       written += chunk.length;
       out.write(chunk);
     };
-    const child = spawn(cmd, args, { cwd: o.cwd, env: o.env ? { ...process.env, ...o.env } : process.env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { cwd: o.cwd, env: o.env ? { ...process.env, ...o.env } : process.env, stdio: ["ignore", "pipe", "pipe"], signal: o.signal });
     let timedOut = false;
     const timer = o.timeoutMs
       ? setTimeout(() => {

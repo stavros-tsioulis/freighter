@@ -185,7 +185,7 @@ export async function listBranches(d: Deps, scope: string, repository: string, a
 }
 
 /** Fetch the branch into the scope's private bare mirror and return the commit it points at. */
-export async function fetchMirror(d: Deps, app: string, repository: string, branch: string, auth?: GitAuth): Promise<string> {
+export async function fetchMirror(d: Deps, app: string, repository: string, branch: string, auth?: GitAuth, signal?: AbortSignal): Promise<string> {
   const url = validateRepoUrl(repository, { allowLocal: d.config.git.allowLocal });
   validateBranch(branch);
   return withGitEnv(d, app, auth, async (env) => {
@@ -197,7 +197,7 @@ export async function fetchMirror(d: Deps, app: string, repository: string, bran
     const fetch = await d.exec(
       "git",
       ["-C", mirror, "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "--force", "--", url, `refs/heads/${branch}:refs/freighter/head`],
-      { env },
+      { env, signal },
     );
     if (fetch.code !== 0) throw explain(fetch.stderr, "git fetch");
     const rev = await d.exec("git", ["-C", mirror, "rev-parse", "--verify", "refs/freighter/head"], { env });

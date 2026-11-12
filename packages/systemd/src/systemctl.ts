@@ -15,6 +15,8 @@ export interface RunOptions {
   cwd?: string;
   /** Kill the command after this long (it then rejects like any other failure to run). */
   timeoutMs?: number;
+  /** Kill the command when this fires (it then rejects). */
+  signal?: AbortSignal;
 }
 export type Run = (cmd: string, args: string[], opts?: RunOptions) => Promise<RunResult>;
 
@@ -28,6 +30,7 @@ export const defaultRun: Run = async (cmd, args, opts) => {
       env: opts?.env ? { ...process.env, ...opts.env } : process.env,
       maxBuffer: 16 * 1024 * 1024,
       timeout: opts?.timeoutMs,
+      signal: opts?.signal,
     });
     return { stdout, stderr, code: 0 };
   } catch (e) {

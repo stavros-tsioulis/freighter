@@ -33,6 +33,7 @@ export * from "./shared.ts";
 export * from "./appconfig.ts";
 export * from "./volumes.ts";
 export * from "./files.ts";
+export * from "./operations.ts";
 export * from "./storagefiles.ts";
 export * from "./zip.ts";
 export * from "./configure.ts";

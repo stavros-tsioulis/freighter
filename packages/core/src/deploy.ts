@@ -1,9 +1,11 @@
 import { rm, writeFile } from "node:fs/promises";
+import { stopIfCanceled } from "./operations.ts";
 import { parseManifest, routedServices, routingProblems, routingWarnings, type Domain, type DomainInput } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { ensureApp } from "./app.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
+
 import { goLive, liveTargets, ownedUnits, plannedUnits } from "./apply.ts";
 import { missingSecrets } from "./env.ts";
 import { containersAvailable, ensureContainerRuntime, imageServices, NO_CONTAINERS_MESSAGE, pruneImages, pullImages, writeContainerPorts, writeImages, type RegistryAuth } from "./image.ts";
@@ -38,6 +40,8 @@ export interface DeployOptions {
    * deploy takes it as the configuration, later ones ignore it); `replace` makes it the new configuration.
    */
   config?: "keep" | "replace";
+  /** Fires when the caller wants the deploy stopped: checked between steps, and while waiting for health. */
+  signal?: AbortSignal;
   /** The manifest may be written the old way (shared `environment` and `secrets`); set when redeploying a release that was. */
   legacy?: boolean;
   /** Where to write what the deploy is doing (the dashboard shows it as the deployment's log). */
@@ -158,14 +162,16 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
     const changesDomains = opts.domains !== undefined;
     let live;
     try {
+      stopIfCanceled(opts.signal);
       if (hasImages) {
         await ensureContainerRuntime(d, app, manifest);
-        const { images, containerPorts } = await pullImages(d, app, manifest, { auth: opts.registryAuth, log });
+        const { images, containerPorts } = await pullImages(d, app, manifest, { auth: opts.registryAuth, log, signal: opts.signal });
         await writeImages(d, app, releaseId, images);
         await writeContainerPorts(d, app, releaseId, containerPorts);
       }
       if (changesDomains) await writeDomains(d, app, domains);
-      live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains, log });
+      stopIfCanceled(opts.signal); // the last moment to stop without touching the running release
+      live = await goLive(d, app, releaseId, { skipVerify: opts.skipVerify, previous, previousDomains, log, signal: opts.signal });
     } catch (e) {
       if (changesDomains) await writeDomains(d, app, previousDomains);
       await rm(releaseDir(d, app, releaseId), { recursive: true, force: true });

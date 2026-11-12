@@ -422,6 +422,22 @@ export function createApi(ctx: ApiContext): Api {
     return d;
   }));
 
+  router.post("/v1/deployments/:id/cancel", route("deployer", async (event, who) => {
+    const d = ctx.registry.deployments.get(getRouterParam(event, "id") ?? "");
+    if (!d) throw new ApiError(404, "not_found", "unknown deployment");
+    let outcome;
+    try {
+      outcome = await jobs.cancel(d.id, who.name);
+    } catch (e) {
+      if (e instanceof AgentError && /unknown operation/.test(e.message)) throw new ApiError(409, "conflict", "this server's agent predates canceling. Upgrade it first");
+      throw e;
+    }
+    if (outcome === "finished") throw new ApiError(409, "conflict", "this deployment is already over");
+    audit(who, "deploy.cancel", d.app, { deployment: d.id, outcome });
+    setResponseStatus(event, 202);
+    return { id: d.id, status: outcome };
+  }));
+
   // ---- domains: configured on the app (not in app.yaml). A new domain waits for its DNS records, then goes live ----
   /** Read on every use: the DNS servers are a setting that can change while the API runs. */
   const dnsResolver = (): DnsResolver => ctx.dns ?? systemDns;

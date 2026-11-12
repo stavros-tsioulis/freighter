@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { shownStatus } from "~/utils/deployments";
 import type { AppRow } from "~/types";
 import { troubled } from "~/utils/apps";
 import { shortRelease, timeAgo } from "~/utils/format";
@@ -69,7 +70,7 @@ const summary = computed(() => {
           <NuxtLink :to="`/apps/${d.app}`" class="r-app font-medium text-primary hover:underline truncate">{{ d.app }}</NuxtLink>
           <span class="r-action text-sm">{{ d.action === "rollback" ? "Rollback" : "Deploy" }}</span>
           <span class="r-rel font-mono text-[0.8rem] text-muted-color truncate">{{ shortRelease(d.releaseId) }}</span>
-          <StatusTag :state="d.status" class="r-status" />
+          <StatusTag :state="shownStatus(d)" class="r-status" />
         </li>
       </ul>
     </section>

@@ -44,6 +44,17 @@ freighter rollback shop r20261106-134501      # a specific one
 
 A rollback is a deployment of its own and shows up in the history. Domains and secrets aren't part of a release, so they stay as they are.
 
+## Cancel a deployment
+
+A deployment that is waiting or running has a **Cancel** button on the Deployments tab (and in the progress dialog).
+
+- **Waiting** (another deploy of that server is ahead of it): it never starts.
+- **Running:** the server is told to stop. A `git` fetch, a build (its sandboxed unit is stopped) and an image pull are killed, and the deploy stops at its next step, with nothing of the new release left behind.
+- **Already switching in:** the moment the new release's units are started and HAProxy is switched is never interrupted. If it is waiting for the new release to become healthy, it stops waiting and rolls back like any failed health check, so the old release keeps serving.
+- A deployment that finishes before the stop arrives is left as it finished.
+
+A canceled deployment shows as **Canceled** (recorded as failed, with the error `Canceled by <who>`). Agents from before this need an upgrade first.
+
 ## Keep enough releases
 
 `releases.keep` (5 by default, minimum 2) sets how many releases stay on disk. The current and previous releases are never pruned. Raise it if you want to go further back.

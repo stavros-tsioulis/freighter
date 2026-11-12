@@ -76,6 +76,7 @@ A project only groups apps; it has no effect on how they run. An app is in at mo
 | `GET /apps/:app/deployments?limit=` | the app's history | viewer |
 | `GET /deployments?limit=` | recent deployments across apps | viewer |
 | `GET /deployments/:id` | status, release, commit, warnings, error | viewer |
+| `POST /deployments/:id/cancel` | Stop a deployment. `202` with `status` `canceled` (it was waiting and will never start) or `stopping` (the server was told to stop it); `409` when it is already over or the agent predates canceling. It ends as `failed` with the error `Canceled by <token name>` | deployer |
 | `GET /deployments/:id/log?from=` | build log, from a byte offset (for following) | deployer |
 
 ```sh

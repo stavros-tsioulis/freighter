@@ -22,6 +22,9 @@ export interface GitJob {
   fallbackManifest?: string;
 }
 
+/** What the error of a canceled deployment starts with (they are recorded as failed, so older dashboards still understand them). */
+export const CANCELED = "Canceled by ";
+
 export interface Jobs {
   enqueueDeploy(job: { id: string; app: string; server: string; artifactPath: string; manifestText: string }): void;
   /** Deploy an app made only of image services: the agent pulls the images, so there is no artifact. */
@@ -43,6 +46,11 @@ export interface Jobs {
   enqueueDomains(job: { id: string; app: string; server: string; domains: { hostname: string; service: string; tls: "auto" | "off" }[]; /** Called with the failure message, or null on success. */ done?: (error: string | null) => void }): void;
   /** A git deployment for this app that is queued but has not started yet (further triggers fold into it). */
   queuedGit(app: string): string | undefined;
+  /**
+   * Stop a deployment. One still waiting never starts (`canceled`); one running is asked to stop on its server
+   * (`stopping`) and ends as canceled, rolled back if it had begun to switch. `finished` if it is already over.
+   */
+  cancel(id: string, by: string): Promise<"canceled" | "stopping" | "finished">;
   /** Resolves when everything queued so far has finished (used by tests and shutdown). */
   idle(): Promise<void>;
   busy(): boolean;
@@ -58,13 +66,26 @@ export function createJobs(ctx: ApiContext): Jobs {
   const queuedGitByApp = new Map<string, string>();
   let pending = 0;
 
-  const enqueue = (server: string, app: string, run: () => Promise<void>, cleanup?: () => Promise<void>, depth = 0, jobId?: string) => {
+  /**
+   * `shows` is the configuration the job is about to give the app, if it will be the app's configuration (a new app,
+   * or a change that replaces it): the dashboard lists its services while the job waits and runs.
+   */
+  const enqueue = (server: string, app: string, run: () => Promise<void>, cleanup?: () => Promise<void>, depth = 0, jobId?: string, shows?: string) => {
     pending++;
+    if (shows) pendingConfigs.set(app, shows);
     const next = (chains.get(server) ?? Promise.resolve()).then(async () => {
       try {
-        await run();
+        if (jobId && skipped.has(jobId)) skipped.delete(jobId); // canceled while it waited
+        else await run();
       } finally {
+        // Canceled while running: whatever the agent reported, the outcome is the cancelation.
+        const by = jobId ? stopping.get(jobId) : undefined;
+        if (jobId && by !== undefined) {
+          stopping.delete(jobId);
+          if (ctx.registry.deployments.get(jobId)?.status === "failed") ctx.registry.deployments.update(jobId, { error: CANCELED + by });
+        }
         await cleanup?.().catch(() => {});
+        if (shows && pendingConfigs.get(app) === shows) pendingConfigs.delete(app);
         await syncApp(ctx, server, app).catch(() => {}); // refresh observed state; failures are non-fatal
         // What this app offers (domains, ports, keys) may have moved: the apps that connect to it follow.
         // A job that turned out to have nothing to do (its deployment was removed) changed nothing for anyone.
@@ -78,6 +99,13 @@ export function createJobs(ctx: ApiContext): Jobs {
 
   /** app -> the configuration a queued or running configuration change is applying. */
   const pendingConfigs = new Map<string, string>();
+
+  /** An app with no configuration yet takes it from its first deploy; for one that has it, the deploy's file is ignored. */
+  const configOfNewApp = (app: string, text: string) => (ctx.registry.apps.get(app)?.manifestText ? undefined : text);
+
+  /** Deployments canceled before they started, and ones asked to stop while running (id -> who). */
+  const skipped = new Set<string>();
+  const stopping = new Map<string, string>();
 
   const MAX_DEPTH = 3; // A reaching B reaching C is fine; a loop of apps that read each other must end.
   /** Queue a re-resolve for every app that connects to `target`. They only redeploy when a value they read changed. */
@@ -167,6 +195,9 @@ export function createJobs(ctx: ApiContext): Jobs {
           }
         },
         () => rm(artifactPath, { force: true }),
+        0,
+        id,
+        configOfNewApp(app, manifestText),
       );
     },
 
@@ -202,13 +233,32 @@ export function createJobs(ctx: ApiContext): Jobs {
           .call("build.log", { id, from: 0 })
           .then((l) => ctx.registry.deployments.setLog(id, l.text))
           .catch(() => {});
-      });
+      }, undefined, 0, id, replaceConfig ? manifestText : configOfNewApp(app, manifestText));
     },
 
     pendingConfig: (app) => pendingConfigs.get(app) ?? null,
 
+    async cancel(id, by) {
+      const row = ctx.registry.deployments.get(id);
+      if (!row || (row.status !== "queued" && row.status !== "running")) return "finished";
+      if (row.status === "queued") {
+        skipped.add(id);
+        if (queuedGitByApp.get(row.app) === id) queuedGitByApp.delete(row.app);
+        ctx.registry.deployments.update(id, { status: "failed", error: CANCELED + by, finishedAt: now() });
+        return "canceled";
+      }
+      stopping.set(id, by);
+      try {
+        const r = await ctx.agents.forServer(row.server).call("deploy.cancel", { id }, { timeoutMs: 15_000 });
+        if (!r.canceled) stopping.delete(id); // nothing of it is running on the server: it was between steps or already over
+        return r.canceled ? "stopping" : "finished";
+      } catch (e) {
+        stopping.delete(id);
+        throw e;
+      }
+    },
+
     enqueueConfig({ id, app, server, manifestText }) {
-      pendingConfigs.set(app, manifestText);
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
@@ -227,8 +277,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           .call("build.log", { id, from: 0 })
           .then((l) => ctx.registry.deployments.setLog(id, l.text))
           .catch(() => {});
-        if (pendingConfigs.get(app) === manifestText) pendingConfigs.delete(app);
-      }, undefined, 0, id);
+      }, undefined, 0, id, manifestText);
     },
 
     enqueueRollback({ id, app, server, release }) {
@@ -312,6 +361,8 @@ export function createJobs(ctx: ApiContext): Jobs {
 
     enqueueGit(job) {
       queuedGitByApp.set(job.app, job.id);
+      // A repository's own app.yaml wins over the settings of the form, and is not known until it is cloned.
+      const shows = job.fallbackManifest ? configOfNewApp(job.app, job.fallbackManifest) : undefined;
       enqueue(job.server, job.app, async () => {
         if (queuedGitByApp.get(job.app) === job.id) queuedGitByApp.delete(job.app);
         ctx.registry.deployments.update(job.id, { status: "running", startedAt: now() });
@@ -355,7 +406,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           .then((l) => ctx.registry.deployments.setLog(job.id, l.text))
           .catch(() => {});
         if (job.trigger === "webhook") ctx.registry.gitLinks.markDelivery(job.app, outcome);
-      });
+      }, undefined, 0, job.id, shows);
     },
 
     queuedGit: (app) => queuedGitByApp.get(app),

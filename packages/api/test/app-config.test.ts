@@ -63,6 +63,27 @@ describe("a configuration change in progress", () => {
   });
 });
 
+describe("an app being created", () => {
+  it("lists the services it will have while its first deploy is waiting and running, and stops when it ends", async () => {
+    const t = await makeApi();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    t.handlers["app.deploy"] = async () => {
+      await gate;
+      return { app: "fresh", releaseId: "r1", previous: null, units: [], removed: [], pruned: [], hostnames: [], warnings: [], verified: true, historyAt: "2026-11-06T11:00:00.000Z" };
+    };
+    const manifest = JSON.stringify({ name: "fresh", services: { web: { image: "nginx:1" }, cache: { image: "redis:7" } } });
+    const r = await t.request("/v1/apps/fresh/image-deployments", { method: "POST", token: t.tokens.deployer, json: { manifest } });
+    expect(r.status).toBe(202);
+    const during = (await t.request("/v1/apps/fresh/config", { token: t.tokens.viewer })).json;
+    expect(during.settings).toBeNull();
+    expect(Object.keys(during.pending.services)).toEqual(["web", "cache"]);
+    release();
+    await t.api.jobs.idle();
+    expect((await t.request("/v1/apps/fresh/config", { token: t.tokens.viewer })).json.pending).toBeNull();
+  });
+});
+
 describe("volumes", () => {
   it("lists what the agent reports, and takes an SMB password from admins only, never logging it", async () => {
     const t = await makeApi();

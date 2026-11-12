@@ -77,3 +77,16 @@ describe("retrying services", () => {
     expect(troubleLabel(app(["activating", "auto-restart"], ["failed", "failed"]))).toBe("Service failed");
   });
 });
+
+describe("canceled deployments", () => {
+  it("shows a failed deployment that was canceled as canceled, and lets only live ones be canceled", async () => {
+    const { isCanceled, shownStatus, cancelable } = await import("../app/utils/deployments");
+    expect(isCanceled({ status: "failed", error: "Canceled by ada" })).toBe(true);
+    expect(isCanceled({ status: "failed", error: "pulling x failed" })).toBe(false);
+    expect(isCanceled({ status: "success", error: null })).toBe(false);
+    expect(shownStatus({ status: "failed", error: "Canceled by ada" })).toBe("canceled");
+    expect(shownStatus({ status: "failed", error: "boom" })).toBe("failed");
+    expect(cancelable({ status: "queued" }) && cancelable({ status: "running" })).toBe(true);
+    expect(cancelable({ status: "success" }) || cancelable({ status: "failed" })).toBe(false);
+  });
+});

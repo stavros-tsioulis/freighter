@@ -15,7 +15,7 @@ export interface SetConfigResult {
  * Replace an app's configuration. A deployed app is redeployed with its current release and the new configuration (new
  * instances, health check, rollback on failure); the configuration is only kept if that works.
  */
-export async function setConfig(d: Deps, app: string, manifestText: string, opts: { skipVerify?: boolean; log?: DeployLog } = {}): Promise<SetConfigResult> {
+export async function setConfig(d: Deps, app: string, manifestText: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal } = {}): Promise<SetConfigResult> {
   const log = opts.log ?? noLog;
   const manifest = parseManifest(manifestText);
   if (manifest.name !== app) throw new Error(`this configuration is for "${manifest.name}", not "${app}"`);
@@ -33,6 +33,7 @@ export async function setConfig(d: Deps, app: string, manifestText: string, opts
     skipVerify: opts.skipVerify,
     config: "replace",
     log,
+    signal: opts.signal,
   });
   return { deploy: result };
 }

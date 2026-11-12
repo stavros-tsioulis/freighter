@@ -166,7 +166,7 @@ export async function goLive(
   d: Deps,
   app: string,
   id: string,
-  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[]; log?: DeployLog; /** The apps and server around this one, for resolving connections in the environment. */ connections?: Connections },
+  opts: { skipVerify?: boolean; previous: string | null; /** The domains in force before this change, for restoring services if it fails (default: the current ones). */ previousDomains?: readonly Domain[]; log?: DeployLog; /** The apps and server around this one, for resolving connections in the environment. */ connections?: Connections; /** Stops waiting for the new release to become healthy (it is then rolled back). */ signal?: AbortSignal },
 ): Promise<GoLiveResult> {
   const log = opts.log ?? noLog;
   const manifest = await loadReleaseManifest(d, app, id);
@@ -232,7 +232,7 @@ export async function goLive(
 
   if (!opts.skipVerify) {
     await log(`==> waiting for ${plan.length === 1 ? "the service" : `${plan.length} services`} to be healthy`);
-    const check = await verifyRelease(d, app, manifest, targets);
+    const check = await verifyRelease(d, app, manifest, targets, opts.signal);
     if (!check.ok) {
       await log(describeFailures(check.failures));
       return failWith(check.failures);

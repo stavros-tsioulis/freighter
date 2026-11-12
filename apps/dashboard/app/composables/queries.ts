@@ -803,6 +803,20 @@ export function useRedeployImages(app: MaybeRef<string>) {
   });
 }
 
+/** Stop a deployment: one waiting never starts, one running is asked to stop on its server. */
+export function useCancelDeployment() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (id: string) => api<{ id: string; status: "canceled" | "stopping" }>(`/deployments/${id}/cancel`, { method: "POST" }),
+    onSuccess: (r) => {
+      notify.ok(r.status === "canceled" ? "Deployment canceled" : "Stopping the deployment", r.status === "stopping" ? "It ends as soon as the server has stopped it" : undefined);
+      for (const key of ["deployment", "app-deployments", "deployments", "app", "apps", "config"]) void qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (e) => notify.fail("Could not cancel", e),
+  });
+}
+
 /** Deploy an app from the configuration it has, pulling its images. For apps whose services all run images. */
 export function useDeployConfig(app: MaybeRef<string>) {
   const qc = useQueryClient();

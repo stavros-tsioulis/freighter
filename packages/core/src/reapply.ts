@@ -48,7 +48,7 @@ export interface ReapplyResult {
  * running services were given, the current release is redeployed unchanged (new instances, health check, rollback on
  * failure); if not, nothing happens. An app deployed before this was tracked just records its current state.
  */
-export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean; log?: DeployLog } = {}): Promise<ReapplyResult> {
+export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal } = {}): Promise<ReapplyResult> {
   const log = opts.log ?? noLog;
   const release = await currentRelease(d, app);
   if (!release) return { changed: false, deploy: null };
@@ -70,6 +70,7 @@ export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean
     meta: (await currentSource(d, app)) ?? undefined,
     skipVerify: opts.skipVerify,
     log,
+    signal: opts.signal,
     legacy: true,
   });
   return { changed: true, deploy: result };

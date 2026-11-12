@@ -44,6 +44,9 @@ import {
   makeDir,
   renamePath,
   archiveSupport,
+  beginOperation,
+  cancelOperation,
+  CanceledError,
   chownPaths,
   deleteStoragePaths,
   listStorage,
@@ -173,12 +176,21 @@ export function createHandlers(d: Deps): Handlers {
     async "app.deploy"({ artifact, manifestText, skipVerify, domains, registryAuth, logId, replaceConfig }) {
       const source = artifact === undefined ? undefined : await checkArtifact(d, artifact);
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      return toDeployResult(
-        await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains, registryAuth, log, config: replaceConfig ? "replace" : "keep" }).catch(async (e: unknown) => {
-          await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
-          throw e;
-        }),
-      );
+      const op = beginOperation(logId);
+      try {
+        return toDeployResult(
+          await deploy(d, { manifestText, source, skipVerify: skipVerify || d.dev, domains, registryAuth, log, config: replaceConfig ? "replace" : "keep", signal: op.signal }).catch(async (e: unknown) => {
+            const err = op.settle(e);
+            await log?.(`==> ${err instanceof CanceledError ? "canceled" : `failed: ${err instanceof Error ? err.message : String(err)}`}`);
+            throw err;
+          }),
+        );
+      } finally {
+        op.end();
+      }
+    },
+    async "deploy.cancel"({ id }) {
+      return { canceled: cancelOperation(id) };
     },
     async "fs.list"({ path }) {
       explorer(d);
@@ -251,10 +263,12 @@ export function createHandlers(d: Deps): Handlers {
     },
     async "app.config.set"({ app, manifestText, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      const r = await setConfig(d, app, manifestText, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
-        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
-        throw e;
-      });
+      const op = beginOperation(logId);
+      const r = await setConfig(d, app, manifestText, { skipVerify: d.dev, log, signal: op.signal }).catch(async (e: unknown) => {
+        const err = op.settle(e);
+        await log?.(`==> ${err instanceof CanceledError ? "canceled" : `failed: ${err instanceof Error ? err.message : String(err)}`}`);
+        throw err;
+      }).finally(op.end);
       return { deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
     async "connections.set"({ app, server, peers }) {
@@ -274,10 +288,12 @@ export function createHandlers(d: Deps): Handlers {
     },
     async "app.reapply"({ app, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      const r = await reapply(d, app, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
-        await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
-        throw e;
-      });
+      const op = beginOperation(logId);
+      const r = await reapply(d, app, { skipVerify: d.dev, log, signal: op.signal }).catch(async (e: unknown) => {
+        const err = op.settle(e);
+        await log?.(`==> ${err instanceof CanceledError ? "canceled" : `failed: ${err instanceof Error ? err.message : String(err)}`}`);
+        throw err;
+      }).finally(op.end);
       return { changed: r.changed, deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
     async "storage.apply"({ name, backend, accessKey, secretKey, secrets, logId }) {
@@ -327,7 +343,10 @@ export function createHandlers(d: Deps): Handlers {
       return { sha: await checkRemote(d, app, repository, branch, auth) };
     },
     async "git.deploy"({ app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, auth }) {
-      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, skipVerify: d.dev, auth });
+      const op = beginOperation(buildId);
+      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, skipVerify: d.dev, auth, signal: op.signal }).catch((e: unknown) => {
+        throw op.settle(e);
+      }).finally(op.end);
       return r.skipped
         ? { skipped: true, commit: r.commit, buildSeconds: 0 }
         : { skipped: false, commit: r.commit, buildSeconds: r.buildSeconds, deploy: toDeployResult(r.deploy) };
@@ -393,6 +412,7 @@ export function classify(e: unknown): WireError {
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
   if (e instanceof FileError) return { code: e.code, message: e.message };
+  if (e instanceof CanceledError) return { code: "conflict", message: e.message };
   if (e instanceof UpgradeError) return { code: /in progress/.test(e.message) ? "conflict" : "bad_request", message: e.message };
   if (e instanceof BadRequest || e instanceof SettingsError) return { code: "bad_request", message: e.message };
   if (e instanceof ZodError) {

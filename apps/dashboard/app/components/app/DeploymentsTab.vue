@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AppRow, DeploymentRow } from "~/types";
+import { cancelable, isCanceled, shownStatus } from "~/utils/deployments";
 import { durationBetween, formatDuration, shortRelease, timeAgo } from "~/utils/format";
 
 const props = defineProps<{ app: AppRow }>();
@@ -28,7 +29,20 @@ function startRollback() {
 }
 const triggerLabel = (d: DeploymentRow) => ({ upload: "Upload", manual: "Deploy latest", webhook: "Git push", host: "Host CLI" })[d.trigger] ?? d.trigger;
 const isGit = (d: DeploymentRow) => d.trigger === "manual" || d.trigger === "webhook";
-const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error;
+const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error && !isCanceled(d);
+const cancel = useCancelDeployment();
+const confirm = useConfirm();
+function askCancel(d: DeploymentRow) {
+  confirm.require({
+    header: "Cancel this deployment?",
+    message: d.status === "queued" ? "It has not started and won't." : "It stops on the server. If the new release was already being switched in, the running one is kept or put back.",
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: "Cancel deployment",
+    acceptProps: { severity: "danger" },
+    rejectProps: { severity: "secondary", text: true, label: "Keep going" },
+    accept: () => cancel.mutate(d.id),
+  });
+}
 </script>
 
 <template>
@@ -47,7 +61,12 @@ const failedWithError = (d: DeploymentRow) => d.status === "failed" && !!d.error
       </Column>
       <Column header="Action"><template #body="{ data }">{{ data.action === "rollback" ? "Rollback" : "Deploy" }}</template></Column>
       <Column header="Status">
-        <template #body="{ data }"><StatusTag :state="data.status" /></template>
+        <template #body="{ data }">
+          <div class="flex items-center gap-2">
+            <StatusTag :state="shownStatus(data)" />
+            <Button v-if="can('deployer') && cancelable(data)" label="Cancel" size="small" text severity="danger" :loading="cancel.isPending.value && cancel.variables.value === data.id" @click.stop="askCancel(data)" />
+          </div>
+        </template>
       </Column>
       <Column header="Release">
         <template #body="{ data }"><span class="font-mono text-xs">{{ shortRelease(data.releaseId) }}</span></template>

@@ -351,6 +351,8 @@ export const ops = {
     args: z.object({ paths: fsPaths, owner: z.string().min(1).max(64).optional(), group: z.string().min(1).max(64).optional(), recursive: z.boolean().default(false) }),
     result: fsBulk,
   },
+  /** Ask a deploy, build or pull that is running under this id (the deployment's) to stop. `canceled` is false when nothing is running under it here. */
+  "deploy.cancel": { args: z.object({ id: z.string().regex(/^[0-9a-f-]{8,64}$/) }), result: z.object({ canceled: z.boolean() }) },
   "fs.delete": { args: z.object({ paths: fsPaths }), result: fsBulk },
   /** Header line, then `size` raw bytes that become the file (written beside it and renamed in when complete). */
   "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false), storage: storageRef.optional() }), result: z.object({}) },

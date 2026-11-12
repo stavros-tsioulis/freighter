@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { parseManifest, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
+import { stopIfCanceled } from "./operations.ts";
 import { buildLogPath, ensureBuildUser, runBuild } from "./build.ts";
 import type { Deps } from "./deps.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
@@ -33,6 +34,8 @@ export interface GitDeployOptions {
   fallbackManifest?: string;
   /** An imported SSH key to use instead of the app's own deploy key. */
   auth?: GitAuth;
+  /** Fires when the deployment is canceled: the fetch and the build are killed, and the deploy stops at its next step. */
+  signal?: AbortSignal;
 }
 
 export type GitDeployResult =
@@ -90,7 +93,8 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
   try {
     await pruneOldLogs(d);
     await log(`==> fetching ${branch} from ${repository}`);
-    const sha = await fetchMirror(d, o.app, repository, branch, o.auth);
+    const sha = await fetchMirror(d, o.app, repository, branch, o.auth, o.signal);
+    stopIfCanceled(o.signal);
     const commit = await commitInfo(d, o.app, sha);
     await log(`    ${sha.slice(0, 12)} ${commit.subject}${commit.author ? ` (${commit.author})` : ""}`);
 
@@ -103,6 +107,7 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
     }
 
     const user = await ensureBuildUser(d);
+    stopIfCanceled(o.signal);
     await exportTree(d, o.app, sha, subpath, src);
     await d.run("chown", ["-R", `${user}:${user}`, buildRoot]);
 
@@ -129,7 +134,8 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
     let buildSeconds = 0;
     if (manifest.build && manifest.build.commands.length > 0) {
       await log(`==> building (${manifest.build.commands.length} command${manifest.build.commands.length === 1 ? "" : "s"}, limit ${manifest.build.timeout})`);
-      const r = await runBuild(d, { app: o.app, buildId: o.buildId, dir: src, spec: manifest.build });
+      const r = await runBuild(d, { app: o.app, buildId: o.buildId, dir: src, spec: manifest.build, signal: o.signal });
+      stopIfCanceled(o.signal);
       buildSeconds = r.seconds;
       if (!r.ok) {
         const why = r.timedOut ? `build timed out after ${manifest.build.timeout}` : `build failed with exit code ${r.code}`;
@@ -142,7 +148,7 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
 
     await log("==> deploying");
     const meta: SourceMeta = { type: "git", sha, ref: `refs/heads/${branch}`, subject: commit.subject, author: commit.author };
-    const result = await deploy(d, { manifestText, legacy: stored !== null, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log });
+    const result = await deploy(d, { manifestText, legacy: stored !== null, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log, signal: o.signal });
     await log(`==> deployed ${result.releaseId}`);
     return { skipped: false, commit, deploy: result, buildSeconds };
   } catch (e) {
