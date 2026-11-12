@@ -73,6 +73,8 @@ export interface BuildResult {
   ok: boolean;
   code: number;
   timedOut: boolean;
+  /** The kernel killed the build for going over its memory limit. */
+  oom: boolean;
   seconds: number;
 }
 
@@ -88,6 +90,7 @@ export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: 
   await mkdir(buildCacheDir(d, o.app), { recursive: true });
 
   let r: { code: number; timedOut: boolean };
+  let oom = false;
   if (d.dev) {
     r = await d.runLogged("sh", ["-ec", script], { logFile, cwd: o.dir, env: buildEnv(d, o.app, o.spec.environment), timeoutMs, signal: o.signal });
   } else {
@@ -98,8 +101,13 @@ export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: 
     const stop = () => void d.run("systemctl", ["stop", `freighter-build-${o.buildId.slice(0, 8)}.service`]).catch(() => undefined);
     o.signal?.addEventListener("abort", stop, { once: true });
     r = await d.runLogged("systemd-run", [...sandboxArgs(d, o), "/bin/sh", "-ec", script], { logFile, timeoutMs: timeoutMs + 30_000, signal: o.signal });
+    if (r.code !== 0 && !r.timedOut && !o.signal?.aborted) {
+      // A build killed for its memory only shows up as a signal or exit code 1; the unit's own journal says why.
+      const j = await d.run("journalctl", ["-u", `freighter-build-${o.buildId.slice(0, 8)}.service`, "-n", "30", "--no-pager", "-o", "cat"]).catch(() => null);
+      oom = !!j && /oom-kill|killed by the OOM killer/i.test(j.stdout ?? "");
+    }
   }
   const seconds = Math.round((Date.now() - started) / 100) / 10;
   const timedOut = r.timedOut || (r.code !== 0 && Date.now() - started >= timeoutMs);
-  return { ok: r.code === 0, code: r.code, timedOut, seconds };
+  return { ok: r.code === 0, code: r.code, timedOut, oom, seconds };
 }

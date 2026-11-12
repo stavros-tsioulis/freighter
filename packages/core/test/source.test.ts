@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { BuildFailedError, setConfig, buildLogChunk, buildLogPath, currentRelease, gitDeploy, readHistory, sandboxArgs, type Deps } from "../src/index.ts";
+import { BuildFailedError, getConfig, setConfig, buildLogChunk, buildLogPath, currentRelease, gitDeploy, readHistory, sandboxArgs, type Deps } from "../src/index.ts";
 import { APP_YAML, makeRepo } from "./gitrepo.ts";
 import { writeConnections, writeDomains, resolveBuildEnvironment } from "../src/index.ts";
 import { makeDeps } from "./helpers.ts";
@@ -77,6 +77,15 @@ describe("gitDeploy", () => {
     expect(await readdir(`${t.deps.layout.appsRoot}/shop/releases`)).toHaveLength(2);
     expect(existsSync(`${t.deps.config.git.buildDir}/${buildId}`)).toBe(false);
     expect(await readFile(buildLogPath(t.deps, buildId), "utf8")).toContain("build failed with exit code 1");
+  });
+
+  it("keeps the settings of an app whose first build fails, so they can be fixed", async () => {
+    const t = await setup({ "server.mjs": "//\n" });
+    const fallback = APP_YAML("shop", "") + "build:\n  commands:\n    - exit 1\n";
+    const err = await t.run({ fallbackManifest: fallback }).catch((e) => e);
+    expect(err).toBeInstanceOf(BuildFailedError);
+    expect(await getConfig(t.deps, "shop")).toContain("exit 1");
+    expect(await currentRelease(t.deps, "shop")).toBeNull();
   });
 
   it("stops a build that runs past its time limit", async () => {

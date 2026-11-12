@@ -11,6 +11,7 @@ import { commitInfo, exportTree, fetchMirror, readFileAt, type CommitInfo, type 
 import type { SourceMeta } from "./history.ts";
 import { currentLink } from "./releases.ts";
 import { readConfig, writeConfig } from "./appconfig.ts";
+import { ensureApp } from "./app.ts";
 
 export class BuildFailedError extends Error {
   constructor(
@@ -150,8 +151,13 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
       stopIfCanceled(o.signal);
       buildSeconds = r.seconds;
       if (!r.ok) {
-        const why = r.timedOut ? `build timed out after ${manifest.build.timeout}` : `build failed with exit code ${r.code}`;
+        const why = r.timedOut ? `build timed out after ${manifest.build.timeout}` : r.oom ? `build ran out of memory (limit ${manifest.build.memory}); raise the build memory in Settings` : `build failed with exit code ${r.code}`;
         await log(`==> ${why}`);
+        // A first attempt that fails to build still leaves the app with its settings, so they can be fixed and retried.
+        if (!stored) {
+          await ensureApp(d, o.app);
+          await writeConfig(d, o.app, manifestText);
+        }
         const tail = (await readFile(logFile, "utf8")).split("\n").slice(-30).join("\n");
         throw new BuildFailedError(why, tail);
       }
