@@ -27,6 +27,7 @@ watch(
     if (s === "success" || s === "failed") {
       void qc.invalidateQueries({ queryKey: ["app"] });
       void qc.invalidateQueries({ queryKey: ["apps"] });
+      void qc.invalidateQueries({ queryKey: ["domains"] });
       void qc.invalidateQueries({ queryKey: ["app-deployments"] });
       void qc.invalidateQueries({ queryKey: ["deployments"] });
       emit("finished", s);

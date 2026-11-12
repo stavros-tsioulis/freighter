@@ -52,7 +52,7 @@ export const NO_CONTAINERS_MESSAGE =
 async function podman(d: Deps, app: string, args: string[], timeoutMs?: number, signal?: AbortSignal) {
   return d.run(
     "runuser",
-    ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
+    ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `TMPDIR=${containerHome(d.layout, app)}/tmp`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
     { timeoutMs, signal },
   );
 }
@@ -76,6 +76,7 @@ async function nextFreeSubidStart(file: string): Promise<number> {
 export async function ensureContainerRuntime(d: Deps, app: string, manifest: Pick<Manifest, "services">): Promise<void> {
   const home = containerHome(d.layout, app);
   await mkdir(home, { recursive: true });
+  await mkdir(`${home}/tmp`, { recursive: true }); // where podman unpacks a pulled image; the host's /var/tmp may not exist
   for (const s of Object.values(manifest.services)) {
     for (const name of Object.keys(s.volumes ?? {})) await mkdir(volumeDir(d.layout, app, name), { recursive: true });
   }
