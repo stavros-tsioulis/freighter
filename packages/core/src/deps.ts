@@ -30,6 +30,8 @@ export interface Deps {
   /** HTTP GET; resolves to the status code, or null on connection failure/timeout. */
   probe: (url: string, timeoutMs: number) => Promise<number | null>;
   portFree: (port: number) => Promise<boolean>;
+  /** How long a deploy waits for the host-wide lock held by another before giving up (default 45 s; tests use 0). */
+  lockWaitMs?: number;
   /** Where in `min`..`max` to start looking for a free port (random unless a test says otherwise). */
   pickPort?: (min: number, max: number) => number;
   /** Make sure a certificate for `hostname` exists and is fresh. */

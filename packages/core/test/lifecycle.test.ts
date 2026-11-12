@@ -94,7 +94,7 @@ describe("lock", () => {
   it("rejects a concurrent operation and cleans up", async () => {
     const { deps } = await setup();
     await mkdir(`${deps.layout.appsRoot}/hello`, { recursive: true });
-    await expect(withLock(deps, "hello", () => withLock(deps, "hello", async () => {}))).rejects.toThrow(/in progress/);
+    await expect(withLock(deps, "hello", () => withLock(deps, "hello", async () => {}))).rejects.toThrow(/in progress \(needed for "hello"\): "hello" has been deploying for \d+s/);
     await withLock(deps, "hello", async () => {}); // released again
   });
 
@@ -146,5 +146,30 @@ describe("rollback", () => {
     });
     await expect(rollback(deps, "hello", { target: a })).rejects.toThrow(/rollback to .* failed; .* is still current/);
     expect((await readHistory(deps, "hello")).at(-1)).toMatchObject({ action: "rollback", result: "failed" });
+  });
+});
+
+describe("the deploy lock", () => {
+  it("waits for a deploy that is finishing instead of refusing at once, and gives up with a reason when it doesn't", async () => {
+    const { deps } = await makeDeps();
+    deps.lockWaitMs = 3000;
+    let release!: () => void;
+    const first = withLock(deps, "slow", () => new Promise<void>((r) => (release = r)));
+    await new Promise((r) => setTimeout(r, 20));
+    let ran = false;
+    const second = withLock(deps, "other", async () => void (ran = true));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(ran).toBe(false); // still waiting
+    release();
+    await first;
+    await second;
+    expect(ran).toBe(true);
+
+    deps.lockWaitMs = 300;
+    const hold = withLock(deps, "slow", () => new Promise<void>((r) => (release = r)));
+    await new Promise((r) => setTimeout(r, 20));
+    await expect(withLock(deps, "other", async () => {})).rejects.toThrow(/in progress \(needed for "other"\): "slow" has been deploying for/);
+    release();
+    await hold;
   });
 });
