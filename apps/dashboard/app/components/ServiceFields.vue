@@ -11,6 +11,8 @@ defineProps<{
   ownVolumes: string[];
   /** Every service runs an image: no choice of kind. */
   imagesOnly?: boolean;
+  /** An existing service keeps its name. */
+  lockName?: boolean;
 }>();
 const s = defineModel<ServiceForm>({ required: true });
 const restarts = ["on-failure", "always", "no"];
@@ -21,7 +23,7 @@ const imageError = (ref: string) => (ref.trim() && !IMAGE_RE.test(ref.trim()) ? 
 <template>
   <div>
   <div class="grid gap-3" :class="imagesOnly ? 'sm:grid-cols-[10rem]' : 'sm:grid-cols-[10rem_1fr]'">
-    <div class="flex flex-col gap-1"><label :for="`svc-name-${id}`" class="text-sm font-medium">Name</label><InputText :id="`svc-name-${id}`" v-model="s.name" placeholder="web" autocomplete="off" /></div>
+    <div class="flex flex-col gap-1"><label :for="`svc-name-${id}`" class="text-sm font-medium">Name</label><InputText :id="`svc-name-${id}`" v-model="s.name" placeholder="web" autocomplete="off" :disabled="lockName" /></div>
     <div v-if="!imagesOnly" class="flex flex-col gap-1">
       <span :id="`svc-kind-l-${id}`" class="text-sm font-medium">Runs</span>
       <SelectButton v-model="s.kind" :options="kinds" option-label="label" option-value="value" :allow-empty="false" size="small" :aria-labelledby="`svc-kind-l-${id}`" />

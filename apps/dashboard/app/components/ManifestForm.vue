@@ -6,7 +6,7 @@ import type { AppSettings } from "~/types";
  * The options of app.yaml as a form. Used when a repository has no app.yaml (an app.yaml in the repository always
  * wins). The API renders and validates the result, so the preview below is exactly what would be deployed.
  */
-const props = defineProps<{ appName: string; disabled?: boolean; /** Leave out the build section (images are built elsewhere). */ hideBuild?: boolean; /** Every service runs an image (the image deploy form): no choice of kind, and new services are images. */ imagesOnly?: boolean }>();
+const props = defineProps<{ appName: string; disabled?: boolean; /** Leave out the build section (images are built elsewhere). */ hideBuild?: boolean; /** Leave out the services (they are edited on the app's Services tab). */ hideServices?: boolean; /** Every service runs an image (the image deploy form): no choice of kind, and new services are images. */ imagesOnly?: boolean }>();
 const form = defineModel<SettingsForm>({ required: true });
 const emit = defineEmits<{ settings: [AppSettings] }>();
 
@@ -33,7 +33,7 @@ const addService = () => form.value.services.push(newService(form.value.services
 <template>
   <div class="flex flex-col gap-5" :class="{ 'pointer-events-none opacity-60': disabled }">
     <!-- services -->
-    <section class="flex flex-col gap-3">
+    <section v-if="!hideServices" class="flex flex-col gap-3">
       <div class="flex items-center justify-between">
         <h3 class="font-medium">Services</h3>
         <Button label="Add service" icon="pi pi-plus" size="small" severity="secondary" text @click="addService" />

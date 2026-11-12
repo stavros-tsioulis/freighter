@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AppRow } from "~/types";
+import type { AppRow, ServiceRow } from "~/types";
 import { formatBytes } from "~/utils/format";
 
 const props = defineProps<{ app: AppRow }>();
@@ -8,8 +8,25 @@ const minutes = ref(60);
 const appName = computed(() => props.app.name);
 const { data: series } = useMetrics(appName, minutes);
 const control = useControl(appName);
+const { data: config } = useAppSettings(appName);
 const confirm = useConfirm();
 const adding = ref(false);
+const { data: link } = useGitLink(appName);
+const gitDeploy = useGitAction(appName).deploy;
+const configDeploy = useDeployConfig(appName);
+const archiveOpen = ref(false);
+const deploymentId = ref<string | null>(null);
+const showDeployment = computed({ get: () => deploymentId.value !== null, set: (v: boolean) => { if (!v) deploymentId.value = null; } });
+const servicesConfigured = computed(() => Object.values(config.value?.settings?.services ?? {}));
+const allImages = computed(() => servicesConfigured.value.length > 0 && servicesConfigured.value.every((x) => x.image !== undefined));
+/** Deploys are per app: this releases every service in its configuration, by whichever source the app has. */
+async function deployApp() {
+  if (link.value) deploymentId.value = (await gitDeploy.mutateAsync().catch(() => null))?.id ?? null;
+  else if (allImages.value && config.value?.text) deploymentId.value = (await configDeploy.mutateAsync(config.value.text).catch(() => null))?.id ?? null;
+  else archiveOpen.value = true;
+}
+const editing = ref<string | null>(null);
+const editOpen = computed({ get: () => editing.value !== null, set: (v: boolean) => { if (!v) editing.value = null; } });
 
 const ranges = [
   { label: "15 min", value: 15 },
@@ -20,8 +37,17 @@ const ranges = [
 function last<T>(xs: T[] | undefined): T | undefined {
   return xs?.[xs.length - 1];
 }
+/** Services the configuration has but that aren't running (a deploy failed, or none has happened yet). */
+const unplaced = computed(() => {
+  const running = new Set(props.app.services.map((s) => s.name));
+  return Object.entries(config.value?.settings?.services ?? {})
+    .filter(([name]) => !running.has(name))
+    .map(([name, v]): ServiceRow & { placeholder: true } => ({
+      app: props.app.name, name, unit: "", port: v.port ?? null, hostnames: [], activeState: "inactive", subState: "not deployed", restarts: 0, memoryBytes: null, observedAt: "", placeholder: true,
+    }));
+});
 const rows = computed(() =>
-  props.app.services.map((s) => {
+  [...props.app.services.map((s) => ({ ...s, placeholder: false })), ...unplaced.value].map((s) => {
     const pts = series.value?.[s.name] ?? [];
     const lastCpu = [...pts].reverse().find((p) => p.cpuPercent !== null)?.cpuPercent ?? null;
     return {
@@ -52,16 +78,20 @@ const url = (host: string) => `https://${host}`;
 <template>
   <div class="flex flex-col gap-3">
     <div class="flex flex-wrap items-center justify-between gap-2">
-      <Button v-if="can('admin')" label="Add service" icon="pi pi-plus" size="small" severity="secondary" @click="adding = true" />
+      <div class="flex gap-2">
+        <Button v-if="can('deployer')" label="Deploy" icon="pi pi-cloud-upload" size="small" :disabled="!servicesConfigured.length && !link" :loading="gitDeploy.isPending.value || configDeploy.isPending.value" @click="deployApp" />
+        <Button v-if="can('admin')" label="Add service" icon="pi pi-plus" size="small" severity="secondary" @click="adding = true" />
+      </div>
       <span class="text-sm text-muted-color ml-auto">Memory and CPU over the last</span>
       <SelectButton v-model="minutes" :options="ranges" option-label="label" option-value="value" :allow-empty="false" size="small" aria-label="Metrics range" />
     </div>
     <DataTable scrollable :value="rows" data-key="name">
-      <template #empty><span class="text-muted-color">No services yet. They appear after the first deploy.</span></template>
+      <template #empty><span class="text-muted-color">No services yet.</span></template>
       <Column header="Service" field="name">
         <template #body="{ data }">
           <div class="font-medium">{{ data.name }}</div>
           <div v-if="app.images?.[data.name]" class="text-xs text-muted-color font-mono truncate max-w-[14rem]" :title="app.images[data.name]"><i class="pi pi-box text-[0.65rem] mr-1" aria-hidden="true" />{{ app.images[data.name] }}</div>
+          <div v-else-if="data.placeholder" class="text-xs text-muted-color">{{ config?.settings?.services?.[data.name]?.image ?? config?.settings?.services?.[data.name]?.command }}</div>
           <div v-else class="text-xs text-muted-color font-mono">{{ data.unit.replace(/^freighter-/, "").replace(".service", "") }}</div>
         </template>
       </Column>
@@ -98,13 +128,20 @@ const url = (host: string) => `https://${host}`;
       <Column v-if="can('deployer')" header="" class="text-right">
         <template #body="{ data }">
           <div class="flex gap-1 justify-end">
-            <Button icon="pi pi-refresh" text rounded size="small" severity="secondary" aria-label="Restart" title="Restart" :loading="control.isPending.value" @click="act('restart', data.name)" />
-            <Button v-if="data.activeState === 'active'" icon="pi pi-stop-circle" text rounded size="small" severity="danger" aria-label="Stop" title="Stop" @click="act('stop', data.name)" />
-            <Button v-else icon="pi pi-play" text rounded size="small" severity="success" aria-label="Start" title="Start" @click="act('start', data.name)" />
+            <Button v-if="can('admin')" icon="pi pi-pencil" text rounded size="small" severity="secondary" aria-label="Edit" title="Edit" @click="editing = data.name" />
+            <Button v-if="!data.placeholder" icon="pi pi-refresh" text rounded size="small" severity="secondary" aria-label="Restart" title="Restart" :loading="control.isPending.value" @click="act('restart', data.name)" />
+            <Button v-if="!data.placeholder && data.activeState === 'active'" icon="pi pi-stop-circle" text rounded size="small" severity="danger" aria-label="Stop" title="Stop" @click="act('stop', data.name)" />
+            <Button v-else-if="!data.placeholder" icon="pi pi-play" text rounded size="small" severity="success" aria-label="Start" title="Start" @click="act('start', data.name)" />
           </div>
         </template>
       </Column>
     </DataTable>
-  <AppAddServiceDialog v-model:visible="adding" :app="app" />
+  <Dialog v-model:visible="showDeployment" modal header="Deploying" :style="{ width: '44rem' }">
+    <DeploymentStatus v-if="deploymentId" :id="deploymentId" />
+    <template #footer><Button label="Close" severity="secondary" text @click="showDeployment = false" /></template>
+  </Dialog>
+  <DeployDialog v-model:visible="archiveOpen" :app="app.name" />
+  <AppServiceDialog v-model:visible="adding" :app="app" />
+  <AppServiceDialog v-model:visible="editOpen" :app="app" :service="editing ?? undefined" />
   </div>
 </template>

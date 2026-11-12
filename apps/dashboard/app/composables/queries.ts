@@ -801,6 +801,17 @@ export function useRedeployImages(app: MaybeRef<string>) {
   });
 }
 
+/** Deploy an app from the configuration it has, pulling its images. For apps whose services all run images. */
+export function useDeployConfig(app: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (manifest: string) => api<{ id: string }>(`/apps/${toValue(app)}/image-deployments`, { method: "POST", body: { manifest } }),
+    onSuccess: () => refreshApps(qc),
+    onError: (e) => notify.fail("Could not start the deployment", e),
+  });
+}
+
 /** Run different images (usually a new tag) for some services of an app, keeping the rest of its app.yaml. */
 export function useSetImages(app: MaybeRef<string>) {
   const qc = useQueryClient();
