@@ -289,8 +289,8 @@ export function createHandlers(d: Deps): Handlers {
       }).finally(op.end);
       return { deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
-    async "connections.set"({ app, server, peers }) {
-      await writeConnections(d, app, { server, peers });
+    async "connections.set"({ app, server, peers, storages }) {
+      await writeConnections(d, app, { server, peers, storages });
       return {};
     },
     async "variables.get"({ app }) {

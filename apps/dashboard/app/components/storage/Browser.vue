@@ -4,7 +4,8 @@ import { baseName, breadcrumbs, items, joinPath, parentOf } from "~/utils/files"
 import { formatBytes } from "~/utils/format";
 
 /** The buckets of a storage and the keys in them: browse, upload, download, rename, delete. */
-const props = defineProps<{ name: string; /** Whether the storage has a domain, which a link to a file needs. */ canLink?: boolean; /** The address of the public endpoint when the storage is public: files can then be reached without a signature. */ publicUrl?: string | null }>();
+const props = defineProps<{ name: string; /** Whether the storage has a domain, which a link to a file needs. */ canLink?: boolean; /** The address of the public endpoint when the storage is public: files can then be reached without a signature. */ publicUrl?: string | null; /** The storage is public but its public endpoint has no domain yet. */ publicPending?: boolean; /** The private endpoint, when it has a domain: what a command needs to reach this storage and not another. */ endpoint?: string | null }>();
+const emit = defineEmits<{ domains: [] }>();
 const path = defineModel<string>("path", { default: "/" });
 
 const confirm = useConfirm();
@@ -44,18 +45,30 @@ const single = computed(() => (chosen.value.length === 1 ? chosen.value[0]! : nu
 watch(path, () => { selection.value = []; filter.value = ""; });
 
 const s3Uri = (p: string) => `s3:/${p}`;
+/** `s3://bucket/key` is the same in every storage; a command that names the endpoint is not. */
+const awsCommand = (e: StorageEntry) => {
+  const p = joinPath(path.value, e.name);
+  // With only the public address (the private endpoint has no domain), that is what the command reaches, without a key.
+  const where = props.endpoint ? `--endpoint-url ${props.endpoint}` : `--endpoint-url ${props.publicUrl} --no-sign-request`;
+  return e.type === "dir" ? `aws s3 ls ${s3Uri(p)}/ ${where}` : `aws s3 cp ${s3Uri(p)} . ${where}`;
+};
+const hasEndpoint = computed(() => !!props.endpoint || !!props.publicUrl);
 // ---- a link to a file ----
 const linking = ref<string | null>(null);
 const linkFor = ref(86400);
 const linkWorking = ref(false);
 const durations = [{ label: "1 hour", value: 3600 }, { label: "1 day", value: 86400 }, { label: "7 days", value: 7 * 86400 }];
 const showLink = computed({ get: () => linking.value !== null, set: (v) => { if (!v) linking.value = null; } });
+const plainUrl = (p: string) => `${props.publicUrl}${p.split("/").map(encodeURIComponent).join("/")}`;
+/** A public storage has a plain address to copy. A private one needs a signed link, for a while, so it asks how long. */
 function askLink() {
   const e = single.value;
   if (!e || e.type !== "file") return;
-  linking.value = joinPath(path.value, e.name);
+  const file = joinPath(path.value, e.name);
+  if (props.publicUrl) return void copy(plainUrl(file), "Link");
+  linking.value = file;
 }
-const plainUrl = (p: string) => (props.publicUrl ? `${props.publicUrl}${p.split("/").map(encodeURIComponent).join("/")}` : null);
+const linkable = computed(() => !!single.value && single.value.type === "file" && (!!props.publicUrl || !!props.canLink));
 async function copyLink() {
   if (!linking.value) return;
   linkWorking.value = true;
@@ -185,8 +198,8 @@ const menuItems = computed(() => {
     ...(e ? [{ label: e.type === "dir" ? "Open" : "Download", icon: e.type === "dir" ? "pi pi-folder-open" : "pi pi-download", command: () => open(e) }] : []),
     { separator: true },
     { label: "Copy S3 URI", icon: "pi pi-link", command: () => void copy(chosenPaths.value.map(s3Uri).join("\n"), "S3 URI") },
-    ...(e?.type === "file" && props.publicUrl ? [{ label: "Copy public URL", icon: "pi pi-globe", command: () => void copy(plainUrl(joinPath(path.value, e.name))!, "URL") }] : []),
-    ...(e?.type === "file" ? [{ label: "Copy link…", icon: "pi pi-globe", disabled: !props.canLink, command: () => askLink() }] : []),
+    { label: "Copy AWS CLI command", icon: "pi pi-terminal", disabled: !hasEndpoint.value || !chosen.value.length, command: () => void copy(chosen.value.map(awsCommand).join("\n"), "Command") },
+    ...(e?.type === "file" ? [{ label: props.publicUrl ? "Copy link" : "Copy link…", icon: "pi pi-globe", disabled: !linkable.value, command: () => askLink() }] : []),
     { separator: true },
     { label: "Rename", icon: "pi pi-pencil", disabled: !e, command: () => askRename() },
     { label: "Delete", icon: "pi pi-trash", command: () => askDelete() },
@@ -239,9 +252,8 @@ const icon = (e: StorageEntry) => (e.type === "dir" ? (atRoot.value ? "pi pi-inb
       <Button v-if="!atRoot" label="Upload a folder" icon="pi pi-sitemap" size="small" severity="secondary" text @click="folderInput?.click()" />
       <span class="w-px h-5 bg-[var(--fr-line)] mx-1" aria-hidden="true" />
       <Button label="Download" icon="pi pi-download" size="small" severity="secondary" text :disabled="!single || single.type !== 'file'" @click="single && open(single)" />
-      <Button v-if="publicUrl" label="Public URL" icon="pi pi-link" size="small" severity="secondary" text :disabled="!single || single.type !== 'file'" title="The address anyone can open: this storage is public" @click="single && copy(plainUrl(chosenPaths[0]!)!, 'URL')" />
-      <Button label="Copy link" icon="pi pi-globe" size="small" severity="secondary" text :disabled="!single || single.type !== 'file' || !canLink" :title="canLink ? 'A link that downloads the file for a while, without a key' : 'Give the storage a domain to make links'" @click="askLink" />
-      <Button label="Copy S3 URI" icon="pi pi-link" size="small" severity="secondary" text :disabled="!chosen.length" @click="copy(chosenPaths.map(s3Uri).join('\n'), 'S3 URI')" />
+      <Button label="Copy link" icon="pi pi-globe" size="small" severity="secondary" text :disabled="!linkable" :title="publicUrl ? 'The address anyone can open: this storage is public' : canLink ? 'A signed link that downloads the file for a while, without a key' : 'Give the storage a domain to make links'" @click="askLink" />
+      <Button label="Copy S3 URI" icon="pi pi-link" size="small" severity="secondary" text title="An s3 address reads the same in every storage; Copy AWS CLI command (right-click) names this one" :disabled="!chosen.length" @click="copy(chosenPaths.map(s3Uri).join('\n'), 'S3 URI')" />
       <Button label="Rename" icon="pi pi-pencil" size="small" severity="secondary" text :disabled="!single" @click="askRename" />
       <Button label="Delete" icon="pi pi-trash" size="small" severity="danger" text :disabled="!chosen.length" :loading="actions.remove.isPending.value" @click="askDelete()" />
       <IconField class="ml-auto">
@@ -252,6 +264,12 @@ const icon = (e: StorageEntry) => (e.type === "dir" ? (atRoot.value ? "pi pi-inb
     <input ref="fileInput" type="file" multiple class="hidden" tabindex="-1" @change="picked($event, false)" />
     <input ref="folderInput" type="file" webkitdirectory class="hidden" tabindex="-1" @change="picked($event, true)" />
 
+    <Message v-if="publicPending" severity="info" size="small" :closable="false">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>This storage is public, but its public endpoint has no address yet, so the links you copy are signed. Point a domain at the service <code>public</code> (not <code>s3</code>, which is the private endpoint).</span>
+        <Button label="Open Domains" icon="pi pi-arrow-right" size="small" text @click="emit('domains')" />
+      </div>
+    </Message>
     <Message v-if="errorText && !listing" severity="error" size="small">{{ errorText }}</Message>
     <Message v-else-if="errorText" severity="warn" size="small">{{ errorText }}</Message>
     <Message v-if="listing?.truncated" severity="warn" size="small">There are more entries than are shown. Use the filter, or open a deeper folder.</Message>

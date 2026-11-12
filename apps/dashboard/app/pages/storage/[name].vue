@@ -183,7 +183,7 @@ async function remove() {
               </section>
             </div>
           </TabPanel>
-          <TabPanel v-if="can('admin')" value="files"><StorageBrowser v-model:path="filesPath" :name="storage.name" :can-link="storage.hostnames.length > 0" :public-url="publicBase" /></TabPanel>
+          <TabPanel v-if="can('admin')" value="files"><StorageBrowser v-model:path="filesPath" :name="storage.name" :can-link="storage.hostnames.length > 0" :public-url="publicBase" :public-pending="storage.public && !publicBase" :endpoint="storage.hostnames.length ? endpoint : null" @domains="tab = 'domains'" /></TabPanel>
           <TabPanel value="domains"><AppDomainsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="deployments"><AppDeploymentsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>

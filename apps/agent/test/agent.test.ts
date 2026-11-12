@@ -51,6 +51,22 @@ describe("agent", () => {
     await expect(client.call("domains.set", { app: "shop", domains: [{ hostname: "x.example.com", service: "nope", tls: "off" }] })).rejects.toMatchObject({ code: expect.any(String) });
   });
 
+  it("keeps the storages and peers it is told about, so an app's references to them resolve when it deploys", async () => {
+    const { client, tarball, unitFiles, unitText } = await setup();
+    await client.call("connections.set", {
+      app: "shop",
+      server: "local",
+      peers: {},
+      storages: { general: { name: "general", hostname: "files.example.com", tls: "auto", publicHostname: "cdn.example.com", port: 20100, accessKey: "AKIAEXAMPLE1", secretKey: "s3cr3t-s3cr3t-s3cr3t" } },
+    });
+    const manifestText = "name: shop\nservices:\n  web:\n    command: node server.mjs\n    environment:\n      FILES: \"@storage:general.url\"\n      CDN: \"@storage:general.publicUrl\"\n      KEY: \"@storage:general.accessKey\"\n";
+    await client.call("app.deploy", { artifact: await tarball(), manifestText });
+    const unit = unitFiles().map(unitText).join("\n");
+    expect(unit).toContain('Environment="FILES=https://files.example.com"');
+    expect(unit).toContain('Environment="CDN=https://cdn.example.com"');
+    expect(unit).not.toContain("AKIAEXAMPLE1"); // credentials go to the root-only file, never the unit
+  });
+
   it("deploys, reports info and history, controls and rolls back", async () => {
     const { client, tarball, deps } = await setup();
     // skipVerify is forced in dev mode, so nothing needs to be healthy here
