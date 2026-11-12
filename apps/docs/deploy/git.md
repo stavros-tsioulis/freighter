@@ -50,7 +50,7 @@ Set a **subdirectory** (`--subpath apps/web`). Freighter reads `app.yaml` from t
 
 When you deploy a branch for a new app, the dashboard fills a form with what its `app.yaml` says: services, environment, secret names, build commands and limits, release retention. Change what you like; the form is what the app starts with. A branch without an `app.yaml` works too: give the app a name and fill the form in.
 
-After the first deploy the repository's `app.yaml` is not read again, so a push that changes it still deploys the new commit, with a warning that the file wasn't applied. Change the app's configuration on its **Settings** tab (or with `freighter config set`); saving redeploys the current release with it, and later builds use its build commands.
+After the first deploy the repository's `app.yaml` is not read again, so a push that changes it still deploys the new commit, with a warning that the file wasn't applied. Change the app's configuration on its **Settings** tab (or with `freighter config set`); saving redeploys the current release with it, as it was built, and later builds use its build commands. When you change the build commands, the Settings tab offers to build again from Git right after saving (**Save and rebuild**); without that, the new commands run at the next Git deploy.
 
 ## Deploy on push
 
