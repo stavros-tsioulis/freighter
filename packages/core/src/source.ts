@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { parseManifest, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { stopIfCanceled } from "./operations.ts";
+import type { RegistryAuth } from "./image.ts";
 import { resolveBuildEnvironment } from "./buildenv.ts";
 import { buildLogPath, ensureBuildUser, runBuild } from "./build.ts";
 import type { Deps } from "./deps.ts";
@@ -39,6 +40,8 @@ export interface GitDeployOptions {
   signal?: AbortSignal;
   /** A new configuration for the app, saved first: this deploy builds and runs with it. */
   configText?: string;
+  /** Logins for the registries the app's images come from (a Git deploy pulls them too). */
+  registryAuth?: RegistryAuth[];
 }
 
 export type GitDeployResult =
@@ -157,7 +160,7 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
 
     await log("==> deploying");
     const meta: SourceMeta = { type: "git", sha, ref: `refs/heads/${branch}`, subject: commit.subject, author: commit.author };
-    const result = await deploy(d, { manifestText, legacy: stored !== null, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log, signal: o.signal });
+    const result = await deploy(d, { manifestText, legacy: stored !== null, source: src, meta, moveSource: true, skipVerify: o.skipVerify, log, signal: o.signal, registryAuth: o.registryAuth });
     await log(`==> deployed ${result.releaseId}`);
     return { skipped: false, commit, deploy: result, buildSeconds };
   } catch (e) {

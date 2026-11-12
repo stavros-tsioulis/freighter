@@ -67,6 +67,15 @@ describe("POST /v1/apps/:app/image-deployments", () => {
   });
 });
 
+describe("registry logins", () => {
+  it("are stored without the whitespace a pasted token tends to carry", async () => {
+    const t = await makeApi();
+    expect((await t.request("/v1/registries/ghcr.io", { method: "PUT", token: t.tokens.admin, json: { username: " me ", password: "ghp_abc123\n" } })).status).toBe(200);
+    expect(t.registry.registryCredentials.resolve("shop", "ghcr.io")).toMatchObject({ username: "me", password: "ghp_abc123" });
+    expect((await t.request("/v1/registries/ghcr.io", { method: "PUT", token: t.tokens.admin, json: { username: "me", password: "  \n" } })).status).toBe(400);
+  });
+});
+
 describe("POST /v1/apps/:app/redeploy", () => {
   it("deploys the app's current manifest again", async () => {
     const t = await makeApi();
@@ -189,5 +198,41 @@ describe("several logins for one registry", () => {
     expect((await del("?username=bob")).status).toBe(200);
     expect(t.registry.registryCredentials.list().map((c) => c.username)).toEqual(["alice"]);
     expect((await del()).status).toBe(200); // the only one left needs no name
+  });
+});
+
+describe("registry logins go with every deploy that may pull", () => {
+  const IMAGE_APP = "name: blog\nservices:\n  site:\n    command: node server.mjs\n  waline:\n    image: ghcr.io/me/waline:1\n";
+  async function seed() {
+    const t = await makeApi();
+    await t.request("/v1/registries/ghcr.io", { method: "PUT", token: t.tokens.admin, json: { username: "me", password: "ghp_secret" } });
+    t.registry.apps.upsert({ name: "blog", server: "local", manifestText: IMAGE_APP, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    return t;
+  }
+  const login = [{ host: "ghcr.io", username: "me", password: "ghp_secret" }];
+
+  it("a Git deploy of an app that also runs a private image", async () => {
+    const t = await seed();
+    await t.request("/v1/apps/blog/git", { method: "PUT", token: t.tokens.admin, json: { repository: "git@github.com:me/blog.git", branch: "main", provider: "github", autoDeploy: false }, headers: { host: "freighter.example.com", "x-forwarded-proto": "https" } });
+    expect((await t.request("/v1/apps/blog/git/deploy", { method: "POST", token: t.tokens.deployer })).status).toBe(202);
+    await t.api.jobs.idle();
+    expect((t.calls.find((c) => c.op === "git.deploy")!.args as { registryAuth?: unknown }).registryAuth).toEqual(login);
+  });
+
+  it("a configuration change, which has to pull when an image changes", async () => {
+    const t = await seed();
+    const settings = { services: { site: { command: "node server.mjs" }, waline: { image: "ghcr.io/me/waline:2" } } };
+    expect((await t.request("/v1/apps/blog/config", { method: "PUT", token: t.tokens.admin, json: { settings } })).status).toBe(202);
+    await t.api.jobs.idle();
+    expect((t.calls.find((c) => c.op === "app.config.set")!.args as { registryAuth?: unknown }).registryAuth).toEqual(login);
+  });
+
+  it("and not an app that runs no image, which has nothing to pull", async () => {
+    const t = await seed();
+    t.registry.apps.upsert({ name: "plain", server: "local", manifestText: "name: plain\nservices:\n  web:\n    command: node a.js\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const settings = { services: { web: { command: "node b.js" } } };
+    await t.request("/v1/apps/plain/config", { method: "PUT", token: t.tokens.admin, json: { settings } });
+    await t.api.jobs.idle();
+    expect((t.calls.find((c) => c.op === "app.config.set")!.args as { registryAuth?: unknown }).registryAuth).toBeUndefined();
   });
 });

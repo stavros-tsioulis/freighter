@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { IMAGE_RE, type ServiceForm } from "~/utils/settings";
+import { isImage, type ServiceForm } from "~/utils/settings";
 
 /** The fields of one service: what it runs, port, limits, health check, volumes, environment and secrets. */
 defineProps<{
@@ -17,7 +17,7 @@ defineProps<{
 const s = defineModel<ServiceForm>({ required: true });
 const restarts = ["on-failure", "always", "no"];
 const kinds = [{ label: "Command", value: "command" }, { label: "Container image", value: "image" }];
-const imageError = (ref: string) => (ref.trim() && !IMAGE_RE.test(ref.trim()) ? "Not a valid image reference, e.g. ghcr.io/acme/shop:1.4" : "");
+const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid image reference, e.g. ghcr.io/acme/shop:1.4" : "");
 </script>
 
 <template>

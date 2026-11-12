@@ -137,3 +137,16 @@ describe("app-level environment", () => {
     expect(s.build).toBeUndefined(); // no commands, so no build to give variables to
   });
 });
+
+describe("image references", () => {
+  it("take the docker:// form that skopeo and podman print, and send the plain reference", async () => {
+    const { isImage, normalizeImage, imageHost, toSettings, emptyForm, newService } = await import("../app/utils/settings");
+    expect(normalizeImage(" docker://ghcr.io/stavros-tsioulis/blog-waline:98a9350 ")).toBe("ghcr.io/stavros-tsioulis/blog-waline:98a9350");
+    expect(isImage("docker://ghcr.io/stavros-tsioulis/blog-waline:98a9350")).toBe(true);
+    expect(isImage("https://ghcr.io/org/app")).toBe(false);
+    expect(imageHost("docker://ghcr.io/org/app:1")).toBe("ghcr.io");
+    const f = emptyForm();
+    f.services = [{ ...newService("blog", "image"), image: "docker://ghcr.io/stavros-tsioulis/blog-waline:98a9350" }];
+    expect(toSettings(f).services.blog!.image).toBe("ghcr.io/stavros-tsioulis/blog-waline:98a9350");
+  });
+});

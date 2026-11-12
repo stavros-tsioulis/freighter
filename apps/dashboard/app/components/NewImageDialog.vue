@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { IDENT_RE } from "~/utils/validation";
-import { emptyForm, hasService, imageHost, IMAGE_RE, newService, toSettings, type SettingsForm } from "~/utils/settings";
+import { emptyForm, hasService, imageHost, isImage, newService, toSettings, type SettingsForm } from "~/utils/settings";
 
 const visible = defineModel<boolean>("visible", { required: true });
 const emit = defineEmits<{ back: [] }>();
@@ -29,7 +29,7 @@ const target = computed(() => servers.value?.find((s) => s.name === (pinned.valu
 
 const nameError = computed(() => (name.value && !IDENT_RE.test(name.value) ? "Lowercase letters, digits and single hyphens, starting with a letter." : ""));
 const images = computed(() => form.value.services.filter((s) => s.kind === "image" && s.image.trim()).map((s) => s.image.trim()));
-const imagesValid = computed(() => form.value.services.every((s) => !s.image.trim() || IMAGE_RE.test(s.image.trim())));
+const imagesValid = computed(() => form.value.services.every((s) => !s.image.trim() || isImage(s.image)));
 const hosts = computed(() => [...new Set(images.value.map(imageHost))]);
 /** Per registry the images come from: the logins saved for it, and (when there are several) the one picked for this app. */
 const loginsOf = (host: string) => (registries.value ?? []).filter((r) => r.host === host).map((r) => r.username);

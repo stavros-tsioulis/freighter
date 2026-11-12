@@ -2,7 +2,7 @@
 import type { AppRow } from "~/types";
 import { emptyForm, fromSettings, newService, toSettings, type ServiceForm } from "~/utils/settings";
 import { IDENT_RE } from "~/utils/validation";
-import { IMAGE_RE } from "~/utils/settings";
+import { isImage } from "~/utils/settings";
 
 /** Adds a service to the app, or (with `service`) edits one. Either way the app's configuration is saved and the app redeployed. */
 const props = defineProps<{ app: AppRow; service?: string }>();
@@ -55,7 +55,7 @@ const volumes = computed(() => [...new Set([...(current.value?.remoteVolumes ?? 
 const s = computed(() => service.value);
 const taken = computed(() => !editing.value && (inMap(config.value?.pending?.services) || props.app.services.some((x) => x.name === s.value.name) || (current.value?.services.some((x) => x.name === s.value.name) ?? false)));
 const nameError = computed(() => (s.value.name && !IDENT_RE.test(s.value.name) ? "Lowercase letters, digits and single hyphens, starting with a letter." : taken.value ? "This app already has a service with that name." : ""));
-const imageBad = computed(() => s.value.kind === "image" && s.value.image.trim() !== "" && !IMAGE_RE.test(s.value.image.trim()));
+const imageBad = computed(() => s.value.kind === "image" && s.value.image.trim() !== "" && !isImage(s.value.image));
 const valid = computed(() => !!current.value && IDENT_RE.test(s.value.name) && !taken.value && !imageBad.value && (s.value.kind === "command" ? s.value.command.trim() !== "" : s.value.image.trim() !== ""));
 
 const disabledReason = computed(() => {

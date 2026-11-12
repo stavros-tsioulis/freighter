@@ -1058,7 +1058,8 @@ export function createApi(ctx: ApiContext): Api {
 
   router.put("/v1/registries/:host", route("admin", async (event, who) => {
     const host = registryHost.parse(getRouterParam(event, "host"));
-    const b = await body(event, z.object({ username: z.string().min(1).max(255), password: z.string().min(1).max(4096) }));
+    // A token pasted from a web page often carries a newline or a space at the end, which no registry accepts.
+    const b = await body(event, z.object({ username: z.string().trim().min(1).max(255), password: z.string().trim().min(1).max(4096) }));
     const row = ctx.registry.registryCredentials.set({ host, username: b.username, password: b.password, createdBy: who.id });
     audit(who, "registry.set", undefined, { host, username: b.username });
     return row;

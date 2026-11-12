@@ -80,7 +80,7 @@ export function toSettings(f: SettingsForm): AppSettings {
     services[s.name.trim()] = {
       ...(s.kind === "image"
         ? {
-            image: s.image.trim(),
+            image: normalizeImage(s.image),
             ...(s.containerPort ? { containerPort: s.containerPort } : {}),
           }
         : { command: s.command.trim() }),
@@ -164,8 +164,13 @@ export const imagesOnly = (f: SettingsForm) => f.services.filter((s) => s.name.t
 /** A pragmatic client-side check of an image reference; the API applies the real rules. */
 export const IMAGE_RE = /^[a-z0-9]+([._-][a-z0-9]+)*(:[0-9]+)?(\/[a-z0-9]+([._-][a-z0-9]+)*)*(:[A-Za-z0-9_][A-Za-z0-9._-]{0,127})?(@sha256:[a-f0-9]{64})?$/;
 
+/** `docker://ghcr.io/org/app:1.2`, as pasted from skopeo or podman, is the image `ghcr.io/org/app:1.2`. */
+export const normalizeImage = (ref: string) => ref.trim().replace(/^docker:\/\//i, "");
+export const isImage = (ref: string) => IMAGE_RE.test(normalizeImage(ref));
+
 /** The registry host an image comes from (Docker Hub when the reference names none). */
-export function imageHost(ref: string): string {
+export function imageHost(raw: string): string {
+  const ref = normalizeImage(raw);
   const first = ref.split("/")[0]!;
   return ref.includes("/") && (first.includes(".") || first.includes(":") || first === "localhost") ? first : "docker.io";
 }

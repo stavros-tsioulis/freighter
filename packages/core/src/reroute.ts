@@ -6,6 +6,7 @@ import { loadReleaseManifest, writeRoutes } from "./apply.ts";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
+import type { RegistryAuth } from "./image.ts";
 import { assertHostnamesFree, parseDomains, readDomains, writeDomains } from "./domains.ts";
 import { withLock } from "./lock.ts";
 import { readState, writeState } from "./state.ts";
@@ -37,7 +38,7 @@ const same = (a: Domain[], b: Domain[]) => JSON.stringify(a) === JSON.stringify(
  * A service that loses its last domain keeps running where it is, unreachable from outside, until the next deploy.
  * If the app isn't deployed yet, the domains are just saved for its first deploy.
  */
-export async function setDomains(d: Deps, app: string, input: DomainInput[], opts: { skipVerify?: boolean; log?: DeployLog } = {}): Promise<SetDomainsResult> {
+export async function setDomains(d: Deps, app: string, input: DomainInput[], opts: { skipVerify?: boolean; log?: DeployLog; registryAuth?: RegistryAuth[] } = {}): Promise<SetDomainsResult> {
   const log = opts.log ?? noLog;
   const domains = parseDomains(input);
   const current = await readDomains(d, app);
@@ -80,6 +81,7 @@ export async function setDomains(d: Deps, app: string, input: DomainInput[], opt
     domains,
     skipVerify: opts.skipVerify,
     log,
+    registryAuth: opts.registryAuth,
   });
   return { domains, deploy: result, mode: "deploy" };
 }

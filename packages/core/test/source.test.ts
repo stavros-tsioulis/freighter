@@ -223,3 +223,14 @@ describe("resolveBuildEnvironment", () => {
     expect((await resolveBuildEnvironment(deps, manifest({ A: "b" }))).environment).toEqual({ A: "b" });
   });
 });
+
+describe("gitDeploy of an app that also runs an image from a private registry", () => {
+  it("logs in to the registry for the pull, like any other deploy", async () => {
+    const yaml = "name: shop\nservices:\n  web:\n    command: node server.mjs\n  waline:\n    image: ghcr.io/me/waline:1\n";
+    const t = await setup({ "app.yaml": yaml, "server.mjs": "// v1\n" });
+    await t.run({ registryAuth: [{ host: "ghcr.io", username: "me", password: "ghp_secret" }] });
+    const pull = t.calls.find((c) => c.includes("pull"));
+    expect(pull).toBeTruthy();
+    expect(pull).toContain("--authfile");
+  });
+});

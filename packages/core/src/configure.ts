@@ -3,6 +3,7 @@ import { writeConfig, readConfig } from "./appconfig.ts";
 import type { Deps } from "./deps.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
 import { reconfigure } from "./reconfigure.ts";
+import type { RegistryAuth } from "./image.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { currentRelease, releaseDir } from "./releases.ts";
 import { currentSource } from "./source.ts";
@@ -16,7 +17,7 @@ export interface SetConfigResult {
  * Replace an app's configuration. It is saved first; a deployed app is then redeployed with its current release and the
  * new configuration (new instances, health check, rollback to the running release on failure).
  */
-export async function setConfig(d: Deps, app: string, manifestText: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal } = {}): Promise<SetConfigResult> {
+export async function setConfig(d: Deps, app: string, manifestText: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal; registryAuth?: RegistryAuth[] } = {}): Promise<SetConfigResult> {
   const log = opts.log ?? noLog;
   const manifest = parseManifest(manifestText);
   if (manifest.name !== app) throw new Error(`this configuration is for "${manifest.name}", not "${app}"`);
@@ -42,6 +43,7 @@ export async function setConfig(d: Deps, app: string, manifestText: string, opts
     config: "replace",
     log,
     signal: opts.signal,
+    registryAuth: opts.registryAuth,
   });
   return { deploy: result };
 }

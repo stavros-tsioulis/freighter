@@ -48,7 +48,7 @@ export const serviceSchema = z
     /** Run this command directly on the host. Exactly one of `command` and `image` is required. */
     command: z.string().min(1).optional(),
     /** Run this container image (with Podman) instead of a host command. */
-    image: z.string().max(255).regex(IMAGE_RE, "expected an image reference such as ghcr.io/org/app:1.2").optional(),
+    image: z.preprocess(normalizeImage, z.string().max(255).regex(IMAGE_RE, "expected an image reference such as ghcr.io/org/app:1.2")).optional(),
     /** The port the image listens on inside the container. Defaults to the port Freighter assigns (`$PORT`). */
     containerPort: z.number().int().positive().max(65535).optional(),
     /** Persistent volumes for an image: a name mapped to an absolute path inside the container. */
@@ -221,8 +221,17 @@ export function imageServices(manifest: Pick<Manifest, "services">): Record<stri
   return Object.fromEntries(Object.entries(manifest.services).flatMap(([name, s]) => (s.image !== undefined ? [[name, s.image]] : [])));
 }
 
+/**
+ * An image reference as people paste it from other tools: `docker://ghcr.io/org/app:1.2` (the transport prefix of skopeo
+ * and podman) is the same image as `ghcr.io/org/app:1.2`, which is how it is kept.
+ */
+export function normalizeImage(ref: unknown): unknown {
+  return typeof ref === "string" ? ref.trim().replace(/^docker:\/\//i, "") : ref;
+}
+
 /** The registry a reference lives on: its first path component when that looks like a host, else Docker Hub. */
-export function imageHost(ref: string): string {
+export function imageHost(raw: string): string {
+  const ref = normalizeImage(raw) as string;
   const first = ref.split("/")[0]!;
   const hasPath = ref.includes("/");
   return hasPath && (first.includes(".") || first.includes(":") || first === "localhost") ? first : "docker.io";

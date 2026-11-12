@@ -83,6 +83,8 @@ const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().mi
 const fsPath = z.string().min(1).max(4096);
 const fsPaths = z.array(fsPath).min(1).max(1000);
 const fsConflict = z.enum(["fail", "overwrite", "rename"]);
+/** Logins for the registries images come from: used for the pulls of this one call, and never stored by the agent. */
+const registryAuth = z.array(z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255), password: z.string().min(1).max(4096) })).max(16).optional();
 /** A storage's name; with it a path is `/bucket/key` inside that storage instead of a path on the server. */
 const storageRef = z.string().regex(/^[a-z][a-z0-9-]*$/).max(40);
 const storageEntry = z.object({ name: z.string(), type: z.enum(["dir", "file"]), size: z.number(), mtimeMs: z.number() });
@@ -170,7 +172,7 @@ export const ops = {
       manifestText: z.string().min(1).max(262_144),
       skipVerify: z.boolean().optional(),
       /** Logins for the registries the images come from; used for the pulls only and never stored by the agent. */
-      registryAuth: z.array(z.object({ host: z.string().min(1).max(255), username: z.string().min(1).max(255), password: z.string().min(1).max(4096) })).max(16).optional(),
+      registryAuth,
       /** Write what the deploy does to this deployment's log, so `build.log` can show it. */
       logId: z.string().optional(),
       /** Replace the app's domains with this deploy (kept only if the release goes live). Omitted: keep them. */
@@ -190,6 +192,7 @@ export const ops = {
     args: z.object({
       app,
       domains: z.array(domain).max(200),
+      registryAuth,
       /** Write what happens to this deployment's log, so `build.log` can show it. */
       logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
     }),
@@ -321,6 +324,7 @@ export const ops = {
       skipIfUnchanged: z.boolean().optional(),
       /** The app.yaml to use when the repository has none (rendered from the settings entered in the UI). */
       fallbackManifest: z.string().max(262_144).optional(),
+      registryAuth,
       /** A new configuration for the app: saved first, then built and deployed with. */
       configText: z.string().max(262_144).optional(),
     }),
@@ -333,7 +337,7 @@ export const ops = {
   /** The app's configuration (what app.yaml described when it started): the text, or null before its first deploy. Agents with "app.config" only. */
   "app.config.get": { args: z.object({ app }), result: z.object({ manifestText: z.string().nullable() }) },
   "app.config.set": {
-    args: z.object({ app, manifestText: z.string().min(1).max(262_144), logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
+    args: z.object({ app, manifestText: z.string().min(1).max(262_144), registryAuth, logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
     result: z.object({ deploy: deployResult.nullable() }),
   },
   // ---- the file explorer: every file on the server, as root. Admins only (the API enforces it). ----
@@ -444,7 +448,7 @@ export const ops = {
   },
   /** Redeploy the current release unchanged if something its connections resolve to has changed since it went live. Agents with the "reapply" capability only. */
   "app.reapply": {
-    args: z.object({ app, logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
+    args: z.object({ app, registryAuth, logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional() }),
     result: z.object({ changed: z.boolean(), deploy: deployResult.nullable() }),
   },
   /** The names of a service's secrets that have a value. */

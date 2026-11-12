@@ -99,6 +99,32 @@ export function createJobs(ctx: ApiContext): Jobs {
     chains.set(server, next);
   };
 
+  /**
+   * Logins for the registries the images of an app come from, to pass to whatever may pull them: any deploy of an app
+   * with image services pulls again, so this goes with Git deploys, configuration changes and the rest as well as with
+   * image deploys. Given the manifest, only the registries it names; without one (a Git deploy reads its own, later),
+   * every registry that has a login. A registry with several logins and none chosen for the app is an error when the
+   * images need it (`strict`), and is left out otherwise.
+   */
+  const registryAuthFor = (app: string, manifestText: string | null | undefined, strict: boolean) => {
+    const every = () => [...new Set(ctx.registry.registryCredentials.list().map((r) => r.host))];
+    let hosts: string[];
+    try {
+      hosts = manifestText ? [...new Set(Object.values(imageServices(parseManifest(manifestText, { legacy: true }))).map(imageHost))] : every();
+    } catch {
+      hosts = every(); // unreadable here: let the server decide what it needs
+    }
+    const auth = hosts.flatMap((host) => {
+      const c = ctx.registry.registryCredentials.resolve(app, host);
+      if (c && "ambiguous" in c) {
+        if (strict) throw new Error(`${app} has no login chosen for ${host}, which has several (${c.ambiguous.join(", ")}). Choose one and deploy again.`);
+        return [];
+      }
+      return c ? [{ host, ...c }] : [];
+    });
+    return auth.length ? auth : undefined;
+  };
+
   /** app -> the configuration a queued or running configuration change is applying. */
   const pendingConfigs = new Map<string, string>();
 
@@ -130,7 +156,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
           await pushConnections(ctx, server, app);
-          const r = await agent.call("app.reapply", { app, logId: id }, { timeoutMs: 15 * 60_000 });
+          const r = await agent.call("app.reapply", { app, registryAuth: registryAuthFor(app, ctx.registry.apps.get(app)?.manifestText, false), logId: id }, { timeoutMs: 15 * 60_000 });
           if (!r.changed || !r.deploy) return void ctx.registry.deployments.remove(id); // nothing it reads has changed: no deployment to show
           ctx.registry.deployments.update(id, {
             status: "success",
@@ -212,13 +238,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           const caps = (await agent.call("ping", {})).capabilities ?? [];
           if (!caps.includes("images")) throw new Error("this server's agent is too old to run images; upgrade it from the Servers page");
           // Send only the logins for the registries these images live on.
-          const hosts = new Set(Object.values(imageServices(parseManifest(manifestText))).map(imageHost));
-          const registryAuth = [...hosts].flatMap((host) => {
-            const c = ctx.registry.registryCredentials.resolve(app, host);
-            if (c && "ambiguous" in c) throw new Error(`${app} has no login chosen for ${host}, which has several (${c.ambiguous.join(", ")}). Choose one and deploy again.`);
-            return c ? [{ host, ...c }] : [];
-          });
-          const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuth.length ? registryAuth : undefined, logId: id, replaceConfig }, { timeoutMs: 30 * 60_000 });
+          const r = await agent.call("app.deploy", { manifestText, registryAuth: registryAuthFor(app, manifestText, true), logId: id, replaceConfig }, { timeoutMs: 30 * 60_000 });
           ctx.registry.deployments.update(id, {
             status: "success",
             releaseId: r.releaseId,
@@ -266,7 +286,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         const agent = ctx.agents.forServer(server);
         try {
           await pushConnections(ctx, server, app);
-          const r = await agent.call("app.config.set", { app, manifestText, logId: id }, { timeoutMs: 30 * 60_000 });
+          const r = await agent.call("app.config.set", { app, manifestText, registryAuth: registryAuthFor(app, manifestText, true), logId: id }, { timeoutMs: 30 * 60_000 });
           ctx.registry.deployments.update(id, {
             status: "success",
             ...(r.deploy ? { releaseId: r.deploy.releaseId, previousRelease: r.deploy.previous, warnings: r.deploy.warnings, historyAt: r.deploy.historyAt } : {}),
@@ -306,7 +326,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         try {
           await pushConnections(ctx, server, app);
-          const r = await ctx.agents.forServer(server).call("domains.set", { app, domains, logId: id }, { timeoutMs: 5 * 60_000 });
+          const r = await ctx.agents.forServer(server).call("domains.set", { app, domains, registryAuth: registryAuthFor(app, ctx.registry.apps.get(app)?.manifestText, false), logId: id }, { timeoutMs: 5 * 60_000 });
           const note = r.deploy
             ? []
             : r.mode === "routing"
@@ -379,7 +399,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           }
           const r = await agent.call(
             "git.deploy",
-            { app: job.app, buildId: job.id, repository: job.repository, branch: job.branch, subpath: job.subpath || undefined, skipIfUnchanged: job.skipIfUnchanged, fallbackManifest: job.fallbackManifest, configText: job.configText, auth: sshKey ? { sshKey } : undefined },
+            { app: job.app, buildId: job.id, repository: job.repository, branch: job.branch, subpath: job.subpath || undefined, skipIfUnchanged: job.skipIfUnchanged, fallbackManifest: job.fallbackManifest, configText: job.configText, registryAuth: registryAuthFor(job.app, null, false), auth: sshKey ? { sshKey } : undefined },
             { timeoutMs: 60 * 60_000 },
           );
           const commit = { commitSha: r.commit.sha, commitSubject: r.commit.subject, commitAuthor: r.commit.author };

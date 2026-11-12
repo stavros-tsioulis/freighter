@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { domainsSchema, parseDuration, parseManifest, routedServices, routingProblems, routingWarnings } from "../src/index.ts";
+import { domainsSchema, imageHost, parseDuration, parseManifest, routedServices, routingProblems, routingWarnings } from "../src/index.ts";
 
 const example = readFileSync(new URL("../../../examples/app.yaml", import.meta.url), "utf8");
 
@@ -76,6 +76,20 @@ describe("the build environment", () => {
       expect(() => parseManifest(withBuild(bad)), bad).toThrow(/a build can only use/);
     }
     expect(() => parseManifest(withBuild("@nope.url"))).toThrow(/no service/);
+  });
+});
+
+describe("image references", () => {
+  const withImage = (image: string) => `name: a\nservices:\n  web:\n    image: "${image}"\n`;
+  it("accept the docker:// form other tools print, and keep the plain reference", () => {
+    expect(parseManifest(withImage("docker://ghcr.io/stavros-tsioulis/blog-waline:98a9350")).services.web!.image).toBe("ghcr.io/stavros-tsioulis/blog-waline:98a9350");
+    expect(parseManifest(withImage("ghcr.io/stavros-tsioulis/blog-waline:98a9350")).services.web!.image).toBe("ghcr.io/stavros-tsioulis/blog-waline:98a9350");
+    expect(parseManifest(withImage("DOCKER://nginx")).services.web!.image).toBe("nginx");
+    expect(imageHost("docker://ghcr.io/org/app:1")).toBe("ghcr.io");
+    expect(imageHost("docker://nginx")).toBe("docker.io");
+  });
+  it("still refuse what is not a reference", () => {
+    for (const bad of ["https://ghcr.io/org/app", "docker://", "ghcr.io/Org/App:1", "app with space", "oci://ghcr.io/org/app"]) expect(() => parseManifest(withImage(bad)), bad).toThrow();
   });
 });
 

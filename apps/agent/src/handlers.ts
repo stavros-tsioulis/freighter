@@ -279,10 +279,10 @@ export function createHandlers(d: Deps): Handlers {
     async "app.config.get"({ app }) {
       return { manifestText: await getConfig(d, app) };
     },
-    async "app.config.set"({ app, manifestText, logId }) {
+    async "app.config.set"({ app, manifestText, registryAuth, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
       const op = beginOperation(logId);
-      const r = await setConfig(d, app, manifestText, { skipVerify: d.dev, log, signal: op.signal }).catch(async (e: unknown) => {
+      const r = await setConfig(d, app, manifestText, { skipVerify: d.dev, log, signal: op.signal, registryAuth }).catch(async (e: unknown) => {
         const err = op.settle(e);
         await log?.(`==> ${err instanceof CanceledError ? "canceled" : `failed: ${err instanceof Error ? err.message : String(err)}`}`);
         throw err;
@@ -304,10 +304,10 @@ export function createHandlers(d: Deps): Handlers {
       });
       return { variables: r.variables, deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
-    async "app.reapply"({ app, logId }) {
+    async "app.reapply"({ app, registryAuth, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
       const op = beginOperation(logId);
-      const r = await reapply(d, app, { skipVerify: d.dev, log, signal: op.signal }).catch(async (e: unknown) => {
+      const r = await reapply(d, app, { skipVerify: d.dev, log, signal: op.signal, registryAuth }).catch(async (e: unknown) => {
         const err = op.settle(e);
         await log?.(`==> ${err instanceof CanceledError ? "canceled" : `failed: ${err instanceof Error ? err.message : String(err)}`}`);
         throw err;
@@ -334,9 +334,9 @@ export function createHandlers(d: Deps): Handlers {
     async "domains.get"({ app }) {
       return { domains: await readDomains(d, app) };
     },
-    async "domains.set"({ app, domains, logId }) {
+    async "domains.set"({ app, domains, registryAuth, logId }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      const r = await setDomains(d, app, domains, { skipVerify: d.dev, log }).catch(async (e: unknown) => {
+      const r = await setDomains(d, app, domains, { skipVerify: d.dev, log, registryAuth }).catch(async (e: unknown) => {
         await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
         throw e;
       });
@@ -360,9 +360,9 @@ export function createHandlers(d: Deps): Handlers {
     async "git.check"({ app, repository, branch, auth }) {
       return { sha: await checkRemote(d, app, repository, branch, auth) };
     },
-    async "git.deploy"({ app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, auth }) {
+    async "git.deploy"({ app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, registryAuth, auth }) {
       const op = beginOperation(buildId);
-      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, skipVerify: d.dev, auth, signal: op.signal }).catch((e: unknown) => {
+      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, registryAuth, skipVerify: d.dev, auth, signal: op.signal }).catch((e: unknown) => {
         throw op.settle(e);
       }).finally(op.end);
       return r.skipped

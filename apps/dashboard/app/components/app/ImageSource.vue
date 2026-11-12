@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AppRow } from "~/types";
-import { IMAGE_RE, imageHost } from "~/utils/settings";
+import { imageHost, isImage } from "~/utils/settings";
 
 const props = defineProps<{ app: AppRow }>();
 const { can } = useSession();
@@ -51,7 +51,7 @@ async function pullAgain() {
 
 const edit = ref<{ service: string; image: string } | null>(null);
 const editVisible = computed({ get: () => edit.value !== null, set: (v) => { if (!v) edit.value = null; } });
-const editError = computed(() => (edit.value && edit.value.image.trim() && !IMAGE_RE.test(edit.value.image.trim()) ? "Not a valid image reference, e.g. ghcr.io/acme/shop:1.4" : ""));
+const editError = computed(() => (edit.value && edit.value.image.trim() && !isImage(edit.value.image) ? "Not a valid image reference, e.g. ghcr.io/acme/shop:1.4" : ""));
 const editReady = computed(() => !!edit.value && edit.value.image.trim() !== "" && !editError.value && edit.value.image.trim() !== props.app.images?.[edit.value.service]);
 async function saveEdit() {
   if (!edit.value) return;

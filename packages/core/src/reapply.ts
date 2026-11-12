@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { reconfigure } from "./reconfigure.ts";
+import type { RegistryAuth } from "./image.ts";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { loadReleaseManifest, liveTargets, resolveAppEnvironment, withVariables, type ResolvedEnv } from "./apply.ts";
 import { readConnections } from "./connections.ts";
@@ -49,7 +50,7 @@ export interface ReapplyResult {
  * running services were given, the current release is redeployed unchanged (new instances, health check, rollback on
  * failure); if not, nothing happens. An app deployed before this was tracked just records its current state.
  */
-export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal } = {}): Promise<ReapplyResult> {
+export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal; registryAuth?: RegistryAuth[] } = {}): Promise<ReapplyResult> {
   const log = opts.log ?? noLog;
   const release = await currentRelease(d, app);
   if (!release) return { changed: false, deploy: null };
@@ -75,6 +76,7 @@ export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean
     skipVerify: opts.skipVerify,
     log,
     signal: opts.signal,
+    registryAuth: opts.registryAuth,
     legacy: true,
   });
   return { changed: true, deploy: result };
