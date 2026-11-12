@@ -200,6 +200,8 @@ export interface StorageRow {
   /** The port its endpoint listens on while it has no domain. */
   port: number;
   accessKey: string;
+  /** Everything in it can be read by anyone, from a second, read-only endpoint. */
+  public: boolean;
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;

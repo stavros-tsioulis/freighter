@@ -345,6 +345,11 @@ export interface StorageRow {
   status: AppRow["status"];
   activeState: string;
   hostnames: string[];
+  /** Everything in it can be read by anyone, from a second read-only endpoint. */
+  public: boolean;
+  /** Where that endpoint answers (set on the Domains tab, for the `public` service). */
+  publicHostnames: string[];
+  publicState: string | null;
   deployments: DeploymentRow[];
 }
 export interface StorageCreated {

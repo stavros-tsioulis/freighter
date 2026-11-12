@@ -46,6 +46,23 @@ async function copy(text: string, what: string) {
   }
 }
 
+// ---- public ----
+const publicBase = computed(() => (storage.value?.public && storage.value.publicHostnames[0] ? `https://${storage.value.publicHostnames[0]}` : null));
+const publicExample = computed(() => (storage.value?.publicHostnames[0] ? `https://${storage.value.publicHostnames[0]}/bucket/file` : ""));
+function askPublic(on: boolean) {
+  confirm.require({
+    header: on ? "Make everything in this storage public?" : "Make this storage private?",
+    message: on
+      ? "Anyone who has the address can read and list every file in every bucket, with no key. Nothing can be written through it. You then give the public endpoint a domain."
+      : "The public endpoint stops, and links to files without a signature stop working.",
+    icon: "pi pi-exclamation-triangle",
+    acceptLabel: on ? "Make public" : "Make private",
+    acceptProps: { severity: on ? "danger" : "primary" },
+    rejectProps: { severity: "secondary", text: true, label: "Cancel" },
+    accept: () => patch.mutate({ public: on }),
+  });
+}
+
 // ---- keys ----
 const keys = ref<{ accessKey: string; secretKey: string } | null>(null);
 const showKeys = ref(false);
@@ -166,12 +183,24 @@ async function remove() {
               </section>
             </div>
           </TabPanel>
-          <TabPanel v-if="can('admin')" value="files"><StorageBrowser v-model:path="filesPath" :name="storage.name" :endpoint="endpoint" /></TabPanel>
+          <TabPanel v-if="can('admin')" value="files"><StorageBrowser v-model:path="filesPath" :name="storage.name" :can-link="storage.hostnames.length > 0" :public-url="publicBase" /></TabPanel>
           <TabPanel value="domains"><AppDomainsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="deployments"><AppDeploymentsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="settings">
             <div class="flex flex-col gap-10 max-w-2xl">
+              <section class="flex flex-col gap-3" aria-labelledby="pub-h">
+                <h3 id="pub-h" class="font-display font-semibold text-[1.35rem] leading-tight">Public</h3>
+                <label class="flex items-start gap-3 text-sm">
+                  <ToggleSwitch :model-value="storage.public" input-id="st-public" :disabled="patch.isPending.value" @update:model-value="askPublic" />
+                  <span class="flex flex-col gap-1">
+                    <span class="font-medium">Anyone can read everything in this storage</span>
+                    <span class="text-muted-color">A second, read-only endpoint with no key, on its own domain. Your key pair keeps working on the private one, and nobody can write through the public one. The list of files is public too: use another storage for anything private.</span>
+                  </span>
+                </label>
+                <p v-if="storage.public && !storage.publicHostnames.length" class="text-sm">Give it an address: on the <b>Domains</b> tab, point a domain at the service <code>public</code>.</p>
+                <p v-else-if="storage.public" class="text-sm">Public at <code>{{ publicExample }}</code></p>
+              </section>
               <section v-if="storage.backend.kind !== 'local'" class="flex flex-col gap-3" aria-labelledby="conn-h">
                 <h3 id="conn-h" class="font-display font-semibold text-[1.35rem] leading-tight">Connection</h3>
                 <StorageBackendForm v-model:backend="draft" v-model:secrets="secrets" :server="storage.server" editing />

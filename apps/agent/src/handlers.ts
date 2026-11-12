@@ -314,9 +314,9 @@ export function createHandlers(d: Deps): Handlers {
       }).finally(op.end);
       return { changed: r.changed, deploy: r.deploy ? toDeployResult(r.deploy) : null };
     },
-    async "storage.apply"({ name, backend, accessKey, secretKey, secrets, logId }) {
+    async "storage.apply"({ name, backend, accessKey, secretKey, secrets, logId, public: isPublic }) {
       const log = logId ? await openDeployLog(d, logId) : undefined;
-      const r = await applyStorage(d, { name, backend, accessKey, secretKey }, { secrets, skipVerify: d.dev, log }).catch(async (e: unknown) => {
+      const r = await applyStorage(d, { name, backend, accessKey, secretKey, public: isPublic }, { secrets, skipVerify: d.dev, log }).catch(async (e: unknown) => {
         await log?.(`==> failed: ${e instanceof Error ? e.message : String(e)}`);
         throw e;
       });

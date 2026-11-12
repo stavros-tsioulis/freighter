@@ -42,11 +42,12 @@ An [S3 storage](/deploy/storage). Credentials are never returned, except the key
 | `GET /storages/:name` | one storage | viewer |
 | `POST /storages/test` | `{"backend": {…}, "secrets": {…}, "server": "…"}`: try a backend. For SFTP without `hostKey` it returns the server's `hostKey` to confirm | admin |
 | `POST /storages` | `{"name": "uploads", "server": "…", "backend": {"kind": "local"}}` (or `sftp` / `smb` with `secrets`). `202` with the deployment `id`, `accessKey` and `secretKey` | admin |
-| `PATCH /storages/:name` | `{"backend": {…}, "secrets": {…}}`; what is left out stays. Redeploys the endpoint | admin |
+| `PATCH /storages/:name` | `{"backend": {…}, "secrets": {…}, "public": true}`; what is left out stays. `public` turns the [public, read-only endpoint](/deploy/storage#public-storage) on or off (the storage shows `public` and `publicHostnames`). Redeploys the endpoint | admin |
 | `POST /storages/:name/apply` | deploy the endpoint again with what is stored | admin |
 | `GET /storages/:name/files` | `?path=` (default `/`). Buckets at the root, then the keys of a bucket or folder: `entries` (`name`, `type` `dir` or `file`, `size`, `mtimeMs`), `parent`, `truncated` | admin |
 | `POST /storages/:name/files/mkdir`, `…/rename`, `…/delete` | `{path}`; `{path, newName}`; `{paths}` (same result as the file explorer's delete). Paths are `/bucket/key` | admin |
 | `PUT /storages/:name/files/upload` | `?path=/bucket/key`, `&overwrite=1`; the body is the file, with a `Content-Length` | admin |
+| `POST /storages/:name/files/link` | `{path, expires?}` with `path` a file (`/bucket/key`) and `expires` in seconds (60 to 604800, default 3600). Returns `{url, expiresAt}`: a link signed in its query string (AWS Signature V4) that downloads the file without a key until it expires. `409` when the storage has no domain. The audit log records the path and duration, never the link | admin |
 | `GET /storages/:name/files/download` | `?path=/bucket/key`. The file | admin |
 | `POST /storages/:name/rotate-keys` | new secret key, returned once | admin |
 | `DELETE /storages/:name` | `{"confirm": "uploads"}`; refused while an app references it | admin |

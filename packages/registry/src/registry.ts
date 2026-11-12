@@ -47,6 +47,7 @@ const storageFrom = (r: Row): StorageRow => ({
   backend: JSON.parse(r.backend as string) as StorageBackend,
   port: r.port as number,
   accessKey: r.access_key as string,
+  public: Number(r.public ?? 0) === 1,
   createdBy: (r.created_by as string | null) ?? null,
   createdAt: r.created_at as string,
   updatedAt: r.updated_at as string,
@@ -281,7 +282,7 @@ export interface Registry {
     /** The key pair and the credentials of a remote backend, decrypted. */
     secrets(name: string): { secretKey: string; remote: StorageSecrets } | undefined;
     /** Change the backend and/or credentials (what is omitted stays). False if there is no such storage. */
-    update(name: string, patch: { backend?: StorageBackend; port?: number; accessKey?: string; secretKey?: string; remoteSecrets?: StorageSecrets }): boolean;
+    update(name: string, patch: { backend?: StorageBackend; port?: number; accessKey?: string; secretKey?: string; remoteSecrets?: StorageSecrets; public?: boolean }): boolean;
     remove(name: string): boolean;
   };
   /** Node positions on a project's canvas, keyed by node id. `scope` is a project id, or "none". */
@@ -604,12 +605,13 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
         const cur = one("SELECT * FROM storages WHERE name = ?", name);
         if (!cur) return false;
         run(
-          "UPDATE storages SET backend = ?, port = ?, access_key = ?, secret_key_enc = ?, remote_secrets_enc = ?, updated_at = ? WHERE name = ?",
+          "UPDATE storages SET backend = ?, port = ?, access_key = ?, secret_key_enc = ?, remote_secrets_enc = ?, public = ?, updated_at = ? WHERE name = ?",
           patch.backend ? JSON.stringify(patch.backend) : (cur.backend as string),
           patch.port ?? (cur.port as number),
           patch.accessKey ?? (cur.access_key as string),
           patch.secretKey ? box.seal(patch.secretKey) : (cur.secret_key_enc as string),
           patch.remoteSecrets ? (Object.keys(patch.remoteSecrets).length ? box.seal(JSON.stringify(patch.remoteSecrets)) : null) : ((cur.remote_secrets_enc as string | null) ?? null),
+          patch.public === undefined ? (Number(cur.public ?? 0) ? 1 : 0) : patch.public ? 1 : 0,
           now(),
           name,
         );

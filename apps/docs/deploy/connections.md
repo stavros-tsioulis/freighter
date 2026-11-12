@@ -44,7 +44,7 @@ If a domain, port, variable or key that an app connects to changes, Freighter re
 
 ## S3 storages
 
-`@storage:name.attribute` reaches an [S3 storage](/deploy/storage): `url`, `domain`, `internal`, `region`, `accessKey` and `secretKey`. Storages are global, so they work from any project. The key pair is delivered through a root-only file instead of the unit.
+`@storage:name.attribute` reaches an [S3 storage](/deploy/storage): `url`, `domain`, `internal`, `publicUrl` (the [public endpoint](/deploy/storage#public-storage)), `region`, `accessKey` and `secretKey`. Storages are global, so they work from any project. The key pair is delivered through a root-only file instead of the unit.
 
 ## On the canvas
 

@@ -114,8 +114,10 @@ export function buildGraph(ctx: ApiContext, projectId: string | null) {
     let broken: string | null = null;
     if (!st) broken = `there is no storage "${e.storage}"`;
     else {
-      const hostnames = ctx.registry.services.list(storageApp(st.name))[0]?.hostnames ?? [];
-      if (e.attr === "domain" && !hostnames.length) broken = `${st.name} has no domain yet`;
+      const services = ctx.registry.services.list(storageApp(st.name));
+      const hostnames = services.find((s) => s.name === "s3")?.hostnames ?? [];
+      if (e.attr === "publicUrl" && !services.find((s) => s.name === "public")?.hostnames.length) broken = `${st.name} has no public address`;
+      else if (e.attr === "domain" && !hostnames.length) broken = `${st.name} has no domain yet`;
       else if (e.attr === "internal" && st.server !== byName.get(e.from.app)?.server) broken = `${st.name} runs on another server; use .url`;
       else if (e.attr === "url" && !hostnames.length && st.server !== byName.get(e.from.app)?.server) broken = `${st.name} has no domain and runs on another server`;
     }
@@ -125,7 +127,7 @@ export function buildGraph(ctx: ApiContext, projectId: string | null) {
   const storages: GraphStorage[] = [...used].flatMap((name) => {
     const st = storageRows.get(name);
     if (!st) return [];
-    const svc = ctx.registry.services.list(storageApp(name))[0];
+    const svc = ctx.registry.services.list(storageApp(name)).find((s) => s.name === "s3");
     return [{ name, kind: st.backend.kind, server: st.server, hostnames: svc?.hostnames ?? [], activeState: svc?.activeState ?? "inactive" }];
   });
   return { project: projectId, apps, edges, storages, storageEdges: storageLinks, layout: ctx.registry.layouts.get(projectId ?? "none") };

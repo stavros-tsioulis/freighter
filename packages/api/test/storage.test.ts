@@ -245,3 +245,69 @@ describe("what a storage holds", () => {
     expect(t.registry.audit.list().some((a) => a.action === "storage.upload")).toBe(true);
   });
 });
+
+describe("links to a file in a storage", () => {
+  it("are signed for the storage's domain and last as long as asked, and need a domain", async () => {
+    const t = await makeApi();
+    const made = await create(t);
+    const link = (json: unknown, token = t.tokens.admin) => t.request("/v1/storages/up/files/link", { method: "POST", token, json });
+    expect((await link({ path: "/photos/a.jpg" }, t.tokens.deployer)).status).toBe(403);
+    // no domain yet: a link could not be opened from outside
+    t.handlers["domains.get"] = () => ({ domains: [] });
+    const none = await link({ path: "/photos/a.jpg" });
+    expect(none.status).toBe(409);
+    expect(none.json.error.message).toMatch(/domain/);
+
+    t.handlers["domains.get"] = () => ({ domains: [{ hostname: "files.example.com", service: "s3", tls: "auto" }] });
+    const ok = await link({ path: "/photos/a b.jpg", expires: 7200 });
+    expect(ok.status).toBe(200);
+    const url = new URL(ok.json.url);
+    expect(url.origin).toBe("https://files.example.com");
+    expect(url.pathname).toBe("/photos/a%20b.jpg");
+    expect(url.searchParams.get("X-Amz-Algorithm")).toBe("AWS4-HMAC-SHA256");
+    expect(url.searchParams.get("X-Amz-Expires")).toBe("7200");
+    expect(url.searchParams.get("X-Amz-Credential")).toMatch(new RegExp(`^${made.json.accessKey}/\\d{8}/us-east-1/s3/aws4_request$`));
+    expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
+    expect(JSON.stringify(ok.json)).not.toContain(made.json.secretKey);
+    expect(Date.parse(ok.json.expiresAt)).toBeGreaterThan(Date.now() + 7000_000);
+
+    expect((await link({ path: "/photos" })).status).toBe(400); // a bucket is not a file
+    expect((await link({ path: "/photos/a.jpg", expires: 30 })).status).toBe(400);
+    expect((await link({ path: "/photos/a.jpg", expires: 8 * 24 * 3600 })).status).toBe(400);
+    const audited = t.registry.audit.list().find((a) => a.action === "storage.link")!;
+    expect(JSON.stringify(audited.detail)).not.toContain("Signature");
+  });
+});
+
+describe("a public storage", () => {
+  it("is switched on and off by admins, deploys the read-only endpoint, and tells apps its public address", async () => {
+    const t = await makeApi();
+    await create(t);
+    expect(t.registry.storages.get("up")?.public).toBe(false);
+    expect((await t.request("/v1/storages/up", { token: t.tokens.viewer })).json).toMatchObject({ public: false, publicHostnames: [] });
+    const patch = (json: unknown, token = t.tokens.admin) => t.request("/v1/storages/up", { method: "PATCH", token, json });
+    expect((await patch({ public: true }, t.tokens.deployer)).status).toBe(403);
+
+    t.calls.length = 0;
+    const on = await patch({ public: true });
+    expect(on.status).toBe(202);
+    await t.api.jobs.idle();
+    expect(t.registry.storages.get("up")?.public).toBe(true);
+    expect(t.calls.find((c) => c.op === "storage.apply")!.args).toMatchObject({ name: "up", public: true });
+    expect(t.registry.audit.list().some((a) => a.action === "storage.make-public")).toBe(true);
+    expect((await t.request("/v1/storages/up", { token: t.tokens.viewer })).json.public).toBe(true);
+
+    // an app that reads @storage:up.publicUrl is told the address of the public endpoint
+    t.handlers["domains.get"] = () => ({ domains: [{ hostname: "cdn.example.com", service: "public", tls: "auto" }, { hostname: "files.example.com", service: "s3", tls: "auto" }] });
+    const { buildStorages } = await import("../src/connections.ts");
+    const facts = (await buildStorages(t.ctx)).up!;
+    expect(facts).toMatchObject({ hostname: "files.example.com", publicHostname: "cdn.example.com" });
+
+    t.calls.length = 0;
+    expect((await patch({ public: false })).status).toBe(202);
+    await t.api.jobs.idle();
+    expect(t.registry.storages.get("up")?.public).toBe(false);
+    expect(t.calls.find((c) => c.op === "storage.apply")!.args).not.toHaveProperty("public", true);
+    expect((await buildStorages(t.ctx)).up!.publicHostname).toBeUndefined(); // off: its address is not handed out
+  });
+});

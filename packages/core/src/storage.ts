@@ -7,7 +7,8 @@ import { ensureApp } from "./app.ts";
 import type { Deps } from "./deps.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
-import { setEnv } from "./env.ts";
+import { readDomains, writeDomains } from "./domains.ts";
+import { envFilePath, setEnv } from "./env.ts";
 import { allocatePort } from "./ports.ts";
 import { sharedDirOf } from "./releases.ts";
 
@@ -46,6 +47,8 @@ export interface StorageSpec {
   backend: StorageBackend;
   accessKey: string;
   secretKey: string;
+  /** Also serve everything in it read-only and without a key, from a second endpoint (the `public` service). */
+  public?: boolean;
 }
 
 const sshDir = (d: Deps, app: string) => `${sharedDirOf(d, app)}/ssh`;
@@ -101,6 +104,19 @@ export function storageManifest(d: Deps, spec: StorageSpec, port: number): strin
         environment: { HOME: shared, FR_TARGET: remote.target, ...remote.env },
         secrets: ["RCLONE_AUTH_KEY", ...(remote.passwordKey ? [remote.passwordKey] : [])],
       },
+      // No key is set, so rclone lets anyone in; read-only is what keeps them from changing anything. It takes the port
+      // and the domain Freighter gives any service, so the Domains tab can put an address on it.
+      ...(spec.public
+        ? {
+            public: {
+              command: `sh -c 'exec ${RCLONE} serve s3 "$FR_TARGET" --addr "127.0.0.1:$PORT" --cache-dir "${shared}/cache-public" --read-only'`,
+              restart: "always",
+              proxy: { timeout: "30m" },
+              environment: { HOME: shared, FR_TARGET: remote.target, ...remote.env },
+              secrets: remote.passwordKey ? [remote.passwordKey] : [],
+            },
+          }
+        : {}),
     },
   });
 }
@@ -172,22 +188,31 @@ export async function applyStorage(d: Deps, spec: StorageSpec, opts: ApplyStorag
 
   await ensureApp(d, app);
   const shared = sharedDirOf(d, app);
-  for (const sub of ["data", "cache"]) await mkdir(`${shared}/${sub}`, { recursive: true });
-  await d.run("chown", ["-R", `${app}:${app}`, `${shared}/data`, `${shared}/cache`]);
+  const dirs = ["data", "cache", ...(spec.public ? ["cache-public"] : [])];
+  for (const sub of dirs) await mkdir(`${shared}/${sub}`, { recursive: true });
+  await d.run("chown", ["-R", `${app}:${app}`, ...dirs.map((sub) => `${shared}/${sub}`)]);
   await writeSsh(d, app, spec.backend, secrets);
 
   await setEnv(d, app, "s3", "RCLONE_AUTH_KEY", `${spec.accessKey},${spec.secretKey}`);
   const remote = rcloneRemote(d, app, spec.backend);
   if (remote.passwordKey) {
     if (!secrets.password) throw new Error("a password is required");
-    await setEnv(d, app, "s3", remote.passwordKey, d.dev ? secrets.password : await obscure(d, secrets.password));
+    const value = d.dev ? secrets.password : await obscure(d, secrets.password);
+    await setEnv(d, app, "s3", remote.passwordKey, value);
+    if (spec.public) await setEnv(d, app, "public", remote.passwordKey, value);
+  }
+  if (!spec.public) await rm(envFilePath(d, app, "public"), { force: true }); // no longer public: nothing of it is kept
+  if (!spec.public) {
+    // and the address that pointed at it goes too, or the deploy would refuse a domain for a service that is gone
+    const domains = await readDomains(d, app);
+    if (domains.some((x) => x.service === "public")) await writeDomains(d, app, domains.filter((x) => x.service !== "public"));
   }
 
   await log(`==> deploying the S3 endpoint for storage ${spec.name} (${spec.backend.kind})`);
   const port = await portFor(d, app);
   const scratch = await mkdtemp(join(tmpdir(), "freighter-storage-"));
   try {
-    return { deploy: await deploy(d, { manifestText: storageManifest(d, spec, port), source: scratch, skipVerify: opts.skipVerify, log }), port };
+    return { deploy: await deploy(d, { manifestText: storageManifest(d, spec, port), source: scratch, skipVerify: opts.skipVerify, log, config: "replace" /* Freighter writes this app, not a person: a changed backend must take effect */ }), port };
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }

@@ -9,6 +9,7 @@ export const STORAGE_ATTRS: Record<string, string> = {
   url: "https://domain, or the local address",
   domain: "the storage's domain",
   internal: "http://127.0.0.1:port",
+  publicUrl: "https://domain of the public endpoint",
   region: "us-east-1",
   accessKey: "credential",
   secretKey: "credential",

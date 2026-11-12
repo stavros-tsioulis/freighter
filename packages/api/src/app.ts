@@ -36,6 +36,7 @@ import { resolveEnvironmentEach } from "@freighter/core/references";
 import type { ApiContext, Principal } from "./context.ts";
 import { ApiError, toHttpError } from "./errors.ts";
 import { createJobs, type Jobs } from "./jobs.ts";
+import { MAX_LINK_SECONDS, presignGet } from "./presign.ts";
 import { parseAddress } from "./agents.ts";
 import { createControlSettings } from "./control-settings.ts";
 import { parseHostConfig } from "@freighter/core/config";
@@ -888,13 +889,18 @@ export function createApi(ctx: ApiContext): Api {
   const storageView = (row: StorageRow) => {
     const app = storageApp(row.name);
     const a = ctx.registry.apps.get(app);
-    const svc = ctx.registry.services.list(app)[0];
+    const services = ctx.registry.services.list(app);
+    const svc = services.find((s) => s.name === "s3");
+    const open = services.find((s) => s.name === "public");
     return {
       ...row,
       app,
       status: a?.status ?? "unknown",
       activeState: svc?.activeState ?? "inactive",
       hostnames: svc?.hostnames ?? [],
+      /** The read-only endpoint of a public storage, and where it can be reached. */
+      publicHostnames: row.public ? (open?.hostnames ?? []) : [],
+      publicState: row.public ? (open?.activeState ?? "inactive") : null,
       deployments: ctx.registry.deployments.list({ app, limit: 5 }),
     };
   };
@@ -963,15 +969,15 @@ export function createApi(ctx: ApiContext): Api {
   // Change the backend or its credentials (what is left out stays), then redeploy the endpoint.
   router.patch("/v1/storages/:name", route("admin", async (event, who) => {
     const cur = needStorage(event);
-    const b = await body(event, z.object({ backend: storageBackendSchema.optional(), secrets: storageSecretsSchema.optional() }));
+    const b = await body(event, z.object({ backend: storageBackendSchema.optional(), secrets: storageSecretsSchema.optional(), public: z.boolean().optional() }));
     const backend = b.backend ?? cur.backend;
     // Credentials carry over while the kind of backend stays; a different kind starts from what is sent.
     const sameKind = !b.backend || b.backend.kind === cur.backend.kind;
     const merged = sameKind ? { ...ctx.registry.storages.secrets(cur.name)!.remote, ...b.secrets } : { ...b.secrets };
     checkBackend(backend, merged);
     await readyServer(cur.server);
-    ctx.registry.storages.update(cur.name, { backend, remoteSecrets: merged });
-    return { id: queueStorage(event, who, cur.name, cur.server, "update"), status: "queued" };
+    ctx.registry.storages.update(cur.name, { backend, remoteSecrets: merged, public: b.public });
+    return { id: queueStorage(event, who, cur.name, cur.server, b.public === undefined ? "update" : b.public ? "make-public" : "make-private"), status: "queued" };
   }));
 
   // Deploy the endpoint again with what is stored (after a failed create, or to pick up a newer rclone).
@@ -1634,6 +1640,20 @@ export function createApi(ctx: ApiContext): Api {
     await fsCall(() => agent.writeFile({ path: q.path, size, overwrite: q.overwrite === "1", storage: name }, source, { timeoutMs: 2 * 3_600_000 }));
     audit(who, "storage.upload", undefined, { storage: name, path: q.path, bytes: size, overwrite: q.overwrite === "1" });
     return { ok: true, path: q.path, size };
+  }));
+  // A link that downloads one object for a while without a key: the storage's buckets are private, so a bare address
+  // answers "UnsupportedAlgorithm". Needs a domain, since the link has to be reachable from where it is opened.
+  router.post("/v1/storages/:name/files/link", route("admin", async (event, who) => {
+    const row = needStorage(event);
+    const { path, expires } = await body(event, z.object({ path: keyPath, expires: z.number().int().min(60).max(MAX_LINK_SECONDS).default(3600) }));
+    if (path.split("/").filter(Boolean).length < 2) throw new ApiError(400, "bad_request", "a link is for a file in a bucket: /bucket/name");
+    const secrets = ctx.registry.storages.secrets(row.name);
+    if (!secrets) throw new ApiError(409, "conflict", "this storage has no keys yet");
+    const domain = await ctx.agents.forServer(row.server).call("domains.get", { app: storageApp(row.name) }).then((r) => r.domains.find((d) => d.service === "s3"), () => undefined);
+    if (!domain) throw new ApiError(409, "conflict", "give this storage a domain first: a link has to work from outside the server");
+    const url = presignGet({ endpoint: `${domain.tls === "auto" ? "https" : "http"}://${domain.hostname}`, path, accessKey: row.accessKey, secretKey: secrets.secretKey, expires });
+    audit(who, "storage.link", undefined, { storage: row.name, path, expires }); // never the link: it is the credential
+    return { url, expiresAt: new Date(Date.now() + expires * 1000).toISOString() };
   }));
   router.get("/v1/storages/:name/files/download", route("admin", async (event, who) => {
     const { name, agent } = storageFiles(event);

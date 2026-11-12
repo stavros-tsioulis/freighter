@@ -285,4 +285,8 @@ export const migrations: string[] = [
   );
   CREATE INDEX host_samples_server_at ON host_samples (server, at);
   `,
+  `
+  -- A public storage also serves everything in it, read-only and without a key, from a second endpoint.
+  ALTER TABLE storages ADD COLUMN public INTEGER NOT NULL DEFAULT 0;
+  `,
 ];

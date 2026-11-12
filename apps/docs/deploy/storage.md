@@ -40,6 +40,7 @@ services:
 | `url` | `https://<domain>`, or `http://127.0.0.1:<port>` while it has no domain (same server only) |
 | `domain` | the storage's domain |
 | `internal` | `http://127.0.0.1:<port>`, for apps on the same server |
+| `publicUrl` | `https://<domain>` of the [public endpoint](#public-storage); fails the deploy until the storage is public and that endpoint has a domain |
 | `region` | `us-east-1` |
 | `accessKey`, `secretKey` | the key pair |
 
@@ -47,13 +48,24 @@ Storages are global: any app can use any storage, whatever project it is in. The
 
 On the project canvas a storage appears as a dashed node, with an arrow from each service that uses it.
 
+## Public storage
+
+Buckets are private: a request without a signature gets `UnsupportedAlgorithm`. On the storage's **Settings** tab, **Public** makes everything in it readable by anyone.
+
+- A second service, `public`, runs the same S3 server **without a key and read-only**. Give it a domain on the **Domains** tab (point a domain at the service `public`), for example `cdn.example.com`. Then `https://cdn.example.com/<bucket>/<file>` opens with no signature, and a client can list a bucket with no key.
+- Nothing can be written through it. The private endpoint, with your key pair, is unchanged and still the only way to write; signed links keep working.
+- Switching Public off removes the service and the domain that pointed at it.
+- It is the whole storage or nothing, and the file **list** is public too. Keep anything private in another storage.
+- Traffic goes from the storage's server through HAProxy, like the private endpoint. The Files tab shows **Public URL** for a file when there is an address.
+- Apps can read the address as `@storage:uploads.publicUrl`.
+
 ## Browse and upload
 
 The storage's **Files** tab (admins) is a browser for what it holds. The top level lists the buckets; open one to see its keys, with folders as the S3 prefixes.
 
 - **Upload** files, a whole folder, or drag them in; three at a time, with progress and a cancel button. A file appears only once it has arrived in full, and a name that exists asks before it is replaced.
 - **Download** a file, **rename**, **delete** (folders and buckets go with everything in them, after a confirmation), **New bucket** and **New folder**.
-- **Copy S3 URI** (`s3://bucket/key`) for the selection; the context menu also copies a URL when the storage has a domain.
+- **Copy S3 URI** (`s3://bucket/key`) for the selection, and **Copy link** for a file: a signed link that downloads it for an hour, a day or seven days without a key, so you can hand it to someone or open it in a browser. It needs a domain on the storage. A bare address such as `https://files.example.com/bucket/key` does not work: the buckets are private and the server answers `UnsupportedAlgorithm` to a request without a signature.
 - Sort by name, size or date, filter the list, select several with Ctrl/⌘ or Shift, and use Delete, F2, Enter and Backspace.
 
 It reads and writes through the storage's own backend (the local folder, SFTP or SMB) as the storage's user, the same way the S3 endpoint does, so it needs no S3 key and works even while the endpoint is stopped. Changes are in the audit log with the paths, never the contents. Bucket names follow the S3 rules (3–63 characters of lowercase letters, digits, dots and hyphens).

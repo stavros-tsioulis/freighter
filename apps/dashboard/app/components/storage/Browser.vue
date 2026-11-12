@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { collectDropped, collectPicked, startDownload, storageDownloadUrl, storageFilesRoot, toUploads, useStorageActions, useStorageList, useUploader, type StorageEntry } from "~/composables/files";
+import { collectDropped, collectPicked, makeStorageLink, startDownload, storageDownloadUrl, storageFilesRoot, toUploads, useStorageActions, useStorageList, useUploader, type StorageEntry } from "~/composables/files";
 import { baseName, breadcrumbs, items, joinPath, parentOf } from "~/utils/files";
 import { formatBytes } from "~/utils/format";
 
 /** The buckets of a storage and the keys in them: browse, upload, download, rename, delete. */
-const props = defineProps<{ name: string; /** Where its S3 endpoint is, to show in the S3 URL of a key. */ endpoint?: string | null }>();
+const props = defineProps<{ name: string; /** Whether the storage has a domain, which a link to a file needs. */ canLink?: boolean; /** The address of the public endpoint when the storage is public: files can then be reached without a signature. */ publicUrl?: string | null }>();
 const path = defineModel<string>("path", { default: "/" });
 
 const confirm = useConfirm();
@@ -44,7 +44,32 @@ const single = computed(() => (chosen.value.length === 1 ? chosen.value[0]! : nu
 watch(path, () => { selection.value = []; filter.value = ""; });
 
 const s3Uri = (p: string) => `s3:/${p}`;
-const urlOf = (p: string) => (props.endpoint ? `${props.endpoint}${p}` : null);
+// ---- a link to a file ----
+const linking = ref<string | null>(null);
+const linkFor = ref(86400);
+const linkWorking = ref(false);
+const durations = [{ label: "1 hour", value: 3600 }, { label: "1 day", value: 86400 }, { label: "7 days", value: 7 * 86400 }];
+const showLink = computed({ get: () => linking.value !== null, set: (v) => { if (!v) linking.value = null; } });
+function askLink() {
+  const e = single.value;
+  if (!e || e.type !== "file") return;
+  linking.value = joinPath(path.value, e.name);
+}
+const plainUrl = (p: string) => (props.publicUrl ? `${props.publicUrl}${p.split("/").map(encodeURIComponent).join("/")}` : null);
+async function copyLink() {
+  if (!linking.value) return;
+  linkWorking.value = true;
+  try {
+    const r = await makeStorageLink(props.name, linking.value, linkFor.value);
+    await navigator.clipboard.writeText(r.url);
+    notify.ok("Link copied", `Works until ${new Date(r.expiresAt).toLocaleString()}`);
+    linking.value = null;
+  } catch (e) {
+    notify.fail("Could not make the link", e);
+  } finally {
+    linkWorking.value = false;
+  }
+}
 async function copy(text: string, what: string) {
   try {
     await navigator.clipboard.writeText(text);
@@ -156,12 +181,12 @@ const busyUploads = computed(() => uploader.jobs.value.filter((j) => j.state ===
 const menu = ref();
 const menuItems = computed(() => {
   const e = single.value;
-  const url = e && e.type === "file" ? urlOf(joinPath(path.value, e.name)) : null;
   return [
     ...(e ? [{ label: e.type === "dir" ? "Open" : "Download", icon: e.type === "dir" ? "pi pi-folder-open" : "pi pi-download", command: () => open(e) }] : []),
     { separator: true },
     { label: "Copy S3 URI", icon: "pi pi-link", command: () => void copy(chosenPaths.value.map(s3Uri).join("\n"), "S3 URI") },
-    ...(url ? [{ label: "Copy URL", icon: "pi pi-globe", command: () => void copy(url, "URL") }] : []),
+    ...(e?.type === "file" && props.publicUrl ? [{ label: "Copy public URL", icon: "pi pi-globe", command: () => void copy(plainUrl(joinPath(path.value, e.name))!, "URL") }] : []),
+    ...(e?.type === "file" ? [{ label: "Copy link…", icon: "pi pi-globe", disabled: !props.canLink, command: () => askLink() }] : []),
     { separator: true },
     { label: "Rename", icon: "pi pi-pencil", disabled: !e, command: () => askRename() },
     { label: "Delete", icon: "pi pi-trash", command: () => askDelete() },
@@ -214,6 +239,8 @@ const icon = (e: StorageEntry) => (e.type === "dir" ? (atRoot.value ? "pi pi-inb
       <Button v-if="!atRoot" label="Upload a folder" icon="pi pi-sitemap" size="small" severity="secondary" text @click="folderInput?.click()" />
       <span class="w-px h-5 bg-[var(--fr-line)] mx-1" aria-hidden="true" />
       <Button label="Download" icon="pi pi-download" size="small" severity="secondary" text :disabled="!single || single.type !== 'file'" @click="single && open(single)" />
+      <Button v-if="publicUrl" label="Public URL" icon="pi pi-link" size="small" severity="secondary" text :disabled="!single || single.type !== 'file'" title="The address anyone can open: this storage is public" @click="single && copy(plainUrl(chosenPaths[0]!)!, 'URL')" />
+      <Button label="Copy link" icon="pi pi-globe" size="small" severity="secondary" text :disabled="!single || single.type !== 'file' || !canLink" :title="canLink ? 'A link that downloads the file for a while, without a key' : 'Give the storage a domain to make links'" @click="askLink" />
       <Button label="Copy S3 URI" icon="pi pi-link" size="small" severity="secondary" text :disabled="!chosen.length" @click="copy(chosenPaths.map(s3Uri).join('\n'), 'S3 URI')" />
       <Button label="Rename" icon="pi pi-pencil" size="small" severity="secondary" text :disabled="!single" @click="askRename" />
       <Button label="Delete" icon="pi pi-trash" size="small" severity="danger" text :disabled="!chosen.length" :loading="actions.remove.isPending.value" @click="askDelete()" />
@@ -312,6 +339,21 @@ const icon = (e: StorageEntry) => (e.type === "dir" ? (atRoot.value ? "pi pi-inb
       <template #footer>
         <Button label="Cancel" severity="secondary" text @click="nameDialog = null" />
         <Button :label="nameDialog?.kind === 'rename' ? 'Rename' : 'Create'" :disabled="!nameInput.trim() || !!nameError" :loading="actions.rename.isPending.value || actions.mkdir.isPending.value" @click="submitName" />
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="showLink" modal header="Copy a link" :style="{ width: '26rem' }">
+      <div class="flex flex-col gap-3">
+        <p class="text-sm break-all"><code>{{ linking }}</code></p>
+        <p class="text-sm text-muted-color">The buckets are private. This link carries a signature, so anyone who has it can download this file until it expires, and not after.</p>
+        <div class="flex flex-col gap-1">
+          <span id="lk-for" class="text-sm font-medium">Works for</span>
+          <SelectButton v-model="linkFor" :options="durations" option-label="label" option-value="value" :allow-empty="false" size="small" aria-labelledby="lk-for" />
+        </div>
+      </div>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="linking = null" />
+        <Button label="Copy link" icon="pi pi-copy" :loading="linkWorking" @click="copyLink" />
       </template>
     </Dialog>
 

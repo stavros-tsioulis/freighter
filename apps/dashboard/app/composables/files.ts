@@ -81,6 +81,9 @@ export const useStorageList = (name: MaybeRef<string>, path: MaybeRef<string>, e
     retry: false,
     staleTime: 0,
   });
+/** A link that downloads one object without a key, for a while (the storage needs a domain). */
+export const makeStorageLink = (name: string, path: string, expires: number) =>
+  api<{ url: string; expiresAt: string }>(`${storageBase(name)}/link`, { method: "POST", body: { path, expires } });
 export const storageDownloadUrl = (name: string, path: string) => `/api/v1${storageBase(name)}/download?path=${encodeURIComponent(path)}`;
 export function useStorageActions(name: MaybeRef<string>) {
   const qc = useQueryClient();

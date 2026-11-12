@@ -8,7 +8,7 @@
 export const REFERENCE_ATTRS = ["domain", "url", "internal", "port"] as const;
 export type ReferenceAttr = (typeof REFERENCE_ATTRS)[number];
 
-export const STORAGE_ATTRS = ["url", "domain", "internal", "region", "accessKey", "secretKey"] as const;
+export const STORAGE_ATTRS = ["url", "domain", "internal", "publicUrl", "region", "accessKey", "secretKey"] as const;
 export type StorageAttr = (typeof STORAGE_ATTRS)[number];
 /** Storage attributes whose values are credentials: they never go into a (world-readable) unit file. */
 export const SECRET_STORAGE_ATTRS: readonly string[] = ["accessKey", "secretKey"];

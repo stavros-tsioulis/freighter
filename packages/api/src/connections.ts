@@ -11,11 +11,13 @@ export async function buildStorages(ctx: ApiContext): Promise<Record<string, Sto
   for (const row of ctx.registry.storages.list()) {
     const secrets = ctx.registry.storages.secrets(row.name);
     if (!secrets) continue;
-    const domain = await ctx.agents
+    const domains = await ctx.agents
       .forServer(row.server)
       .call("domains.get", { app: storageApp(row.name) })
-      .then((r) => r.domains.find((d) => d.service === "s3"), () => undefined);
-    out[row.name] = { name: row.name, server: row.server, hostname: domain?.hostname, tls: domain?.tls ?? "auto", port: row.port || undefined, accessKey: row.accessKey, secretKey: secrets.secretKey };
+      .then((r) => r.domains, () => []);
+    const domain = domains.find((d) => d.service === "s3");
+    const open = row.public ? domains.find((d) => d.service === "public") : undefined;
+    out[row.name] = { name: row.name, server: row.server, hostname: domain?.hostname, tls: domain?.tls ?? "auto", publicHostname: open?.hostname, publicTls: open?.tls, port: row.port || undefined, accessKey: row.accessKey, secretKey: secrets.secretKey };
   }
   return out;
 }

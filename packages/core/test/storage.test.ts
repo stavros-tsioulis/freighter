@@ -34,6 +34,41 @@ describe("storageManifest", () => {
   });
 });
 
+describe("a public storage", () => {
+  it("adds a read-only service with no key, that the Domains tab can put an address on", async () => {
+    const h = await makeDeps();
+    const m = parseManifest(storageManifest(h.deps, { ...spec({ kind: "local" }), public: true }, 20005));
+    expect(Object.keys(m.services)).toEqual(["s3", "public"]);
+    const open = m.services.public!;
+    expect(open.command).toContain("serve s3");
+    expect(open.command).toContain("--read-only");
+    expect(open.command).not.toContain("--auth-key");
+    expect(open.secrets).toEqual([]); // no RCLONE_AUTH_KEY: that is what makes it open
+    expect(open.port).toBeUndefined();
+    expect(m.services.s3!.secrets).toEqual(["RCLONE_AUTH_KEY"]);
+    expect(Object.keys(parseManifest(storageManifest(h.deps, spec({ kind: "local" }), 20005)).services)).toEqual(["s3"]);
+    const sftpOpen = parseManifest(storageManifest(h.deps, { ...spec(sftp), public: true }, 20005));
+    expect(sftpOpen.services.public!.secrets).toEqual(["RCLONE_CONFIG_REMOTE_PASS"]); // it still has to reach the backend
+  });
+  it("starts and stops with the switch, and keeps the private endpoint and its domain as they are", async () => {
+    const h = await makeDeps();
+    await applyStorage(h.deps, spec({ kind: "local" }));
+    await setDomains(h.deps, "storage-uploads", [{ hostname: "s3.example.com", service: "s3", tls: "auto" }]);
+    const on = (await applyStorage(h.deps, { ...spec({ kind: "local" }), public: true })).deploy;
+    expect(on.units.some((u) => u.includes("--public"))).toBe(true);
+    expect(on.units.some((u) => u.includes("--s3--"))).toBe(true);
+    expect(h.haproxyFile("hostnames.map")).toContain("s3.example.com be_storage-uploads_s3");
+    const publicUnit = on.units.find((u) => u.includes("--public"))!;
+    expect(h.unitText(publicUnit)).toContain("--read-only");
+    expect(h.unitText(publicUnit)).not.toContain("RCLONE_AUTH_KEY");
+    await setDomains(h.deps, "storage-uploads", [{ hostname: "s3.example.com", service: "s3", tls: "auto" }, { hostname: "cdn.example.com", service: "public", tls: "auto" }]);
+    expect(h.haproxyFile("hostnames.map")).toContain("cdn.example.com be_storage-uploads_public");
+    const off = (await applyStorage(h.deps, spec({ kind: "local" }), {})).deploy;
+    expect(off.units.some((u) => u.includes("public"))).toBe(false);
+    expect(h.unitFiles().some((u) => u.includes("public"))).toBe(false);
+  });
+});
+
 describe("applyStorage", () => {
   it("creates the app, its data directory and credentials, and deploys it", async () => {
     const h = await makeDeps();

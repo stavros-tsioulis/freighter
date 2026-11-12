@@ -92,6 +92,13 @@ describe("storage references", () => {
     expect(r.AK).toEqual({ value: "AK", secret: true });
     expect(r.VIA).toEqual({ value: "k=SK", secret: true });
   });
+  it("reads the public address of a public storage, and says what is missing", async () => {
+    const { resolveEnvironmentEach } = await import("../src/index.ts");
+    const app = facts({ name: "a", server: "s1", environment: { web: { CDN: "@storage:up.publicUrl" } } });
+    expect(resolveEnvironmentEach(app, "web", {}, { up: { ...st, publicHostname: "cdn.example.com" } }).CDN).toEqual({ value: "https://cdn.example.com", secret: false });
+    expect(resolveEnvironmentEach(app, "web", {}, { up: { ...st, publicHostname: "cdn.example.com", publicTls: "off" } }).CDN).toEqual({ value: "http://cdn.example.com", secret: false });
+    expect(resolveEnvironmentEach(app, "web", {}, { up: st }).CDN).toMatchObject({ error: expect.stringMatching(/no public address/) });
+  });
   it("falls back to the internal address without a domain, and says why when it can't", async () => {
     const { resolveEnvironmentEach } = await import("../src/index.ts");
     expect(resolveEnvironmentEach(me, "web", {}, { up: { ...st, hostname: undefined } }).URL).toEqual({ value: "http://127.0.0.1:20100", secret: false });

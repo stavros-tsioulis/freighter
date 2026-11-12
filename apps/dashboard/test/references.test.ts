@@ -48,7 +48,7 @@ describe("suggest", () => {
     expect(suggest("volume:media.", src)).toEqual([{ insert: "volume:media.path", label: "path", detail: expect.any(String), more: false }]);
   });
   it("knows the attributes of a storage", () => {
-    expect(labels("storage:uploads.")).toEqual(["url", "domain", "internal", "region", "accessKey", "secretKey"]);
+    expect(labels("storage:uploads.")).toEqual(["url", "domain", "internal", "publicUrl", "region", "accessKey", "secretKey"]);
     expect(labels("storage:uploads.sec")).toEqual(["secretKey"]);
   });
 });

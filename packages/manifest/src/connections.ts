@@ -23,6 +23,9 @@ export const storageFactsSchema = z.object({
   /** The storage's domain, if it has one. */
   hostname: z.string().optional(),
   tls: z.enum(["auto", "off"]).default("auto"),
+  /** The domain of its public, read-only endpoint, if the storage is public and that has one. */
+  publicHostname: z.string().optional(),
+  publicTls: z.enum(["auto", "off"]).optional(),
   /** The port it listens on, for `internal` (and for `url` while it has no domain). */
   port: z.number().int().positive().optional(),
   accessKey: z.string(),

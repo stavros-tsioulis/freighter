@@ -46,6 +46,9 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
           throw new ReferenceError(`${ref.text}: storage "${st.name}" has no domain and runs on server "${st.server}", not "${from.server}"; give it a domain`);
         }
         return plain(`http://127.0.0.1:${st.port}`);
+      case "publicUrl":
+        if (!st.publicHostname) throw new ReferenceError(`${ref.text}: storage "${st.name}" has no public address (turn on Public in its settings and give the public endpoint a domain)`);
+        return plain(`${(st.publicTls ?? "auto") === "auto" ? "https" : "http"}://${st.publicHostname}`);
       case "internal":
         if (st.port === undefined) throw new ReferenceError(`${ref.text}: storage "${st.name}" has no port yet`);
         if (st.server !== undefined && from.server !== undefined && st.server !== from.server) {

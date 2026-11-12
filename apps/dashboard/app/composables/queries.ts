@@ -896,7 +896,7 @@ function useStorageMutation<V, R>(fn: (v: V) => Promise<R>, failure: string, aft
 export const useCreateStorage = () =>
   useStorageMutation((v: { name: string; server?: string; backend: StorageBackend; secrets?: StorageSecrets }) => api<StorageCreated>("/storages", { method: "POST", body: v }), "Could not create the storage");
 export const usePatchStorage = (name: MaybeRef<string>) =>
-  useStorageMutation((v: { backend?: StorageBackend; secrets?: StorageSecrets }) => api(`/storages/${toValue(name)}`, { method: "PATCH", body: v }), "Could not change the storage");
+  useStorageMutation((v: { backend?: StorageBackend; secrets?: StorageSecrets; public?: boolean }) => api(`/storages/${toValue(name)}`, { method: "PATCH", body: v }), "Could not change the storage");
 export const useApplyStorage = (name: MaybeRef<string>) => useStorageMutation(() => api(`/storages/${toValue(name)}/apply`, { method: "POST" }), "Could not deploy the storage");
 export const useRotateStorageKeys = (name: MaybeRef<string>) =>
   useStorageMutation(() => api<{ id: string; accessKey: string; secretKey: string }>(`/storages/${toValue(name)}/rotate-keys`, { method: "POST" }), "Could not rotate the keys");

@@ -346,7 +346,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           const hasRemote = Object.keys(secrets.remote).length > 0;
           const r = await agent.call(
             "storage.apply",
-            { name, backend: row.backend, accessKey: row.accessKey, secretKey: secrets.secretKey, secrets: hasRemote ? secrets.remote : undefined, logId: id },
+            { name, backend: row.backend, accessKey: row.accessKey, secretKey: secrets.secretKey, secrets: hasRemote ? secrets.remote : undefined, public: row.public || undefined, logId: id },
             { timeoutMs: 10 * 60_000 },
           );
           ctx.registry.storages.update(name, { port: r.port });

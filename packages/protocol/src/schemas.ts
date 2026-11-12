@@ -426,6 +426,8 @@ export const ops = {
       accessKey: z.string().min(8).max(128).regex(/^[A-Za-z0-9]+$/),
       secretKey: z.string().min(16).max(256).regex(/^[A-Za-z0-9+/_-]+$/),
       secrets: storageSecretsSchema.optional(),
+      /** Also serve everything read-only and without a key, from a second endpoint (a `public` service). */
+      public: z.boolean().optional(),
       logId: z.string().regex(/^[0-9a-f-]{8,64}$/).optional(),
     }),
     /** `port`: where the endpoint listens while it has no domain (the agent picks it the first time and keeps it). */
