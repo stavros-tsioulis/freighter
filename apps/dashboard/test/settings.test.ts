@@ -150,3 +150,18 @@ describe("image references", () => {
     expect(toSettings(f).services.blog!.image).toBe("ghcr.io/stavros-tsioulis/blog-waline:98a9350");
   });
 });
+
+describe("volume choices", () => {
+  it("offer the remote folders and what other services use, not the service's own", async () => {
+    const { emptyForm, newService, newRemoteVolume, volumeChoices } = await import("../app/utils/settings");
+    const f = emptyForm();
+    f.remoteVolumes = [{ ...newRemoteVolume(), name: "media", type: "nfs" }];
+    f.services = [
+      { ...newService("web"), volumes: [{ name: "uploads", path: "/u" }] },
+      { ...newService("worker"), volumes: [{ name: "cache", path: "/c" }, { name: "media", path: "/m" }] },
+    ];
+    expect(volumeChoices(f, 0)).toEqual([{ name: "media", detail: "remote folder (NFS)" }, { name: "cache", detail: "also used by worker" }]);
+    expect(volumeChoices(f, "worker").map((c) => c.name)).toEqual(["media", "uploads"]);
+    expect(volumeChoices(f, 5).map((c) => c.name)).toEqual(["media", "uploads", "cache"]);
+  });
+});

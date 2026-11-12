@@ -9,6 +9,8 @@ defineProps<{
   /** Every service of the app (for `@service` completion) and every volume it can see. */
   ownServices: string[];
   ownVolumes: string[];
+  /** Volumes this service could pick by name (see `volumeChoices`). */
+  volumeChoices?: { name: string; detail: string }[];
   /** Every service runs an image: no choice of kind. */
   imagesOnly?: boolean;
   /** An existing service keeps its name. */
@@ -46,7 +48,7 @@ const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid 
       <Button label="Add volume" icon="pi pi-plus" size="small" severity="secondary" text @click="s.volumes.push({ name: '', path: '' })" />
     </div>
     <div v-for="(v, j) in s.volumes" :key="j" class="grid grid-cols-[10rem_1fr_auto] gap-2 items-center">
-      <InputText v-model="v.name" placeholder="uploads" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} name`" />
+      <SuggestInput v-model="v.name" :choices="(volumeChoices ?? []).map((c) => ({ value: c.name, detail: c.detail }))" placeholder="uploads" :aria-label="`Volume ${j + 1} name`" />
       <InputText v-model="v.path" :placeholder="s.kind === 'image' ? '/var/uploads' : '/data/uploads'" autocomplete="off" class="font-mono" :aria-label="`Volume ${j + 1} path ${s.kind === 'image' ? 'in the container' : 'the service sees'}`" />
       <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove volume" @click="s.volumes.splice(j, 1)" />
     </div>

@@ -26,7 +26,7 @@ Make the health endpoint check what your app needs to serve requests (its databa
 
 If any service fails, the deploy fails and the previous release is re-applied and verified. For routed services the new instance never received traffic, so users notice nothing. The failed deployment records which checks failed and the last lines of the service's journal. You can see them on the **Deployments** tab, in `freighter deploy`'s output, or in `GET /deployments/:id`.
 
-If the very first deploy of an app fails, its services are stopped, because there's no earlier release to return to.
+If the very first deploy of an app fails, its services are stopped, because there's no earlier release to return to. The app doesn't disappear: it stays in the list as *Not deployed*, with the services and settings you entered (on the Services tab, the canvas and the Settings tab), so you can fix what failed and deploy again.
 
 ## Roll back by hand
 

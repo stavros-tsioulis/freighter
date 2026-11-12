@@ -97,6 +97,23 @@ describe("a configuration change in progress", () => {
   });
 });
 
+describe("an app whose first deploy failed", () => {
+  it("is kept, with the services it describes, when the server is synced", async () => {
+    const t = await makeApi();
+    const text = "name: fresh\nservices:\n  web:\n    command: node a.js\n  worker:\n    command: node b.js\n";
+    t.handlers["apps.list"] = () => ({ apps: ["fresh"] });
+    t.handlers["app.info"] = () => ({ app: "fresh", release: null, previous: null, manifestText: text, releases: [], services: Object.fromEntries(["web", "worker"].map((n) => [n, { unit: `freighter-fresh--${n}.service`, activeState: "inactive", subState: "dead", mainPid: 0, memoryCurrent: null, restarts: 0, hostnames: [] }])) });
+    t.registry.apps.ensure("fresh", "local"); // queued by the deploy that then failed
+    const { syncAll } = await import("../src/sync.ts");
+    await syncAll(t.ctx);
+    const view = (await t.request("/v1/apps/fresh", { token: t.tokens.viewer })).json;
+    expect(view.status).toBe("undeployed"); // not "missing": the server knows it
+    expect(view.manifestText).toContain("worker");
+    expect(view.services.map((s: { name: string }) => s.name).sort()).toEqual(["web", "worker"]);
+    expect((await t.request("/v1/apps", { token: t.tokens.viewer })).json.apps.map((a: { name: string }) => a.name)).toContain("fresh");
+  });
+});
+
 describe("an app being created", () => {
   it("lists the services it will have while its first deploy is waiting and running, and stops when it ends", async () => {
     const t = await makeApi();

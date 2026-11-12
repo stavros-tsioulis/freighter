@@ -92,3 +92,16 @@ export function suggest(query: string, src: ReferenceSources, opts: { publicOnly
         ];
   return rank(attrs.map((a) => ({ ...a, label: a.attr })), typed).map((a) => ({ insert: `${target}.${a.attr}`, label: a.attr, detail: a.detail, more: false }));
 }
+
+export interface Choice {
+  value: string;
+  detail?: string;
+}
+
+/** The choices that fit what is typed: the ones that start with it first, then the ones that contain it. Everything when nothing is typed. */
+export function filterChoices(choices: Choice[], typed: string): Choice[] {
+  const q = typed.trim().toLowerCase();
+  if (!q) return choices;
+  const rank = (c: Choice) => (c.value.toLowerCase().startsWith(q) ? 0 : c.value.toLowerCase().includes(q) ? 1 : (c.detail ?? "").toLowerCase().includes(q) ? 2 : 3);
+  return choices.filter((c) => rank(c) < 3 && c.value !== typed).sort((a, b) => rank(a) - rank(b));
+}

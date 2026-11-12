@@ -1,6 +1,6 @@
 import { readFile, rm } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
-import { configPath, deploy, getConfig, rollback, setConfig, setEnv } from "../src/index.ts";
+import { appInfo, configPath, deploy, getConfig, listApps, rollback, setConfig, setEnv } from "../src/index.ts";
 import { artifact, makeDeps } from "./helpers.ts";
 
 const yaml = (extra = "", cmd = "node server.mjs") => `name: shop\nservices:\n  web:\n    command: ${cmd}\n    port: 3100\n${extra}`;
@@ -71,5 +71,20 @@ describe("app.yaml as an init file", () => {
     await rollback(h.deps, "shop", {});
     expect(await getConfig(h.deps, "shop")).toContain("A: one");
     expect(units(h)).toContain('Environment="A=one"');
+  });
+});
+
+describe("an app whose first deploy failed", () => {
+  it("is still an app: listed, with its configuration and the services it describes, none of them running", async () => {
+    const h = await makeDeps();
+    await expect(deploy(h.deps, { manifestText: yaml("    secrets: [TOKEN]\n"), source: await artifact() })).rejects.toThrow(/missing secrets/);
+    expect(await listApps(h.deps)).toEqual(["shop"]);
+    const info = await appInfo(h.deps, "shop");
+    expect(info.release).toBeNull();
+    expect(info.manifestText).toContain("TOKEN");
+    expect(Object.keys(info.services)).toEqual(["web"]);
+    expect(info.services.web).toMatchObject({ unit: "freighter-shop--web.service", activeState: "active" /* the fake systemctl reports everything active */, hostnames: [] });
+    // and one that was never configured is not
+    expect(await listApps((await makeDeps()).deps)).toEqual([]);
   });
 });

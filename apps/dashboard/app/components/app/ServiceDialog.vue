@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AppRow } from "~/types";
-import { emptyForm, fromSettings, newService, toSettings, type ServiceForm } from "~/utils/settings";
+import { emptyForm, fromSettings, newService, toSettings, volumeChoices, type ServiceForm } from "~/utils/settings";
 import { IDENT_RE } from "~/utils/validation";
 import { isImage } from "~/utils/settings";
 
@@ -53,6 +53,8 @@ const names = computed(() => [...(current.value?.services.map((s) => s.name.trim
 const volumes = computed(() => [...new Set([...(current.value?.remoteVolumes ?? []), ...(current.value?.services.flatMap((s) => s.volumes) ?? []), ...service.value.volumes].map((v) => v.name.trim()).filter(Boolean))]);
 
 const s = computed(() => service.value);
+/** What this service could attach: the remote folders and what the other services use. */
+const choices = computed(() => (current.value ? volumeChoices(current.value, editing.value ? (props.service ?? "") : "") : []));
 const taken = computed(() => !editing.value && (inMap(config.value?.pending?.services) || props.app.services.some((x) => x.name === s.value.name) || (current.value?.services.some((x) => x.name === s.value.name) ?? false)));
 const nameError = computed(() => (s.value.name && !IDENT_RE.test(s.value.name) ? "Lowercase letters, digits and single hyphens, starting with a letter." : taken.value ? "This app already has a service with that name." : ""));
 const imageBad = computed(() => s.value.kind === "image" && s.value.image.trim() !== "" && !isImage(s.value.image));
@@ -83,7 +85,7 @@ async function submit() {
     <form class="flex flex-col gap-3" autocomplete="off" @submit.prevent="valid && submit()">
       <Message v-if="configError" severity="error" size="small" :closable="false">Could not load the app's configuration: {{ configError.message }}</Message>
       <small v-if="nameError" class="text-red-500">{{ nameError }}</small>
-      <ServiceFields v-model="service" id="svc" :lock-name="editing" :app-name="app.name" :own-services="names" :own-volumes="volumes" />
+      <ServiceFields v-model="service" id="svc" :lock-name="editing" :app-name="app.name" :own-services="names" :own-volumes="volumes" :volume-choices="choices" />
       <button type="submit" class="hidden" />
     </form>
     <template #footer>

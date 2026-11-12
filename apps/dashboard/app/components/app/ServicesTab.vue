@@ -37,6 +37,8 @@ function last<T>(xs: T[] | undefined): T | undefined {
   return xs?.[xs.length - 1];
 }
 /** Services the configuration has but that aren't running (a deploy failed, or none has happened yet). */
+/** Nothing has been deployed yet: the services are what the configuration describes, and there is nothing to restart. */
+const undeployed = computed(() => props.app.status === "undeployed");
 const unplaced = computed(() => {
   const running = new Set(props.app.services.map((s) => s.name));
   // What a deployment in progress is making of the app counts too: its new services show up at once.
@@ -51,7 +53,7 @@ const unplaced = computed(() => {
 /** The description under a service that isn't running: from the configuration it will run with. */
 const planned = (name: string) => (config.value?.pending?.services ?? config.value?.settings?.services)?.[name];
 const rows = computed(() =>
-  [...props.app.services.map((s) => ({ ...s, placeholder: false })), ...unplaced.value].map((s) => {
+  [...props.app.services.map((s) => (undeployed.value ? { ...s, activeState: "inactive", subState: "not deployed", placeholder: true } : { ...s, placeholder: false })), ...unplaced.value].map((s) => {
     const pts = series.value?.[s.name] ?? [];
     const lastCpu = [...pts].reverse().find((p) => p.cpuPercent !== null)?.cpuPercent ?? null;
     return {

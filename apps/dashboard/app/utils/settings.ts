@@ -155,6 +155,20 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
   };
 }
 
+/**
+ * The volumes a service can pick by name: the app's remote folders, and the ones other services already use (the same
+ * name in two services is the same folder, which is how they share it). `except` is the service being edited.
+ */
+export function volumeChoices(f: Pick<SettingsForm, "services" | "remoteVolumes">, except: number | string): { name: string; detail: string }[] {
+  const out = new Map<string, string>();
+  for (const v of f.remoteVolumes) if (v.name.trim()) out.set(v.name.trim(), `remote folder (${v.type.toUpperCase()})`);
+  f.services.forEach((s, i) => {
+    if (i === except || s.name === except) return;
+    for (const v of s.volumes) if (v.name.trim() && !out.has(v.name.trim())) out.set(v.name.trim(), `also used by ${s.name.trim() || "another service"}`);
+  });
+  return [...out].map(([name, detail]) => ({ name, detail }));
+}
+
 /** True once there is something deployable (a service with a command, or with an image). */
 export const hasService = (f: SettingsForm) => f.services.some((s) => s.name.trim() && (s.kind === "image" ? s.image.trim() : s.command.trim()));
 

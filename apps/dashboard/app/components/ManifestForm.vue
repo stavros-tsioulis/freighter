@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { newRemoteVolume, newService, toSettings, type SettingsForm } from "~/utils/settings";
+import { newRemoteVolume, newService, toSettings, volumeChoices, type SettingsForm } from "~/utils/settings";
 import type { AppSettings } from "~/types";
 
 /**
@@ -50,6 +50,7 @@ const addService = () => form.value.services.push(newService(form.value.services
           :app-name="appName"
           :own-services="form.services.map((x) => x.name.trim())"
           :own-volumes="[...new Set([...form.remoteVolumes, ...form.services.flatMap((x) => x.volumes)].map((x) => x.name.trim()).filter(Boolean))]"
+          :volume-choices="volumeChoices(form, i)"
           :images-only="imagesOnly"
         />
       </Panel>

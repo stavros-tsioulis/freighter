@@ -63,3 +63,15 @@ describe("suggestions for a build", () => {
     expect(suggest("", src).map((s) => s.label)).toContain("storage:up");
   });
 });
+
+describe("filterChoices", () => {
+  it("lists everything when nothing is typed, then what starts with it, then what contains it", async () => {
+    const { filterChoices } = await import("../app/utils/references");
+    const c = [{ value: "uploads", detail: "x" }, { value: "media", detail: "remote folder" }, { value: "cache" }, { value: "user-media" }];
+    expect(filterChoices(c, "")).toEqual(c);
+    expect(filterChoices(c, "me").map((x) => x.value)).toEqual(["media", "user-media"]);
+    expect(filterChoices(c, "REMOTE").map((x) => x.value)).toEqual(["media"]); // the note counts too
+    expect(filterChoices(c, "media").map((x) => x.value)).toEqual(["user-media"]); // what is already there is not offered again
+    expect(filterChoices(c, "zzz")).toEqual([]);
+  });
+});

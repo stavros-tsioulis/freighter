@@ -411,15 +411,13 @@ const errorText = computed(() => (error.value as Error | null)?.message ?? "");
         <div class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
             <label for="fx-owner" class="text-sm font-medium">Owner</label>
-            <InputText id="fx-owner" v-model="ownerInput" list="fx-users" autocomplete="off" spellcheck="false" class="font-mono" />
+            <SuggestInput id="fx-owner" v-model="ownerInput" :choices="(identities?.users ?? []).map((u) => ({ value: u.name, detail: String(u.id) }))" />
           </div>
           <div class="flex flex-col gap-1">
             <label for="fx-group" class="text-sm font-medium">Group</label>
-            <InputText id="fx-group" v-model="groupInput" list="fx-groups" autocomplete="off" spellcheck="false" class="font-mono" />
+            <SuggestInput id="fx-group" v-model="groupInput" :choices="(identities?.groups ?? []).map((g) => ({ value: g.name, detail: String(g.id) }))" />
           </div>
         </div>
-        <datalist id="fx-users"><option v-for="u in identities?.users" :key="u.id" :value="u.name">{{ u.id }}</option></datalist>
-        <datalist id="fx-groups"><option v-for="g in identities?.groups" :key="g.id" :value="g.name">{{ g.id }}</option></datalist>
         <label v-if="hasFolder" class="flex items-center gap-2 text-sm"><Checkbox v-model="recursive" binary input-id="fx-rec" /><span>Apply to everything inside the folders</span></label>
         <button type="submit" class="hidden" />
       </form>

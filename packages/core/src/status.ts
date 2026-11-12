@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
+import { configPath, readConfig } from "./appconfig.ts";
 import { parseManifest, type Manifest } from "@freighter/manifest";
 import { unitName, type UnitStatus } from "@freighter/systemd";
 import type { Deps } from "./deps.ts";
@@ -67,13 +69,13 @@ export async function controlApp(
   return units;
 }
 
-/** Apps known to this host (directories under appsRoot that have a releases dir). */
+/** Apps known to this host: the ones with a release, and the ones that have a configuration but are not deployed yet (a first deploy that failed). */
 export async function listApps(d: Deps): Promise<string[]> {
   try {
     const entries = await readdir(d.layout.appsRoot, { withFileTypes: true });
     const apps: string[] = [];
     for (const e of entries.filter((e) => e.isDirectory() && !e.name.startsWith("."))) {
-      if ((await listReleaseIds(d, e.name)).length > 0) apps.push(e.name);
+      if ((await listReleaseIds(d, e.name)).length > 0 || existsSync(configPath(d, e.name))) apps.push(e.name);
     }
     return apps.sort();
   } catch (e) {
@@ -88,11 +90,24 @@ export interface AppInfo extends Omit<AppStatus, "services"> {
   releases: ReleaseInfo[];
 }
 
-/** Like appStatus, but tolerant of an app with no live release (e.g. its first deploy failed). */
+/**
+ * Like appStatus, but tolerant of an app with no live release (e.g. its first deploy failed): then the services are the
+ * ones its configuration describes, none of them running, and the configuration is what the app is.
+ */
 export async function appInfo(d: Deps, app: string): Promise<AppInfo> {
   const release = await currentRelease(d, app);
   const releases = await listReleases(d, app);
-  if (release === null) return { app, release: null, previous: null, manifestText: null, services: {}, releases };
+  if (release === null) {
+    const text = await readConfig(d, app);
+    if (!text) return { app, release: null, previous: null, manifestText: null, services: {}, releases };
+    const services: Record<string, ServiceStatus> = {};
+    const state = await readState(d, app);
+    for (const [service, def] of Object.entries(parseManifest(text, { legacy: true }).services)) {
+      const unit = unitName({ app, service });
+      services[service] = { ...(await d.systemd.status(unit)), unit, port: def.port ?? state.assigned?.[service], hostnames: [] };
+    }
+    return { app, release: null, previous: null, manifestText: text, services, releases };
+  }
   const status = await appStatus(d, app);
   const manifestText = await readFile(`${currentLink(d, app)}/app.yaml`, "utf8");
   return { ...status, manifestText, releases };

@@ -18,7 +18,7 @@ services:
 
 - **Command services** get the folder bound at that path and may write to it. The path can't be under a system directory (`/etc`, `/usr`, `/proc`, `/srv/apps` and the like).
 - **Images** get it as a container volume, as before.
-- Several services of an app can attach the same volume. Names are lowercase with single hyphens; `shared` is taken.
+- Several services of an app can attach the same volume. Names are lowercase with single hyphens; `shared` is taken. In the dashboard, the volume name field suggests the app's remote folders and the volumes other services already use, so sharing one is a pick from the list.
 - The folders are owned by the app's user and are removed with the app.
 
 ## Paths in environment values
