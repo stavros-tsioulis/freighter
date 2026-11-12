@@ -34,6 +34,7 @@ export * from "./appconfig.ts";
 export * from "./volumes.ts";
 export * from "./files.ts";
 export * from "./operations.ts";
+export * from "./buildenv.ts";
 export * from "./processes.ts";
 export * from "./storagefiles.ts";
 export * from "./zip.ts";

@@ -58,4 +58,4 @@ New values take effect when the service next starts: restart the service, or dep
 
 ## What builds see
 
-Only what you give them: `build.environment` in `app.yaml` (the **Build environment** list in the Settings tab). Builds from Git run without the app's run-time environment and without any secrets. If a build needs a token (a private package registry, for example), commit a config that reads it at runtime instead, or build in CI.
+Only what you give them: `build.environment` in `app.yaml` (the **Build environment** list in the Settings tab), where a value can be a service's public address such as `@api.url`. Builds from Git run without the app's run-time environment and without any secrets. If a build needs a token (a private package registry, for example), commit a config that reads it at runtime instead, or build in CI.

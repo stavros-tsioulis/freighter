@@ -2,7 +2,7 @@
 import { referenceAt, suggest, type Suggestion } from "~/utils/references";
 
 /** A text input for an environment value. Typing `@` lists what it can connect to, filtered by what follows. */
-const props = defineProps<{ app: string; ownServices?: string[]; ownVolumes?: string[]; id?: string; placeholder?: string; ariaLabel?: string }>();
+const props = defineProps<{ app: string; ownServices?: string[]; ownVolumes?: string[]; id?: string; placeholder?: string; ariaLabel?: string; /** Only the public addresses of services (`domain`, `url`): what a build can read. */ publicOnly?: boolean }>();
 const model = defineModel<string>({ required: true });
 
 const sources = useReferenceSources(computed(() => props.app), computed(() => props.ownServices), computed(() => props.ownVolumes));
@@ -22,7 +22,7 @@ function refresh() {
   if (!e) return;
   caret.value = e.selectionStart ?? model.value.length;
   const at = referenceAt(model.value, caret.value);
-  const found = at ? suggest(at.query, sources.value) : [];
+  const found = at ? suggest(at.query, sources.value, { publicOnly: props.publicOnly }) : [];
   if (!at || !found.length) {
     open.value = false;
     return;

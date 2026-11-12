@@ -119,6 +119,17 @@ const manifestBase = z.object({
 
 function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
   if (SHARED_VOLUME in m.volumes) ctx.addIssue({ code: "custom", path: ["volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
+  // The build sees plain values and public addresses: `@service.url` and `@service.domain`, filled in when the build starts.
+  for (const [key, value] of Object.entries(m.build?.environment ?? {})) {
+    for (const ref of findReferences(value)) {
+      const path = ["build", "environment", key];
+      if (ref.volume !== undefined || ref.storage !== undefined || !(ref.attr === "domain" || ref.attr === "url")) {
+        ctx.addIssue({ code: "custom", path, message: `${ref.text}: a build can only use the \`domain\` and \`url\` of a service (it runs before anything does, and gets no credentials)` });
+      } else if ((ref.app === undefined || ref.app === m.name) && !m.services[ref.service]) {
+        ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });
+      }
+    }
+  }
   // What a service runs with: the app's values, then its own.
   const effective = (svc: { environment: Record<string, string> }) => ({ ...m.environment, ...svc.environment });
   for (const [key, value] of Object.entries(m.environment)) {

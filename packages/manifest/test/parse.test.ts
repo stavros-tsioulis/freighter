@@ -65,6 +65,20 @@ describe("parseManifest validation", () => {
   });
 });
 
+describe("the build environment", () => {
+  const base = "name: a\nservices:\n  web:\n    command: x\n";
+  const withBuild = (value: string) => `${base}build:\n  commands: [make]\n  environment:\n    API: "${value}"\n`;
+  it("may use the public address of a service, and nothing a build has no business with", () => {
+    expect(() => parseManifest(withBuild("@web.url"))).not.toThrow();
+    expect(() => parseManifest(withBuild("https://@web.domain/v1"))).not.toThrow();
+    expect(() => parseManifest(withBuild("@other/api.url"))).not.toThrow(); // another app: checked when the build starts
+    for (const bad of ["@web.port", "@web.internal", "@web.TOKEN", "@storage:up.url", "@volume:shared.path"]) {
+      expect(() => parseManifest(withBuild(bad)), bad).toThrow(/a build can only use/);
+    }
+    expect(() => parseManifest(withBuild("@nope.url"))).toThrow(/no service/);
+  });
+});
+
 describe("phase 3 manifest fields", () => {
   const base = "name: a\nservices:\n  web:\n    command: x\n";
   it("defaults healthcheck.timeout and releases.keep", () => {

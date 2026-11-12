@@ -104,12 +104,12 @@ const addService = () => form.value.services.push(newService(form.value.services
       </div>
       <div v-if="form.buildCommands.trim()" class="flex flex-col gap-2">
         <div class="flex items-center justify-between">
-          <span class="text-sm font-medium">Build environment <span class="text-muted-color font-normal">(only the build sees these; no secrets)</span></span>
+          <span class="text-sm font-medium">Build environment <span class="text-muted-color font-normal">(only the build sees these; no secrets. <code>@service.url</code> works)</span></span>
           <Button label="Add variable" icon="pi pi-plus" size="small" severity="secondary" text @click="form.buildEnv.push({ key: '', value: '' })" />
         </div>
         <div v-for="(row, k) in form.buildEnv" :key="k" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
           <InputText v-model="row.key" placeholder="PUBLIC_API_URL" autocomplete="off" class="font-mono" :aria-label="`Build variable ${k + 1} name`" />
-          <InputText v-model="row.value" placeholder="api.example.com" autocomplete="off" class="font-mono" :aria-label="`Build variable ${k + 1} value`" />
+          <ReferenceInput v-model="row.value" :app="appName" :own-services="form.services.map((x) => x.name.trim())" public-only placeholder="@api.url" :aria-label="`Build variable ${k + 1} value`" />
           <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove build variable" @click="form.buildEnv.splice(k, 1)" />
         </div>
       </div>

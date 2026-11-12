@@ -61,15 +61,19 @@ const rank = <T extends { label: string }>(items: T[], q: string, extra: (i: T) 
 };
 
 /** The options for what is typed after an `@`, filtered by it: first the service or storage, then (after the dot) its attribute. */
-export function suggest(query: string, src: ReferenceSources): Suggestion[] {
+export function suggest(query: string, src: ReferenceSources, opts: { publicOnly?: boolean } = {}): Suggestion[] {
   const dot = query.indexOf(".");
   if (dot < 0) {
     const targets: (Suggestion & { name: string })[] = [
       ...src.services.map((s) => ({ insert: `${s}.`, label: s, name: s, detail: "service", more: true })),
       ...src.peers.flatMap((p) => p.services.map((s) => ({ insert: `${p.app}/${s}.`, label: `${p.app}/${s}`, name: s, detail: "service of another app", more: true }))),
-      ...src.storages.map((n) => ({ insert: `storage:${n}.`, label: `storage:${n}`, name: n, detail: "S3 storage", more: true })),
-      { insert: "volume:shared.", label: "volume:shared", name: "shared", detail: "the app's shared directory", more: true },
-      ...src.volumes.map((n) => ({ insert: `volume:${n}.`, label: `volume:${n}`, name: n, detail: "volume", more: true })),
+      ...(opts.publicOnly
+        ? []
+        : [
+            ...src.storages.map((n) => ({ insert: `storage:${n}.`, label: `storage:${n}`, name: n, detail: "S3 storage", more: true })),
+            { insert: "volume:shared.", label: "volume:shared", name: "shared", detail: "the app's shared directory", more: true },
+            ...src.volumes.map((n) => ({ insert: `volume:${n}.`, label: `volume:${n}`, name: n, detail: "volume", more: true })),
+          ]),
     ];
     return rank(targets, query, (t) => t.name);
   }
@@ -79,9 +83,11 @@ export function suggest(query: string, src: ReferenceSources): Suggestion[] {
     ? Object.entries(STORAGE_ATTRS).map(([attr, detail]) => ({ attr, detail }))
     : target.startsWith("volume:")
       ? Object.entries(VOLUME_ATTRS).map(([attr, detail]) => ({ attr, detail }))
-      : [
-        ...Object.entries(SERVICE_ATTRS).map(([attr, detail]) => ({ attr, detail })),
-        ...(src.env[target] ?? []).map((attr) => ({ attr, detail: "variable" })),
-      ];
+      : opts.publicOnly
+        ? Object.entries(SERVICE_ATTRS).filter(([attr]) => attr === "domain" || attr === "url").map(([attr, detail]) => ({ attr, detail }))
+        : [
+          ...Object.entries(SERVICE_ATTRS).map(([attr, detail]) => ({ attr, detail })),
+          ...(src.env[target] ?? []).map((attr) => ({ attr, detail: "variable" })),
+        ];
   return rank(attrs.map((a) => ({ ...a, label: a.attr })), typed).map((a) => ({ insert: `${target}.${a.attr}`, label: a.attr, detail: a.detail, more: false }));
 }

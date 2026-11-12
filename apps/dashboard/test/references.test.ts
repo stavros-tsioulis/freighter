@@ -52,3 +52,14 @@ describe("suggest", () => {
     expect(labels("storage:uploads.sec")).toEqual(["secretKey"]);
   });
 });
+
+describe("suggestions for a build", () => {
+  it("offers only the services and their public address", async () => {
+    const { suggest } = await import("../app/utils/references");
+    const src = { services: ["web"], env: { web: ["REGION"] }, peers: [{ app: "api", services: ["http"] }], storages: ["up"], volumes: ["media"] };
+    expect(suggest("", src, { publicOnly: true }).map((s) => s.label)).toEqual(["web", "api/http"]);
+    expect(suggest("web.", src, { publicOnly: true }).map((s) => s.label)).toEqual(["domain", "url"]);
+    expect(suggest("web.", src).map((s) => s.label)).toContain("REGION");
+    expect(suggest("", src).map((s) => s.label)).toContain("storage:up");
+  });
+});

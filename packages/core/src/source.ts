@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { parseManifest, validateBranch, validateRepoUrl, validateSubpath } from "@freighter/manifest";
 import { stopIfCanceled } from "./operations.ts";
+import { resolveBuildEnvironment } from "./buildenv.ts";
 import { buildLogPath, ensureBuildUser, runBuild } from "./build.ts";
 import type { Deps } from "./deps.ts";
 import { deploy, type DeployResult } from "./deploy.ts";
@@ -140,7 +141,9 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
     let buildSeconds = 0;
     if (manifest.build && manifest.build.commands.length > 0) {
       await log(`==> building (${manifest.build.commands.length} command${manifest.build.commands.length === 1 ? "" : "s"}, limit ${manifest.build.timeout})`);
-      const r = await runBuild(d, { app: o.app, buildId: o.buildId, dir: src, spec: manifest.build, signal: o.signal });
+      const buildEnv = await resolveBuildEnvironment(d, manifest);
+      for (const note of buildEnv.notes) await log(`    note: ${note}`);
+      const r = await runBuild(d, { app: o.app, buildId: o.buildId, dir: src, spec: { ...manifest.build, environment: buildEnv.environment }, signal: o.signal });
       stopIfCanceled(o.signal);
       buildSeconds = r.seconds;
       if (!r.ok) {

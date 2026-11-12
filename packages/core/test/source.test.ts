@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { BuildFailedError, setConfig, buildLogChunk, buildLogPath, currentRelease, gitDeploy, readHistory, sandboxArgs, type Deps } from "../src/index.ts";
 import { APP_YAML, makeRepo } from "./gitrepo.ts";
+import { writeConnections, writeDomains, resolveBuildEnvironment } from "../src/index.ts";
 import { makeDeps } from "./helpers.ts";
 
 let n = 0;
@@ -200,5 +201,25 @@ describe("production build sandbox", () => {
     const { deps } = await makeDeps();
     const args = sandboxArgs(deps, { app: "x", buildId: "abcdef12-0000-4000-8000-000000000000", dir: "/b/src", spec: { commands: ["true"], timeout: "5m", memory: "512M", cpu: 0.5, environment: {} } });
     expect(args).toEqual(expect.arrayContaining(["--property=MemoryMax=512M", "--property=CPUQuota=50%", "--property=RuntimeMaxSec=300", "--unit=freighter-build-abcdef12"]));
+  });
+});
+
+describe("resolveBuildEnvironment", () => {
+  const manifest = (env: Record<string, string>) => ({ name: "shop", services: { web: {} as never }, build: { commands: ["make"], timeout: "15m", memory: "2G", cpu: 2, environment: env } });
+  it("fills in the public addresses of this app's services and of its project's other apps, from the domains as they are now", async () => {
+    const { deps } = await makeDeps();
+    await writeDomains(deps, "shop", [{ hostname: "shop.example.com", service: "web", tls: "auto" }]);
+    await writeConnections(deps, "shop", { server: "s1", peers: { api: { name: "api", server: "s1", services: ["http"], domains: [{ hostname: "api.example.com", service: "http", tls: "off" }], ports: {}, environment: { http: {} } } } });
+    const r = await resolveBuildEnvironment(deps, manifest({ SITE: "@web.url", API: "@api/http.url", HOST: "@api/http.domain", PLAIN: "x" }));
+    expect(r.environment).toEqual({ SITE: "https://shop.example.com", API: "http://api.example.com", HOST: "api.example.com", PLAIN: "x" });
+    expect(r.notes).toEqual([]);
+  });
+  it("says so when a service has no domain yet (the value is empty), and refuses what a build may not read", async () => {
+    const { deps } = await makeDeps();
+    const r = await resolveBuildEnvironment(deps, manifest({ SITE: "@web.url" }));
+    expect(r.environment.SITE).toBe("");
+    expect(r.notes[0]).toMatch(/SITE is empty: @web\.url has no domain yet/);
+    await expect(resolveBuildEnvironment(deps, manifest({ X: "@ghost/api.url" }))).rejects.toThrow(/build environment: .*no app "ghost"/);
+    expect((await resolveBuildEnvironment(deps, manifest({ A: "b" }))).environment).toEqual({ A: "b" });
   });
 });

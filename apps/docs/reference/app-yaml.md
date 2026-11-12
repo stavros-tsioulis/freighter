@@ -17,7 +17,7 @@ build:
   memory: 2G
   cpu: 2
   environment:
-    PUBLIC_API_URL: https://api.example.com
+    PUBLIC_API_URL: "@api.url"
 
 environment:
   TZ: UTC
@@ -100,7 +100,7 @@ Used by Git deploys. The commands run in the checkout, one after another, inside
 | `timeout` | duration | `15m` | The build is killed after this. |
 | `memory` | `<n>K`, `<n>M` or `<n>G` | `2G` | Memory limit for the whole build. |
 | `cpu` | number | `2` | CPU limit in cores. |
-| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain values the build commands see, and only them: not the services, and not the app's run-time `environment`. No secrets and no references. `CI=1` and `NODE_ENV=development` are set for builds and can be changed here; where the build keeps its files (`HOME`, the package-manager caches) can't. |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain values the build commands see, and only them: not the services, and not the app's run-time `environment`. No secrets. A value may use the public address of a service, `@service.url` or `@service.domain` (also `@other-app/service.url` for an app in the same project), filled in from the domains as they are when the build starts: a framework that bakes the API address into the bundle can get it here. A service with no domain yet gives an empty value, and the build log says so. Ports, `.internal`, credentials and run-time values are refused. `CI=1` and `NODE_ENV=development` are set for builds and can be changed here; where the build keeps its files (`HOME`, the package-manager caches) can't. |
 
 ## What each service gets
 
