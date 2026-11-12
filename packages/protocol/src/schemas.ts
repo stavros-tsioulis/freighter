@@ -83,6 +83,9 @@ const repoArgs = { repository: z.string().min(1).max(300), branch: z.string().mi
 const fsPath = z.string().min(1).max(4096);
 const fsPaths = z.array(fsPath).min(1).max(1000);
 const fsConflict = z.enum(["fail", "overwrite", "rename"]);
+/** A storage's name; with it a path is `/bucket/key` inside that storage instead of a path on the server. */
+const storageRef = z.string().regex(/^[a-z][a-z0-9-]*$/).max(40);
+const storageEntry = z.object({ name: z.string(), type: z.enum(["dir", "file"]), size: z.number(), mtimeMs: z.number() });
 const fsBulk = z.object({ done: z.array(z.string()), failed: z.array(z.object({ path: z.string(), error: z.string() })) });
 const fsEntry = z.object({
   name: z.string(),
@@ -338,11 +341,26 @@ export const ops = {
   "fs.move": { args: z.object({ paths: fsPaths, to: fsPath, onConflict: fsConflict.default("fail") }), result: fsBulk },
   /** Unpack archives (by extension) into a folder named after each, in `to` or beside the archive. */
   "fs.extract": { args: z.object({ paths: fsPaths, to: fsPath.optional(), onConflict: fsConflict.default("rename") }), result: fsBulk },
+  /** The server's users and groups (names and numbers), for choosing an owner. */
+  "fs.identities": {
+    args: z.object({}),
+    result: z.object({ users: z.array(z.object({ name: z.string(), id: z.number() })), groups: z.array(z.object({ name: z.string(), id: z.number() })) }),
+  },
+  /** Change the owner and/or group of paths, by name or number; `recursive` goes through folders. */
+  "fs.chown": {
+    args: z.object({ paths: fsPaths, owner: z.string().min(1).max(64).optional(), group: z.string().min(1).max(64).optional(), recursive: z.boolean().default(false) }),
+    result: fsBulk,
+  },
   "fs.delete": { args: z.object({ paths: fsPaths }), result: fsBulk },
   /** Header line, then `size` raw bytes that become the file (written beside it and renamed in when complete). */
-  "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false) }), result: z.object({}) },
+  "fs.write": { args: z.object({ path: fsPath, size: z.number().int().nonnegative(), overwrite: z.boolean().default(false), storage: storageRef.optional() }), result: z.object({}) },
   /** The reply line is followed by `size` raw bytes of the file. */
-  "fs.read": { args: z.object({ path: fsPath }), result: z.object({ size: z.number(), mtimeMs: z.number() }) },
+  "fs.read": { args: z.object({ path: fsPath, storage: storageRef.optional() }), result: z.object({ size: z.number(), mtimeMs: z.number() }) },
+  // ---- what a storage holds (buckets and keys, through the storage's own backend). Upload and download are `fs.write` and `fs.read` with `storage`. ----
+  "storage.ls": { args: z.object({ name: storageRef, path: fsPath.default("/") }), result: z.object({ path: z.string(), parent: z.string().nullable(), entries: z.array(storageEntry), truncated: z.boolean() }) },
+  "storage.mkdir": { args: z.object({ name: storageRef, path: fsPath }), result: z.object({}) },
+  "storage.rename": { args: z.object({ name: storageRef, path: fsPath, newName: z.string().min(1).max(1024) }), result: z.object({ path: z.string() }) },
+  "storage.rm": { args: z.object({ name: storageRef, paths: fsPaths }), result: fsBulk },
   /** The reply line is followed by a ZIP of the paths, until the connection closes. */
   "fs.archive": { args: z.object({ paths: fsPaths }), result: z.object({}) },
   /** The remote volumes an app's configuration declares: what is mounted, and whether an SMB password is set. Agents with "volumes" only. */

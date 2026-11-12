@@ -13,6 +13,8 @@ export interface RoutedService {
 }
 export interface AppState {
   routed: Record<string, RoutedService>;
+  /** Ports given to services that set none and aren't routed; kept so they stay the same from one deploy to the next. */
+  assigned?: Record<string, number>;
 }
 
 const statePath = (d: Deps, app: string) => `${appDir(d, app)}/state.json`;

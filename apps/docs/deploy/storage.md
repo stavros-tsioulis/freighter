@@ -47,6 +47,19 @@ Storages are global: any app can use any storage, whatever project it is in. The
 
 On the project canvas a storage appears as a dashed node, with an arrow from each service that uses it.
 
+## Browse and upload
+
+The storage's **Files** tab (admins) is a browser for what it holds. The top level lists the buckets; open one to see its keys, with folders as the S3 prefixes.
+
+- **Upload** files, a whole folder, or drag them in; three at a time, with progress and a cancel button. A file appears only once it has arrived in full, and a name that exists asks before it is replaced.
+- **Download** a file, **rename**, **delete** (folders and buckets go with everything in them, after a confirmation), **New bucket** and **New folder**.
+- **Copy S3 URI** (`s3://bucket/key`) for the selection; the context menu also copies a URL when the storage has a domain.
+- Sort by name, size or date, filter the list, select several with Ctrl/⌘ or Shift, and use Delete, F2, Enter and Backspace.
+
+It reads and writes through the storage's own backend (the local folder, SFTP or SMB) as the storage's user, the same way the S3 endpoint does, so it needs no S3 key and works even while the endpoint is stopped. Changes are in the audit log with the paths, never the contents. Bucket names follow the S3 rules (3–63 characters of lowercase letters, digits, dots and hyphens).
+
+It is off when the server's file explorer is (`agent.files.enabled` in the server's [config.yaml](/reference/config-yaml)), and read-only when `agent.files.readOnly` is set.
+
 ## Large transfers
 
 The service sets [`proxy.timeout`](/reference/app-yaml#services) to 30 minutes, so HAProxy does not cut long uploads and downloads or slow remote backends. Any routed service can set it.

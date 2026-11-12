@@ -202,3 +202,46 @@ describe("dependants follow", () => {
     expect(reapplies(t)).toEqual(["web"]);
   });
 });
+
+describe("what a storage holds", () => {
+  it("is admin-only, passes the browsing to the agent of the storage's server, and audits changes (never contents)", async () => {
+    const t = await makeApi();
+    await create(t);
+    for (const [method, path] of [["GET", "/v1/storages/up/files"], ["POST", "/v1/storages/up/files/mkdir"], ["POST", "/v1/storages/up/files/rename"], ["POST", "/v1/storages/up/files/delete"], ["PUT", "/v1/storages/up/files/upload?path=/b/k"], ["GET", "/v1/storages/up/files/download?path=/b/k"]] as const) {
+      for (const role of ["viewer", "deployer"] as const) expect((await t.request(path, { method, token: t.tokens[role], json: method === "POST" ? {} : undefined })).status, `${method} ${path} as ${role}`).toBe(403);
+      expect((await t.request(path, { method })).status, `${method} ${path} anonymous`).toBe(401);
+    }
+    expect((await t.request("/v1/storages/nope/files", { token: t.tokens.admin })).status).toBe(404);
+
+    t.handlers["storage.ls"] = (a: { name: string; path: string }) => ({ path: a.path, parent: null, entries: [{ name: "photos", type: "dir", size: 0, mtimeMs: 1 }], truncated: false });
+    t.handlers["storage.mkdir"] = () => ({});
+    t.handlers["storage.rename"] = (a: { newName: string }) => ({ path: `/b/${a.newName}` });
+    t.handlers["storage.rm"] = (a: { paths: string[] }) => ({ done: a.paths, failed: [] });
+    const get = (q = "") => t.request(`/v1/storages/up/files${q}`, { token: t.tokens.admin });
+    expect((await get()).json.entries[0].name).toBe("photos");
+    expect(t.calls.find((c) => c.op === "storage.ls")!.args).toEqual({ name: "up", path: "/" });
+    expect((await get("?path=relative")).status).toBe(400);
+    const post = (op: string, json: unknown) => t.request(`/v1/storages/up/files/${op}`, { method: "POST", token: t.tokens.admin, json });
+    expect((await post("mkdir", { path: "/b/new" })).status).toBe(200);
+    expect((await post("rename", { path: "/b/a", newName: "c" })).json.path).toBe("/b/c");
+    expect((await post("delete", { paths: ["/b/c"] })).json.done).toEqual(["/b/c"]);
+    expect((await post("delete", { paths: [] })).status).toBe(400);
+    expect(t.registry.audit.list().map((a) => a.action).filter((a) => a.startsWith("storage.") && !["storage.create"].includes(a)).reverse()).toEqual(["storage.mkdir", "storage.rename", "storage.delete-files"]);
+  });
+
+  it("streams an upload to the agent with the storage's name, and a download back", async () => {
+    const t = await makeApi();
+    await create(t);
+    const up = await t.request("/v1/storages/up/files/upload?path=/photos/a.txt", { method: "PUT", token: t.tokens.admin, headers: { "content-length": "5" }, body: "hello" });
+    expect(up.status).toBe(200);
+    expect(t.calls.find((c) => c.op === "fs.write")!.args).toEqual({ path: "/photos/a.txt", size: 5, overwrite: false, storage: "up" });
+    expect(t.uploads[0]!.bytes.toString()).toBe("hello");
+    const dl = await t.request("/v1/storages/up/files/download?path=/photos/a.txt", { token: t.tokens.admin });
+    expect(dl.status).toBe(200);
+    expect(dl.headers.get("content-disposition")).toContain('filename="a.txt"');
+    expect(dl.json.raw).toBe("hello"); // what the fake agent streams
+    expect(t.calls.find((c) => c.op === "fs.read")!.args).toEqual({ path: "/photos/a.txt", storage: "up" });
+    expect(t.registry.audit.list().some((a) => a.action === "storage.download")).toBe(true);
+    expect(t.registry.audit.list().some((a) => a.action === "storage.upload")).toBe(true);
+  });
+});

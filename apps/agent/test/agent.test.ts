@@ -64,7 +64,7 @@ describe("agent", () => {
     const info = await client.call("app.info", { app: "shop" });
     expect(info.release).toBe(b.releaseId);
     expect(info.previous).toBe(a.releaseId);
-    expect(info.services.web).toMatchObject({ port: 20001, hostnames: ["shop.example.com"] });
+    expect(info.services.web).toMatchObject({ port: 20002, hostnames: ["shop.example.com"] });
     expect(info.manifestText).toContain("name: shop");
     expect(info.releases.map((r) => r.id)).toEqual([a.releaseId, b.releaseId]);
 

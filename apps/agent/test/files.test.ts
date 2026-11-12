@@ -49,6 +49,12 @@ describe("file explorer over the agent protocol", () => {
     const unpacked = await client.call("fs.extract", { paths: [`${dir}/docs.tar.gz`] });
     expect(unpacked.done).toEqual([`${dir}/docs copy`]); // `docs` is taken, so the default is to keep both
     expect(existsSync(`${dir}/docs copy/docs/a.txt`)).toBe(true);
+    expect((await client.call("fs.identities", {})).users.length).toBeGreaterThan(0);
+    const owned = await client.call("fs.chown", { paths: [`${dir}/docs`], owner: String(process.getuid!()), recursive: true });
+    expect(owned.done).toEqual([`${dir}/docs`]);
+    // The storage operations are wired through the same checks (no storage by this name here).
+    await expect(client.call("storage.ls", { name: "ghost", path: "/" })).rejects.toMatchObject({ code: "not_found" });
+    await expect(client.writeFile({ path: "/b/k", size: 1, overwrite: false, storage: "ghost" }, Readable.from([Buffer.from("x")]))).rejects.toMatchObject({ code: "not_found" });
     const gone = await client.call("fs.delete", { paths: [`${dir}/new`, `${dir}/missing`] });
     expect(gone.done).toEqual([`${dir}/new`]);
     expect(gone.failed).toHaveLength(1);

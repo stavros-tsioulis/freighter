@@ -7,7 +7,7 @@ import type { Duplex } from "node:stream";
 import type { Deps } from "@freighter/core";
 import { LineReader, ops, request, type Reply, type WireError } from "@freighter/protocol";
 import { classify, dispatch, explorer, type Handlers } from "./handlers.ts";
-import { createUpload, openForDownload, zipStream } from "@freighter/core";
+import { createStorageUpload, createUpload, openForDownload, openStorageDownload, zipStream } from "@freighter/core";
 
 const reply = (socket: Duplex, r: Reply) => {
   if (!socket.destroyed) socket.write(JSON.stringify(r) + "\n");
@@ -69,7 +69,7 @@ function handlePut(d: Deps, socket: Duplex, reader: LineReader, id: string, rawA
 function handleFsWrite(d: Deps, socket: Duplex, reader: LineReader, id: string, rawArgs: unknown) {
   const parsed = ops["fs.write"].args.safeParse(rawArgs);
   if (!parsed.success) return rejectAndClose(socket, id, { code: "bad_request", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
-  const { path, size, overwrite } = parsed.data;
+  const { path, size, overwrite, storage } = parsed.data;
   try {
     explorer(d, true);
   } catch (e) {
@@ -78,7 +78,7 @@ function handleFsWrite(d: Deps, socket: Duplex, reader: LineReader, id: string, 
   // The bytes are already on their way; readRaw has to be called before the next line is read, so the sink is set up
   // behind a Writable that waits for it.
   let sink: Awaited<ReturnType<typeof createUpload>> | undefined;
-  const ready = createUpload(path, overwrite).then((s) => (sink = s));
+  const ready = (storage ? createStorageUpload(d, storage, path, overwrite) : createUpload(path, overwrite)).then((s) => (sink = s));
   const dest = new Writable({
     write(chunk: Buffer, _enc, cb) {
       ready.then(() => (sink!.dest.write(chunk) ? cb() : void sink!.dest.once("drain", () => cb())), cb);
@@ -112,8 +112,8 @@ function handleFsStream(d: Deps, socket: Duplex, id: string, op: "fs.read" | "fs
     try {
       explorer(d);
       if (op === "fs.read") {
-        const { path } = ops["fs.read"].args.parse(rawArgs);
-        const file = await openForDownload(path);
+        const { path, storage } = ops["fs.read"].args.parse(rawArgs);
+        const file = storage ? await openStorageDownload(d, storage, path) : await openForDownload(path);
         socket.write(JSON.stringify({ id, ok: true, result: { size: file.size, mtimeMs: file.mtimeMs } } satisfies Reply) + "\n");
         file.stream.on("error", () => socket.destroy());
         file.stream.pipe(socket as never);

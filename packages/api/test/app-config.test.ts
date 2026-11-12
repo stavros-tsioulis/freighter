@@ -41,6 +41,28 @@ describe("PUT /v1/apps/:app/config", () => {
   });
 });
 
+describe("a configuration change in progress", () => {
+  it("is reported as pending until the deployment ends", async () => {
+    const t = await makeApi();
+    seed(t);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    t.handlers["app.config.set"] = async () => {
+      await gate;
+      return { deploy: null };
+    };
+    const settings = { services: { web: { command: "node server.js", port: 3000 }, extra: { command: "node extra.js" } } };
+    const r = await t.request("/v1/apps/shop/config", { method: "PUT", token: t.tokens.admin, json: { settings } });
+    expect(r.status).toBe(202);
+    const during = (await t.request("/v1/apps/shop/config", { token: t.tokens.viewer })).json;
+    expect(Object.keys(during.settings.services)).toEqual(["web"]);
+    expect(Object.keys(during.pending.services)).toEqual(["web", "extra"]);
+    release();
+    for (let i = 0; i < 100 && t.registry.deployments.get(r.json.id)?.status !== "success"; i++) await sleepMs(20);
+    expect((await t.request("/v1/apps/shop/config", { token: t.tokens.viewer })).json.pending).toBeNull();
+  });
+});
+
 describe("volumes", () => {
   it("lists what the agent reports, and takes an SMB password from admins only, never logging it", async () => {
     const t = await makeApi();

@@ -495,7 +495,7 @@ export function useSaveGitLink(app: MaybeRef<string>) {
 
 /** The app's configuration: what app.yaml described when the app started, and what is kept (and edited) from then on. */
 export const useAppSettings = (app: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
-  useQuery({ queryKey: ["config", app], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ text: string | null; settings: AppSettings | null }>(`/apps/${toValue(app)}/config`), retry: false });
+  useQuery({ queryKey: ["config", app], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ text: string | null; settings: AppSettings | null; /** What a deployment still in progress is about to apply. */ pending?: AppSettings | null }>(`/apps/${toValue(app)}/config`), retry: false, refetchInterval: (q) => (q.state.data?.pending ? 4000 : false) });
 
 /** What is mounted for each remote volume of the app, and whether an SMB volume has its password. */
 export const useVolumes = (app: MaybeRef<string>) =>

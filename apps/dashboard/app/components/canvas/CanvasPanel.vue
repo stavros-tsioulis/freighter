@@ -45,7 +45,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
         <p v-if="selection.service" class="text-sm text-muted-color truncate"><i class="pi pi-box text-[0.7rem] mr-1" aria-hidden="true" />{{ selection.app }}</p>
         <h2 class="font-display font-semibold text-[1.7rem] leading-tight truncate">{{ title }}</h2>
         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <StatusTag :state="svc ? svc.activeState : graphApp?.status" />
+          <StatusTag :state="svc ? svc.activeState : graphApp?.status" :sub="svc?.subState" />
           <span v-if="svc" class="text-sm text-muted-color">{{ svc.subState }}</span>
         </div>
       </div>
@@ -92,7 +92,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
                 <dt class="text-muted-color">Services</dt>
                 <dd class="flex flex-wrap gap-x-3 gap-y-1">
                   <button v-for="s in graphApp?.services" :key="s.name" type="button" class="link-btn" @click="emit('select', { app: selection.app, service: s.name })">
-                    <StatusTag :state="s.activeState" :label="s.name" class="!font-normal" />
+                    <StatusTag :state="s.activeState" :sub="s.subState" :label="s.name" class="!font-normal" />
                   </button>
                   <span v-if="!graphApp?.services.length" class="text-muted-color">None yet</span>
                 </dd>

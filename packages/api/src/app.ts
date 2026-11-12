@@ -325,9 +325,20 @@ export function createApi(ctx: ApiContext): Api {
     } catch {
       // an agent from before configuration was kept separately: the manifest of the current release is it
     }
-    if (!text) return { text: null, settings: null };
+    // What a deployment still in progress is about to make of it: its services are shown as on their way.
+    let pending = null;
+    const queued = jobs.pendingConfig(name);
+    if (queued) {
+      try {
+        const { name: _n, source: _s, ...p } = parseManifest(queued, { legacy: true });
+        pending = p;
+      } catch {
+        /* not parseable: nothing to show */
+      }
+    }
+    if (!text) return { text: null, settings: null, pending };
     const { name: _name, source: _source, ...settings } = parseManifest(text, { legacy: true });
-    return { text, settings };
+    return { text, settings, pending };
   }));
   router.put("/v1/apps/:app/config", route("admin", async (event, who) => {
     const name = userAppParam(event);
@@ -1481,6 +1492,18 @@ export function createApi(ctx: ApiContext): Api {
     audit(who, "file.extract", undefined, { server: name, paths: fsTouched(b.paths), ...(b.to ? { to: b.to } : {}), done: r.done.length, failed: r.failed.length });
     return r;
   }));
+  router.get("/v1/servers/:name/fs/identities", route("admin", async (event) => {
+    const { agent } = fsAgent(event);
+    return fsCall(() => agent.call("fs.identities", {}, { timeoutMs: 30_000 }));
+  }));
+  router.post("/v1/servers/:name/fs/chown", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ paths: fsPathsBody, owner: z.string().min(1).max(64).optional(), group: z.string().min(1).max(64).optional(), recursive: z.boolean().optional() }));
+    if (!b.owner && !b.group) throw new ApiError(400, "bad_request", "name an owner, a group, or both");
+    const r = await fsCall(() => agent.call("fs.chown", b, { timeoutMs: 3_600_000 }));
+    audit(who, "file.chown", undefined, { server: name, paths: fsTouched(b.paths), ...(b.owner ? { owner: b.owner } : {}), ...(b.group ? { group: b.group } : {}), recursive: !!b.recursive, done: r.done.length, failed: r.failed.length });
+    return r;
+  }));
   router.post("/v1/servers/:name/fs/delete", route("admin", async (event, who) => {
     const { name, agent } = fsAgent(event);
     const b = await body(event, z.object({ paths: fsPathsBody }));
@@ -1529,6 +1552,60 @@ export function createApi(ctx: ApiContext): Api {
     audit(who, "file.archive", undefined, { server: name, paths: fsTouched(t.paths) });
     const base = t.paths.length === 1 ? t.paths[0]!.split("/").pop() || "root" : "files";
     return download(event, stream, `${name}-${base}.zip`);
+  }));
+
+  // ---- what a storage holds: buckets and keys, browsed through the agent of the server it runs on ----
+  const storageFiles = (event: H3Event) => {
+    const row = needStorage(event);
+    const server = ctx.registry.servers.get(row.server);
+    if (!server || server.status === "pending") throw new ApiError(409, "server_not_enrolled", `server "${row.server}" is not available`);
+    return { name: row.name, agent: ctx.agents.forServer(row.server) };
+  };
+  const keyPath = z.string().min(1).max(4096).refine((p) => p.startsWith("/"), "the path starts with /");
+  router.get("/v1/storages/:name/files", route("admin", (event) => {
+    const { name, agent } = storageFiles(event);
+    const { path } = z.object({ path: keyPath.default("/") }).parse(getQuery(event));
+    return fsCall(() => agent.call("storage.ls", { name, path }, { timeoutMs: 60_000 }));
+  }));
+  router.post("/v1/storages/:name/files/mkdir", route("admin", async (event, who) => {
+    const { name, agent } = storageFiles(event);
+    const { path } = await body(event, z.object({ path: keyPath }));
+    await fsCall(() => agent.call("storage.mkdir", { name, path }, { timeoutMs: 60_000 }));
+    audit(who, "storage.mkdir", undefined, { storage: name, path });
+    return { ok: true };
+  }));
+  router.post("/v1/storages/:name/files/rename", route("admin", async (event, who) => {
+    const { name, agent } = storageFiles(event);
+    const b = await body(event, z.object({ path: keyPath, newName: z.string().min(1).max(1024) }));
+    const r = await fsCall(() => agent.call("storage.rename", { name, ...b }, { timeoutMs: 30 * 60_000 }));
+    audit(who, "storage.rename", undefined, { storage: name, path: b.path, to: r.path });
+    return r;
+  }));
+  router.post("/v1/storages/:name/files/delete", route("admin", async (event, who) => {
+    const { name, agent } = storageFiles(event);
+    const b = await body(event, z.object({ paths: fsPathsBody }));
+    const r = await fsCall(() => agent.call("storage.rm", { name, paths: b.paths }, { timeoutMs: 3_600_000 }));
+    audit(who, "storage.delete-files", undefined, { storage: name, paths: fsTouched(b.paths), done: r.done.length, failed: r.failed.length });
+    return r;
+  }));
+  router.put("/v1/storages/:name/files/upload", route("admin", async (event, who) => {
+    const { name, agent } = storageFiles(event);
+    const q = z.object({ path: keyPath, overwrite: z.enum(["0", "1"]).default("0") }).parse(getQuery(event));
+    const size = Number(getHeader(event, "content-length"));
+    if (!Number.isInteger(size) || size < 0) throw new ApiError(411, "length_required", "send the file with a Content-Length");
+    const web = getRequestWebStream(event);
+    const source = web ? Readable.fromWeb(web as never) : Readable.from([]);
+    if (size > 0 && !web) throw new ApiError(400, "bad_request", "the request has no body");
+    await fsCall(() => agent.writeFile({ path: q.path, size, overwrite: q.overwrite === "1", storage: name }, source, { timeoutMs: 2 * 3_600_000 }));
+    audit(who, "storage.upload", undefined, { storage: name, path: q.path, bytes: size, overwrite: q.overwrite === "1" });
+    return { ok: true, path: q.path, size };
+  }));
+  router.get("/v1/storages/:name/files/download", route("admin", async (event, who) => {
+    const { name, agent } = storageFiles(event);
+    const { path } = z.object({ path: keyPath }).parse(getQuery(event));
+    const { result, body: stream } = await fsCall(() => agent.openStream("fs.read", { path, storage: name }));
+    audit(who, "storage.download", undefined, { storage: name, path, bytes: result.size });
+    return download(event, stream, path.split("/").pop() || "download", result.size);
   }));
 
   router.post("/v1/servers/:name/updates/check", route("admin", async (event) => {

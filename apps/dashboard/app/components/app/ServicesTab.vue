@@ -39,12 +39,17 @@ function last<T>(xs: T[] | undefined): T | undefined {
 /** Services the configuration has but that aren't running (a deploy failed, or none has happened yet). */
 const unplaced = computed(() => {
   const running = new Set(props.app.services.map((s) => s.name));
-  return Object.entries(config.value?.settings?.services ?? {})
+  // What a deployment in progress is making of the app counts too: its new services show up at once.
+  const wanted = { ...(config.value?.settings?.services ?? {}), ...(config.value?.pending?.services ?? {}) };
+  const pending = new Set(Object.keys(config.value?.pending?.services ?? {}));
+  return Object.entries(wanted)
     .filter(([name]) => !running.has(name))
     .map(([name, v]): ServiceRow & { placeholder: true } => ({
-      app: props.app.name, name, unit: "", port: v.port ?? null, hostnames: [], activeState: "inactive", subState: "not deployed", restarts: 0, memoryBytes: null, observedAt: "", placeholder: true,
+      app: props.app.name, name, unit: "", port: v.port ?? null, hostnames: [], activeState: pending.has(name) ? "activating" : "inactive", subState: pending.has(name) ? "deploying" : "not deployed", restarts: 0, memoryBytes: null, observedAt: "", placeholder: true,
     }));
 });
+/** The description under a service that isn't running: from the configuration it will run with. */
+const planned = (name: string) => (config.value?.pending?.services ?? config.value?.settings?.services)?.[name];
 const rows = computed(() =>
   [...props.app.services.map((s) => ({ ...s, placeholder: false })), ...unplaced.value].map((s) => {
     const pts = series.value?.[s.name] ?? [];
@@ -90,13 +95,13 @@ const url = (host: string) => `https://${host}`;
         <template #body="{ data }">
           <div class="font-medium">{{ data.name }}</div>
           <div v-if="app.images?.[data.name]" class="text-xs text-muted-color font-mono truncate max-w-[14rem]" :title="app.images[data.name]"><i class="pi pi-box text-[0.65rem] mr-1" aria-hidden="true" />{{ app.images[data.name] }}</div>
-          <div v-else-if="data.placeholder" class="text-xs text-muted-color">{{ config?.settings?.services?.[data.name]?.image ?? config?.settings?.services?.[data.name]?.command }}</div>
+          <div v-else-if="data.placeholder" class="text-xs text-muted-color">{{ planned(data.name)?.image ?? planned(data.name)?.command }}</div>
           <div v-else class="text-xs text-muted-color font-mono">{{ data.unit.replace(/^freighter-/, "").replace(".service", "") }}</div>
         </template>
       </Column>
       <Column header="State">
         <template #body="{ data }">
-          <StatusTag :state="data.activeState" />
+          <StatusTag :state="data.activeState" :sub="data.subState" />
           <span class="text-xs text-muted-color ml-2">{{ data.subState }}</span>
         </template>
       </Column>
@@ -127,7 +132,7 @@ const url = (host: string) => `https://${host}`;
       <Column v-if="can('deployer')" header="" class="text-right">
         <template #body="{ data }">
           <div class="flex gap-1 justify-end">
-            <Button v-if="can('admin')" icon="pi pi-pencil" text rounded size="small" severity="secondary" aria-label="Edit" title="Edit" @click="editing = data.name" />
+            <Button v-if="can('admin') && data.subState !== 'deploying'" icon="pi pi-pencil" text rounded size="small" severity="secondary" aria-label="Edit" title="Edit" @click="editing = data.name" />
             <Button v-if="!data.placeholder" icon="pi pi-refresh" text rounded size="small" severity="secondary" aria-label="Restart" title="Restart" :loading="control.isPending.value" @click="act('restart', data.name)" />
             <Button v-if="!data.placeholder && data.activeState === 'active'" icon="pi pi-stop-circle" text rounded size="small" severity="danger" aria-label="Stop" title="Stop" @click="act('stop', data.name)" />
             <Button v-else-if="!data.placeholder" icon="pi pi-play" text rounded size="small" severity="success" aria-label="Start" title="Start" @click="act('start', data.name)" />

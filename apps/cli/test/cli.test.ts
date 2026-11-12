@@ -72,10 +72,14 @@ describe("freighter cli", () => {
     expect(deploy().stdout).toContain("route   hello.example.com");
     const dir = `${prefix}/etc/haproxy/freighter`;
     expect(readFileSync(`${dir}/hostnames.map`, "utf8")).toContain("hello.example.com be_hello_web");
-    expect(readFileSync(`${dir}/backends.cfg`, "utf8")).toContain("127.0.0.1:20000");
+    // Ports are picked at random in the range, so read them back.
+    const backend = () => /server app 127\.0\.0\.1:(\d+) /.exec(readFileSync(`${dir}/backends.cfg`, "utf8"))![1]!;
+    const first = backend();
+    expect(Number(first)).toBeGreaterThanOrEqual(20000);
     expect(deploy().status).toBe(0);
-    expect(readFileSync(`${dir}/backends.cfg`, "utf8")).toContain("127.0.0.1:20001");
-    expect(run("status", "hello", "--prefix", prefix).stdout).toMatch(/:20001 hello\.example\.com/);
+    const second = backend();
+    expect(second).not.toBe(first); // a new instance listens on a new port
+    expect(run("status", "hello", "--prefix", prefix).stdout).toMatch(new RegExp(`:${second} hello\\.example\\.com`));
     expect(run("haproxy", "sync", "--prefix", prefix).stdout).toContain("1 route(s)");
     expect(run("certs", "status", "--prefix", prefix).stdout).toContain("hello.example.com");
   });

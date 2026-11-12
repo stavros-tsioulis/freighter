@@ -45,8 +45,8 @@ describe("routed deploys (blue/green)", () => {
 
     const oldUnit = `freighter-shop--web--${a.releaseId}.service`;
     const newUnit = `freighter-shop--web--${b.releaseId}.service`;
-    expect((await readState(h.deps, "shop")).routed.web).toMatchObject({ unit: newUnit, port: 20001 });
-    expect(h.haproxyFile("backends.cfg")).toContain("127.0.0.1:20001");
+    expect((await readState(h.deps, "shop")).routed.web).toMatchObject({ unit: newUnit, port: 20002 }); // 20001 is the worker's, and stays its
+    expect(h.haproxyFile("backends.cfg")).toContain("127.0.0.1:20002");
     expect(h.haproxyFile("backends.cfg")).not.toContain("127.0.0.1:20000");
 
     const calls = h.mutating();
@@ -122,9 +122,36 @@ describe("host-level checks", () => {
     await deploy(h.deps, { ...routed("a", "a.example.com"), source: await artifact() });
     await deploy(h.deps, { ...routed("b", "b.example.com"), source: await artifact() });
     expect((await readState(h.deps, "a")).routed.web?.port).toBe(20000);
-    expect((await readState(h.deps, "b")).routed.web?.port).toBe(20001);
+    expect((await readState(h.deps, "b")).routed.web?.port).toBe(20002); // the worker of `a` holds 20001
     expect(h.haproxyFile("hostnames.map")).toContain("a.example.com be_a_web");
     expect(h.haproxyFile("hostnames.map")).toContain("b.example.com be_b_web");
+  });
+
+  it("gives a service that sets no port one in the range, and keeps it from deploy to deploy", async () => {
+    const h = await makeDeps();
+    await deploy(h.deps, { ...routed(), source: await artifact() });
+    expect((await readState(h.deps, "shop")).assigned).toEqual({ worker: 20001 });
+    expect(h.unitText("freighter-shop--worker.service")).toContain("Environment=PORT=20001\n");
+    await deploy(h.deps, { ...routed(), source: await artifact({ v: "2" }) });
+    expect((await readState(h.deps, "shop")).assigned).toEqual({ worker: 20001 });
+    expect(h.unitText("freighter-shop--worker.service")).toContain("Environment=PORT=20001\n");
+  });
+
+  it("picks at random in the range, skipping what is taken, and wraps around", async () => {
+    const h = await makeDeps();
+    delete h.deps.pickPort;
+    const seen = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const p = await allocatePort(h.deps, new Set());
+      expect(p).toBeGreaterThanOrEqual(20000);
+      expect(p).toBeLessThanOrEqual(20009);
+      seen.add(p);
+    }
+    expect(seen.size).toBeGreaterThan(1);
+    h.deps.pickPort = () => 20009;
+    const reserved = new Set<number>();
+    expect(await allocatePort(h.deps, reserved)).toBe(20009);
+    expect(await allocatePort(h.deps, reserved)).toBe(20000); // wrapped
   });
 
   it("port allocation skips bound ports and reports exhaustion", async () => {

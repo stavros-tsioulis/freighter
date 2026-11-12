@@ -30,6 +30,7 @@ function load() {
 }
 
 /** The app as the form sees it now, to complete references against and to add the new service to. */
+const inMap = (m?: Record<string, unknown>) => !!m && s.value.name in m;
 const current = computed(() => (config.value ? (config.value.settings ? fromSettings(config.value.settings) : { ...emptyForm(), services: [] }) : null));
 /** Whether the app is running, so adding a service releases it. */
 function remove() {
@@ -52,7 +53,7 @@ const names = computed(() => [...(current.value?.services.map((s) => s.name.trim
 const volumes = computed(() => [...new Set([...(current.value?.remoteVolumes ?? []), ...(current.value?.services.flatMap((s) => s.volumes) ?? []), ...service.value.volumes].map((v) => v.name.trim()).filter(Boolean))]);
 
 const s = computed(() => service.value);
-const taken = computed(() => !editing.value && (props.app.services.some((x) => x.name === s.value.name) || (current.value?.services.some((x) => x.name === s.value.name) ?? false)));
+const taken = computed(() => !editing.value && (inMap(config.value?.pending?.services) || props.app.services.some((x) => x.name === s.value.name) || (current.value?.services.some((x) => x.name === s.value.name) ?? false)));
 const nameError = computed(() => (s.value.name && !IDENT_RE.test(s.value.name) ? "Lowercase letters, digits and single hyphens, starting with a letter." : taken.value ? "This app already has a service with that name." : ""));
 const imageBad = computed(() => s.value.kind === "image" && s.value.image.trim() !== "" && !IMAGE_RE.test(s.value.image.trim()));
 const valid = computed(() => !!current.value && IDENT_RE.test(s.value.name) && !taken.value && !imageBad.value && (s.value.kind === "command" ? s.value.command.trim() !== "" : s.value.image.trim() !== ""));

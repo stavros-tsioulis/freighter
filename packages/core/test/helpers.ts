@@ -82,6 +82,7 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
       return unit && flagged(unitText(unit), "BAD") ? 500 : 200;
     },
     portFree: async (p) => !ctl.busyPorts.has(p),
+    pickPort: (min) => min, // tests want the lowest free port, not a random one
     issueCert: async (hostname) => {
       if (ctl.failIssue) throw new Error(`certbot failed for ${hostname}`);
       ctl.issued.push(hostname);

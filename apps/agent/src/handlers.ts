@@ -44,6 +44,12 @@ import {
   makeDir,
   renamePath,
   archiveSupport,
+  chownPaths,
+  deleteStoragePaths,
+  listStorage,
+  makeStorageDir,
+  renameStoragePath,
+  identities,
   copyPaths,
   extractPaths,
   movePaths,
@@ -198,6 +204,31 @@ export function createHandlers(d: Deps): Handlers {
     async "fs.extract"({ paths, to, onConflict }) {
       explorer(d, true);
       return extractPaths(paths, to, onConflict);
+    },
+    async "storage.ls"({ name, path }) {
+      explorer(d);
+      return listStorage(d, name, path);
+    },
+    async "storage.mkdir"({ name, path }) {
+      explorer(d, true);
+      await makeStorageDir(d, name, path);
+      return {};
+    },
+    async "storage.rename"({ name, path, newName }) {
+      explorer(d, true);
+      return { path: await renameStoragePath(d, name, path, newName) };
+    },
+    async "storage.rm"({ name, paths }) {
+      explorer(d, true);
+      return deleteStoragePaths(d, name, paths);
+    },
+    async "fs.identities"() {
+      explorer(d);
+      return identities();
+    },
+    async "fs.chown"({ paths, owner, group, recursive }) {
+      explorer(d, true);
+      return chownPaths(paths, owner, group, recursive);
     },
     async "fs.delete"({ paths }) {
       explorer(d, true);

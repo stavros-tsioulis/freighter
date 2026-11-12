@@ -373,7 +373,7 @@ export async function extractPaths(paths: string[], to: string | undefined, onCo
     }
     if (process.getuid?.() === 0) {
       const parent = await stat(dir).catch(() => null);
-      if (parent) await execFileP("chown", ["-R", "-h", `${parent.uid}:${parent.gid}`, "--", dest]).catch(() => {});
+      if (parent) await execFileP("chown", ["-R", "-h", `${parent.uid}:${parent.gid}`, dest]).catch(() => {});
     }
     return dest;
   });
@@ -382,6 +382,45 @@ export async function extractPaths(paths: string[], to: string | undefined, onCo
 /** Which archive tools this server has: tar always, unzip and 7z where installed. */
 export async function archiveSupport(): Promise<{ unzip: boolean; sevenZip: boolean }> {
   return { unzip: await has("unzip"), sevenZip: (await sevenZip()) !== null };
+}
+
+/** The users and groups of the server, for choosing an owner. */
+export async function identities(): Promise<{ users: { name: string; id: number }[]; groups: { name: string; id: number }[] }> {
+  const t = await nameTables();
+  const list = (m: Map<number, string>) => [...m].map(([id, name]) => ({ name, id })).sort((a, b) => a.name.localeCompare(b.name));
+  return { users: list(t.users), groups: list(t.groups) };
+}
+
+/** A user or group given by name or number, as a number. */
+function idOf(kind: "user" | "group", who: string, table: Map<number, string>): number {
+  if (/^\d+$/.test(who)) return Number(who);
+  for (const [id, name] of table) if (name === who) return id;
+  throw new FileError("bad_request", `unknown ${kind} "${who}"`);
+}
+
+/**
+ * Change the owner and/or group (by name or number) of paths; `recursive` applies to everything inside folders too.
+ * Links themselves are changed, never what they point to. The system's own top-level folders can be changed one by one
+ * but not through, and so can't a folder holding a remote volume.
+ */
+export async function chownPaths(paths: string[], owner: string | undefined, group: string | undefined, recursive = false): Promise<BulkResult> {
+  const o = owner?.trim() || undefined;
+  const g = group?.trim() || undefined;
+  if (!o && !g) throw new FileError("bad_request", "name an owner, a group, or both");
+  const t = await nameTables();
+  const uid = o === undefined ? "" : String(idOf("user", o, t.users));
+  const gid = g === undefined ? "" : String(idOf("group", g, t.groups));
+  return each(paths, async (raw) => {
+    const path = cleanPath(raw);
+    const info = await lstat(path).catch((e) => wrap(e, path));
+    const deep = recursive && info.isDirectory();
+    if (deep && PROTECTED.has(path)) throw new FileError("bad_request", `${path}: its contents can't be changed all at once`);
+    if (deep) await assertNoMounts(path);
+    await execFileP("chown", ["-h", ...(deep ? ["-R"] : []), `${uid}:${gid}`, path]).catch((err: { stderr?: string }) => {
+      throw new FileError("bad_request", `${path}: ${(err.stderr ?? "chown failed").trim().split("\n").filter(Boolean).slice(-1)[0] ?? "chown failed"}`);
+    });
+    return path;
+  });
 }
 
 export async function deletePaths(paths: string[]): Promise<BulkResult> {

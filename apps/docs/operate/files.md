@@ -15,6 +15,7 @@ Click to select, **Ctrl/⌘-click** to add, **Shift-click** for a range, **Ctrl/
 | **Download** | a file as it is; a folder or several items as a zip, built while it streams (no temporary file, any size) |
 | **Copy**, **Cut**, **Paste** | **Ctrl/⌘+C, X, V** or the buttons. The clipboard follows you between folders. Pasting where a name is taken stops and asks: **Replace** or **Keep both** (the copy is named `name copy`). Copying into the same folder keeps both without asking |
 | **Extract** | shown when everything selected is an archive. Each one is unpacked into a folder named after it, beside it: `site.tar.gz` becomes `site/`. If that name is taken the folder is called `site copy`. See below |
+| **Owner** | change the owner and group of the selection, by name (suggested from the server's users and groups) or number. Leave one empty to keep it. For folders, tick *Apply to everything inside* to go through them; links themselves are changed, never what they point to |
 | **Rename** | **F2** |
 | **Delete** | **Delete**, after a confirmation. Folders go with everything in them |
 | **New folder** | |

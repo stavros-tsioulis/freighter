@@ -6,10 +6,11 @@ import type { FlowNode } from "~/utils/graph";
 defineOptions({ inheritAttrs: false });
 const props = defineProps<{ data: FlowNode["data"] }>();
 const s = computed(() => props.data.service!);
-const tone = computed(() => (s.value.activeState === "failed" ? "bad" : s.value.activeState === "active" ? "ok" : "idle"));
+const retrying = computed(() => s.value.activeState === "activating" && s.value.subState === "auto-restart");
+const tone = computed(() => (s.value.activeState === "failed" ? "bad" : retrying.value ? "warn" : s.value.activeState === "active" ? "ok" : "idle"));
 const address = computed(() => s.value.hostnames[0] ?? (s.value.port ? `:${s.value.port}` : null));
 // The left band carries the state; the words are for screen readers and the tooltip.
-const state = computed(() => ({ active: "Running", failed: "Failed", inactive: "Stopped", activating: "Starting", deactivating: "Stopping" })[s.value.activeState] ?? s.value.activeState);
+const state = computed(() => retrying.value ? "Retrying" : ({ active: "Running", failed: "Failed", inactive: "Stopped", activating: "Starting", deactivating: "Stopping" })[s.value.activeState] ?? s.value.activeState);
 </script>
 
 <template>
@@ -52,6 +53,7 @@ const state = computed(() => ({ active: "Running", failed: "Failed", inactive: "
 }
 .svc[data-tone="ok"] { --band: var(--p-green-500); }
 .svc[data-tone="bad"] { --band: var(--p-red-500); }
+.svc[data-tone="warn"] { --band: var(--p-amber-500); }
 .svc[data-tone="idle"] { --band: var(--p-surface-300); }
 .svc:hover { border-color: var(--p-surface-400); }
 .svc[data-selected] { border-color: var(--p-primary-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--p-primary-color) 35%, transparent); }

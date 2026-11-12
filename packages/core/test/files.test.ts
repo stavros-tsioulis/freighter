@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { cleanPath, copyPaths, createUpload, deletePaths, extractPaths, isArchive, listDir, makeDir, movePaths, openForDownload, renamePath, zipStream } from "../src/index.ts";
+import { chownPaths, cleanPath, copyPaths, createUpload, deletePaths, extractPaths, identities, isArchive, listDir, makeDir, movePaths, openForDownload, renamePath, zipStream } from "../src/index.ts";
 
 async function tree() {
   const root = await mkdtemp(join(tmpdir(), "freighter-files-"));
@@ -276,5 +276,29 @@ describe("extractPaths", () => {
     execFileSync("tar", ["-cf", `${root}/evil.tar`, "-C", `${root}/evil/x`, "../outside.txt"]);
     await extractPaths([`${root}/evil.tar`], undefined).catch(() => {});
     expect(existsSync(`${root}/outside.txt`)).toBe(false);
+  });
+});
+
+describe("chownPaths", () => {
+  it("lists the server's users and groups", async () => {
+    const { users, groups } = await identities();
+    expect(users.length).toBeGreaterThan(0);
+    expect(users.every((u) => typeof u.name === "string" && Number.isInteger(u.id))).toBe(true);
+    expect(groups.length).toBeGreaterThan(0);
+  });
+
+  it("changes owner and group by number, through folders when asked, and says what is wrong", async () => {
+    const root = await tree();
+    const me = process.getuid!();
+    const mygid = process.getgid!();
+    // Without root only the group (to one of one's own) can change, but the call and the recursion are the same.
+    const r = await chownPaths([`${root}/a`, `${root}/missing`], String(me), String(mygid), true);
+    expect(r.done).toEqual([`${root}/a`]);
+    expect(r.failed.map((f) => f.path)).toEqual([`${root}/missing`]);
+    expect((await stat(`${root}/a/sub/two.txt`)).uid).toBe(me);
+    await expect(chownPaths([`${root}/a`], undefined, undefined)).rejects.toThrow(/owner, a group, or both/);
+    await expect(chownPaths([`${root}/a`], "no-such-user-here", undefined)).rejects.toThrow(/unknown user/);
+    await expect(chownPaths([`${root}/a`], undefined, "no-such-group-here")).rejects.toThrow(/unknown group/);
+    expect((await chownPaths(["/usr"], undefined, String(mygid), true)).failed[0]!.error).toMatch(/all at once/);
   });
 });

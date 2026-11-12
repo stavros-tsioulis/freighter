@@ -40,7 +40,7 @@ export async function appStatus(d: Deps, app: string): Promise<AppStatus> {
     services[service] = {
       ...(await d.systemd.status(unit)),
       unit,
-      port: routed?.port ?? def.port,
+      port: routed?.port ?? def.port ?? state.assigned?.[service],
       hostnames: routed?.hostnames.map((h) => h.hostname) ?? [],
     };
   }

@@ -110,7 +110,7 @@ async function updateRouting(d: Deps, app: string, before: Domain[], next: Domai
       await writeDomains(d, app, before);
       throw e;
     }
-    await writeState(d, app, { routed });
+    await writeState(d, app, { ...state, routed });
     // A certificate nobody routes to anymore. The certbot lineage stays, so adding the name back reuses it.
     for (const gone of before.filter((b) => b.tls === "auto" && !next.some((n) => n.hostname === b.hostname && n.tls === "auto"))) {
       await rm(certPath(d.config.haproxy.dir, gone.hostname), { force: true });

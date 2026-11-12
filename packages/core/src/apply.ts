@@ -6,7 +6,7 @@ import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { assertHostnamesFree, readDomains } from "./domains.ts";
 import { readContainerPorts, readImages } from "./image.ts";
-import { allocatePort } from "./ports.ts";
+import { allocatePort, assignedPort } from "./ports.ts";
 import { readConnections } from "./connections.ts";
 import { readVariables, type Variables } from "./variables.ts";
 import { resolveEnvironmentSplit } from "./references.ts";
@@ -84,6 +84,7 @@ export async function haproxySync(d: Deps): Promise<{ changed: boolean; routes: 
 export async function liveTargets(d: Deps, app: string, manifest: Manifest): Promise<Record<string, Target>> {
   const state = await readState(d, app);
   const targets = defaultTargets(app, manifest);
+  for (const [service, port] of Object.entries(state.assigned ?? {})) if (service in targets && targets[service]!.port === undefined) targets[service] = { ...targets[service]!, port };
   for (const [service, r] of Object.entries(state.routed)) if (service in targets) targets[service] = { unit: r.unit, port: r.port };
   return targets;
 }
@@ -185,8 +186,14 @@ export async function goLive(
   const oldState = await readState(d, app);
   const reserved = new Set<number>();
   const targets: Record<string, Target> = {};
+  const assigned: Record<string, number> = {};
   for (const p of plan) {
-    targets[p.service] = { unit: p.unit, port: p.routed ? await allocatePort(d, reserved) : manifest.services[p.service]!.port };
+    const set = manifest.services[p.service]!.port;
+    let port: number | undefined;
+    if (p.routed) port = await allocatePort(d, reserved);
+    else if (set !== undefined) port = set;
+    else port = assigned[p.service] = await assignedPort(d, app, oldState.assigned?.[p.service], reserved);
+    targets[p.service] = { unit: p.unit, port };
   }
 
   // Resolved before anything is touched: a connection that can't be resolved fails the deploy here.
@@ -258,7 +265,7 @@ export async function goLive(
     await log(`    HAProxy refused the change: ${reason}`);
     return failWith([{ service: "haproxy", reason, logs: "" }]);
   }
-  const state: AppState = { routed };
+  const state: AppState = { routed, assigned };
   await writeState(d, app, state);
   await activate(d, app, id);
   await writeResolvedHash(d, app, hashResolved(environment));

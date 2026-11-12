@@ -3,7 +3,7 @@
  * A status lamp: a coloured dot and a plain word. Colour does the alerting, so healthy states stay quiet and
  * only failures colour their text. States in progress pulse.
  */
-const props = defineProps<{ state: string | null | undefined; label?: string }>();
+const props = defineProps<{ state: string | null | undefined; label?: string; /** systemd's finer state: "auto-restart" with `activating` is a crashed service about to be started again. */ sub?: string | null }>();
 
 type Tone = "ok" | "bad" | "warn" | "busy" | "idle";
 const STATES: Record<string, [Tone, string]> = {
@@ -18,6 +18,7 @@ const STATES: Record<string, [Tone, string]> = {
   activating: ["busy", "Starting"],
   deactivating: ["busy", "Stopping"],
   reloading: ["busy", "Reloading"],
+  retrying: ["warn", "Retrying"],
   // deployments
   queued: ["busy", "Queued"],
   running: ["busy", "In progress"],
@@ -35,7 +36,7 @@ const STATES: Record<string, [Tone, string]> = {
   // certificates
   expiring: ["warn", "Expiring soon"],
 };
-const entry = computed(() => STATES[props.state ?? ""] ?? (["idle", props.state ? props.state[0]!.toUpperCase() + props.state.slice(1) : "Unknown"] as [Tone, string]));
+const entry = computed(() => STATES[props.state === "activating" && props.sub === "auto-restart" ? "retrying" : (props.state ?? "")] ?? (["idle", props.state ? props.state[0]!.toUpperCase() + props.state.slice(1) : "Unknown"] as [Tone, string]));
 </script>
 
 <template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { troubleLabel, troubled } from "~/utils/apps";
 import { shortRelease, timeAgo } from "~/utils/format";
 
 const route = useRoute();
@@ -24,7 +25,7 @@ const projectOptions = computed(() => [{ id: null, name: "No project" }, ...(pro
 const canMove = computed(() => can("deployer") && (projects.value?.length ?? 0) > 0);
 
 const running = computed(() => app.value?.services.filter((s) => s.activeState === "active").length ?? 0);
-const failed = computed(() => app.value?.services.some((s) => s.activeState === "failed") ?? false);
+const failed = computed(() => (app.value ? troubled(app.value) && app.value.status !== "missing" : false));
 const servicesLabel = computed(() => {
   const n = app.value?.services.length ?? 0;
   return n === 0 ? "None" : running.value === n ? `${n} running` : `${running.value} of ${n} running`;
@@ -55,7 +56,7 @@ const servicesLabel = computed(() => {
         <Button v-if="can('admin')" label="Delete app" icon="pi pi-trash" text size="small" severity="danger" @click="showDelete = true" />
       </template>
       <template v-if="app" #beside>
-        <StatusTag :state="failed && app.status === 'deployed' ? 'failed' : app.status" :label="failed && app.status === 'deployed' ? 'Service failed' : undefined" />
+        <StatusTag :state="failed && app.status === 'deployed' ? 'failed' : app.status" :label="failed && app.status === 'deployed' ? troubleLabel(app) : undefined" />
       </template>
     </PageHeader>
 

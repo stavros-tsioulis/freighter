@@ -16,10 +16,16 @@ useHead({ title: computed(() => `${name.value} - Storage - Freighter`) });
 const appName = computed(() => storage.value?.app ?? "");
 const { data: app } = useApp(appName);
 
-const TABS = ["overview", "domains", "logs", "deployments", "settings"] as const;
+const TABS = ["overview", "files", "domains", "logs", "deployments", "settings"] as const;
 const tab = computed({
   get: () => (TABS.includes(route.query.tab as never) ? String(route.query.tab) : "overview"),
   set: (t: string) => void router.replace({ query: { ...route.query, tab: t === "overview" ? undefined : t } }),
+});
+
+// Where the Files tab is looking lives in the URL too.
+const filesPath = computed({
+  get: () => (typeof route.query.path === "string" && route.query.path.startsWith("/") ? route.query.path : "/"),
+  set: (p: string) => void router.replace({ query: { ...route.query, path: p === "/" ? undefined : p } }),
 });
 
 const apply = useApplyStorage(name);
@@ -122,6 +128,7 @@ async function remove() {
       <Tabs v-model:value="tab" lazy>
         <TabList>
           <Tab value="overview">Overview</Tab>
+          <Tab v-if="can('admin')" value="files">Files</Tab>
           <Tab value="domains">Domains</Tab>
           <Tab value="logs">Logs</Tab>
           <Tab value="deployments">Deployments</Tab>
@@ -159,6 +166,7 @@ async function remove() {
               </section>
             </div>
           </TabPanel>
+          <TabPanel v-if="can('admin')" value="files"><StorageBrowser v-model:path="filesPath" :name="storage.name" :endpoint="endpoint" /></TabPanel>
           <TabPanel value="domains"><AppDomainsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="logs"><AppLogsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>
           <TabPanel value="deployments"><AppDeploymentsTab v-if="app" :app="app" /><Skeleton v-else height="6rem" /></TabPanel>

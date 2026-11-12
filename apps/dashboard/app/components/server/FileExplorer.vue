@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FsBulk, FsEntry } from "~/types";
-import { collectDropped, collectPicked, downloadArchive, fileDownloadUrl, startDownload, toUploads, useFsActions, useFsList, useUploader } from "~/composables/files";
+import { collectDropped, collectPicked, downloadArchive, fileDownloadUrl, startDownload, toUploads, useFsActions, useFsIdentities, serverFilesRoot, useFsList, useUploader } from "~/composables/files";
 import { baseName, breadcrumbs, clashes, entryIcon, formatMode, isArchive, items, joinPath, opensAsFolder, parentOf, resolveTyped, sortEntries, type SortKey } from "~/utils/files";
 import { formatBytes } from "~/utils/format";
 
@@ -12,7 +12,7 @@ const confirm = useConfirm();
 const notify = useNotify();
 const { data: listing, error, isFetching } = useFsList(computed(() => props.server), path);
 const actions = useFsActions(computed(() => props.server));
-const uploader = useUploader(computed(() => props.server), () => void actions.refresh());
+const uploader = useUploader(computed(() => serverFilesRoot(props.server)), () => void actions.refresh());
 
 // ---- what is shown ----
 const filter = ref("");
@@ -74,6 +74,39 @@ async function paste() {
   if (c.mode === "cut") clipboard.value = r.failed.length ? { ...c, paths: r.failed.map((f) => f.path) } : null;
   report(mode === "copy" ? "Copied" : "Moved", r, { mode, paths: c.paths, to });
 }
+// ---- ownership ----
+const owning = ref(false);
+const ownerInput = ref("");
+const groupInput = ref("");
+const recursive = ref(false);
+const { data: identities } = useFsIdentities(computed(() => props.server), owning);
+const hasFolder = computed(() => chosen.value.some(opensAsFolder));
+function askOwner() {
+  if (props.readOnly || !chosen.value.length) return;
+  // Start from what the selection has in common, so changing one half leaves the other alone.
+  const same = (f: (e: FsEntry) => string) => (chosen.value.every((e) => f(e) === f(chosen.value[0]!)) ? f(chosen.value[0]!) : "");
+  ownerInput.value = same((e) => e.owner ?? String(e.uid));
+  groupInput.value = same((e) => e.group ?? String(e.gid));
+  recursive.value = false;
+  owning.value = true;
+}
+const ownerChanged = computed(() => {
+  const same = (f: (e: FsEntry) => string, v: string) => chosen.value.every((e) => f(e) === v);
+  return { owner: ownerInput.value.trim() !== "" && !same((e) => e.owner ?? String(e.uid), ownerInput.value.trim()), group: groupInput.value.trim() !== "" && !same((e) => e.group ?? String(e.gid), groupInput.value.trim()) };
+});
+async function submitOwner() {
+  const owner = ownerChanged.value.owner ? ownerInput.value.trim() : undefined;
+  const group = ownerChanged.value.group ? groupInput.value.trim() : undefined;
+  // Applying to the inside of a folder is a change even when the folder itself already has these.
+  if (!owner && !group && !(recursive.value && hasFolder.value)) { owning.value = false; return; }
+  const o = owner ?? (recursive.value ? ownerInput.value.trim() || undefined : undefined);
+  const g = group ?? (recursive.value ? groupInput.value.trim() || undefined : undefined);
+  const r = await actions.chown.mutateAsync({ paths: chosenPaths.value, owner: o, group: g, recursive: recursive.value && hasFolder.value }).catch(() => null);
+  if (!r) return;
+  owning.value = false;
+  report("Ownership changed", r);
+}
+
 // ---- extract ----
 const extractable = computed(() => chosen.value.length > 0 && chosen.value.every((e) => (e.type === "file" || (e.type === "link" && e.link?.type === "file")) && isArchive(e.name)));
 async function extract() {
@@ -192,6 +225,7 @@ const menuItems = computed(() => {
     { label: "Paste here", icon: "pi pi-clipboard", disabled: !canPaste.value, command: () => void paste() },
     { separator: true },
     { label: "Rename", icon: "pi pi-pencil", disabled: ro || many, command: () => askRename() },
+    { label: "Change owner…", icon: "pi pi-user-edit", disabled: ro, command: () => askOwner() },
     { label: "Copy path", icon: "pi pi-link", command: () => void navigator.clipboard?.writeText(chosenPaths.value.join("\n")) },
     { separator: true },
     { label: "Delete", icon: "pi pi-trash", disabled: ro, command: () => askDelete() },
@@ -264,6 +298,7 @@ const errorText = computed(() => (error.value as Error | null)?.message ?? "");
         <Button label="Cut" icon="pi pi-eraser" size="small" severity="secondary" text :disabled="!chosen.length" @click="cut()" />
         <Button :label="clipboard && clipboard.server === server ? `Paste ${items(clipboard.paths.length)}` : 'Paste'" icon="pi pi-clipboard" size="small" severity="secondary" text :disabled="!canPaste" :loading="actions.copy.isPending.value || actions.move.isPending.value" @click="paste" />
         <Button v-if="extractable" label="Extract" icon="pi pi-file-export" size="small" severity="secondary" text :loading="actions.extract.isPending.value" @click="extract" />
+        <Button label="Owner" icon="pi pi-user-edit" size="small" severity="secondary" text :disabled="!chosen.length" title="Change owner and group" @click="askOwner" />
         <Button label="Rename" icon="pi pi-pencil" size="small" severity="secondary" text :disabled="chosen.length !== 1" @click="askRename()" />
         <Button label="Delete" icon="pi pi-trash" size="small" severity="danger" text :disabled="!chosen.length" :loading="actions.remove.isPending.value" @click="askDelete()" />
       </template>
@@ -367,6 +402,30 @@ const errorText = computed(() => (error.value as Error | null)?.message ?? "");
       <template #footer>
         <Button label="Cancel" severity="secondary" text @click="nameDialog = null" />
         <Button :label="nameDialog?.kind === 'rename' ? 'Rename' : 'Create'" :disabled="!nameInput.trim() || !!nameError" :loading="actions.rename.isPending.value || actions.mkdir.isPending.value" @click="submitName" />
+      </template>
+    </Dialog>
+
+    <Dialog v-model:visible="owning" modal header="Change owner" :style="{ width: '28rem' }">
+      <form class="flex flex-col gap-3" @submit.prevent="submitOwner">
+        <p class="text-sm text-muted-color">{{ chosen.length === 1 ? chosen[0]?.name : items(chosen.length) }}. A name or a number; leave empty to keep it.</p>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="flex flex-col gap-1">
+            <label for="fx-owner" class="text-sm font-medium">Owner</label>
+            <InputText id="fx-owner" v-model="ownerInput" list="fx-users" autocomplete="off" spellcheck="false" class="font-mono" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <label for="fx-group" class="text-sm font-medium">Group</label>
+            <InputText id="fx-group" v-model="groupInput" list="fx-groups" autocomplete="off" spellcheck="false" class="font-mono" />
+          </div>
+        </div>
+        <datalist id="fx-users"><option v-for="u in identities?.users" :key="u.id" :value="u.name">{{ u.id }}</option></datalist>
+        <datalist id="fx-groups"><option v-for="g in identities?.groups" :key="g.id" :value="g.name">{{ g.id }}</option></datalist>
+        <label v-if="hasFolder" class="flex items-center gap-2 text-sm"><Checkbox v-model="recursive" binary input-id="fx-rec" /><span>Apply to everything inside the folders</span></label>
+        <button type="submit" class="hidden" />
+      </form>
+      <template #footer>
+        <Button label="Cancel" severity="secondary" text @click="owning = false" />
+        <Button label="Change" :disabled="!ownerChanged.owner && !ownerChanged.group && !(recursive && hasFolder)" :loading="actions.chown.isPending.value" @click="submitOwner" />
       </template>
     </Dialog>
 

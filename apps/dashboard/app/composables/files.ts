@@ -16,6 +16,16 @@ export const useFsList = (server: MaybeRef<string>, path: MaybeRef<string>, enab
     staleTime: 0,
   });
 
+/** The server's users and groups, to suggest as owners. */
+export const useFsIdentities = (server: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
+  useQuery({
+    queryKey: ["fs-identities", server],
+    enabled: computed(() => toValue(enabled)),
+    queryFn: () => api<{ users: { name: string; id: number }[]; groups: { name: string; id: number }[] }>(`${base(toValue(server))}/identities`),
+    staleTime: 60_000,
+    retry: false,
+  });
+
 export const useHostMetrics = (server: MaybeRef<string>, minutes: MaybeRef<number>, enabled: MaybeRef<boolean> = true) =>
   useQuery({
     queryKey: ["host-metrics", server, minutes],
@@ -24,6 +34,45 @@ export const useHostMetrics = (server: MaybeRef<string>, minutes: MaybeRef<numbe
     refetchInterval: 15_000,
     retry: false,
   });
+
+/** What a storage holds: `/` lists its buckets, `/bucket/folder` the keys inside. */
+export interface StorageEntry {
+  name: string;
+  type: "dir" | "file";
+  size: number;
+  mtimeMs: number;
+}
+export interface StorageListing {
+  path: string;
+  parent: string | null;
+  entries: StorageEntry[];
+  truncated: boolean;
+}
+const storageBase = (name: string) => `/storages/${name}/files`;
+export const storageFilesRoot = storageBase;
+export const useStorageList = (name: MaybeRef<string>, path: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
+  useQuery({
+    queryKey: ["storage-files", name, path],
+    enabled: computed(() => toValue(enabled)),
+    queryFn: () => api<StorageListing>(storageBase(toValue(name)), { query: { path: toValue(path) } }),
+    placeholderData: (prev) => prev,
+    retry: false,
+    staleTime: 0,
+  });
+export const storageDownloadUrl = (name: string, path: string) => `/api/v1${storageBase(name)}/download?path=${encodeURIComponent(path)}`;
+export function useStorageActions(name: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  const n = () => toValue(name);
+  const refresh = () => qc.invalidateQueries({ queryKey: ["storage-files", n()] });
+  const mutation = <V, R>(fn: (v: V) => Promise<R>, failed: string) => useMutation({ mutationFn: fn, onSettled: refresh, onError: (e) => notify.fail(failed, e) });
+  return {
+    mkdir: mutation((v: { path: string }) => api(`${storageBase(n())}/mkdir`, { method: "POST", body: v }), "Could not create it"),
+    rename: mutation((v: { path: string; newName: string }) => api<{ path: string }>(`${storageBase(n())}/rename`, { method: "POST", body: v }), "Could not rename"),
+    remove: mutation((v: { paths: string[] }) => api<FsBulk>(`${storageBase(n())}/delete`, { method: "POST", body: v }), "Could not delete"),
+    refresh,
+  };
+}
 
 /** The things you can do to files. Each one refreshes the listings afterwards, whatever happened. */
 export function useFsActions(server: MaybeRef<string>) {
@@ -38,6 +87,7 @@ export function useFsActions(server: MaybeRef<string>) {
     copy: mutation((v: { paths: string[]; to: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/copy`, { method: "POST", body: v }), "Could not copy"),
     move: mutation((v: { paths: string[]; to: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/move`, { method: "POST", body: v }), "Could not move"),
     extract: mutation((v: { paths: string[]; to?: string; onConflict?: "fail" | "overwrite" | "rename" }) => api<FsBulk>(`${base(s())}/extract`, { method: "POST", body: v }), "Could not extract"),
+    chown: mutation((v: { paths: string[]; owner?: string; group?: string; recursive?: boolean }) => api<FsBulk>(`${base(s())}/chown`, { method: "POST", body: v }), "Could not change the owner"),
     remove: mutation((v: { paths: string[] }) => api<FsBulk>(`${base(s())}/delete`, { method: "POST", body: v }), "Could not delete"),
     refresh,
   };
@@ -53,6 +103,9 @@ export function startDownload(url: string, name?: string) {
   a.click();
   a.remove();
 }
+
+/** The API path of a server's files (for `useUploader`). */
+export const serverFilesRoot = (server: string) => base(server);
 
 export const fileDownloadUrl = (server: string, path: string) => `/api/v1${base(server)}/download?path=${encodeURIComponent(path)}`;
 
@@ -77,8 +130,8 @@ export interface UploadItem {
   path: string;
 }
 
-/** Upload files one request each, three at a time, with progress. Folders to create first go in `dirs`. */
-export function useUploader(server: MaybeRef<string>, onDone: () => void) {
+/** Upload files one request each, three at a time, with progress. `root` is the API path that has `upload` and `mkdir` under it. Folders to create first go in `dirs`. */
+export function useUploader(root: MaybeRef<string>, onDone: () => void) {
   const jobs = ref<UploadJob[]>([]);
   const requests = new Map<number, XMLHttpRequest>();
   let next = 1;
@@ -93,7 +146,7 @@ export function useUploader(server: MaybeRef<string>, onDone: () => void) {
       job.state = "uploading";
       const xhr = new XMLHttpRequest();
       requests.set(job.id, xhr);
-      xhr.open("PUT", `/api/v1${base(toValue(server))}/upload?path=${encodeURIComponent(item.path)}&overwrite=${overwrite ? 1 : 0}`);
+      xhr.open("PUT", `/api/v1${toValue(root)}/upload?path=${encodeURIComponent(item.path)}&overwrite=${overwrite ? 1 : 0}`);
       xhr.setRequestHeader("x-requested-with", "freighter");
       xhr.upload.onprogress = (e) => void (job.loaded = e.loaded);
       const finish = (state: UploadJob["state"], error?: string) => {
@@ -128,7 +181,7 @@ export function useUploader(server: MaybeRef<string>, onDone: () => void) {
     /** `dirs` are made first (an existing one is fine). */
     async add(items: UploadItem[], opts: { overwrite: boolean; dirs?: string[] }) {
       for (const dir of opts.dirs ?? []) {
-        await api(`${base(toValue(server))}/mkdir`, { method: "POST", body: { path: dir } }).catch(() => undefined);
+        await api(`${toValue(root)}/mkdir`, { method: "POST", body: { path: dir } }).catch(() => undefined);
       }
       for (const item of items) {
         const job: UploadJob = reactive({ id: next++, name: item.path, path: item.path, size: item.file.size, loaded: 0, state: "queued" });

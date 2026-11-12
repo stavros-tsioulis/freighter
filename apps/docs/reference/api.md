@@ -44,6 +44,10 @@ An [S3 storage](/deploy/storage). Credentials are never returned, except the key
 | `POST /storages` | `{"name": "uploads", "server": "…", "backend": {"kind": "local"}}` (or `sftp` / `smb` with `secrets`). `202` with the deployment `id`, `accessKey` and `secretKey` | admin |
 | `PATCH /storages/:name` | `{"backend": {…}, "secrets": {…}}`; what is left out stays. Redeploys the endpoint | admin |
 | `POST /storages/:name/apply` | deploy the endpoint again with what is stored | admin |
+| `GET /storages/:name/files` | `?path=` (default `/`). Buckets at the root, then the keys of a bucket or folder: `entries` (`name`, `type` `dir` or `file`, `size`, `mtimeMs`), `parent`, `truncated` | admin |
+| `POST /storages/:name/files/mkdir`, `…/rename`, `…/delete` | `{path}`; `{path, newName}`; `{paths}` (same result as the file explorer's delete). Paths are `/bucket/key` | admin |
+| `PUT /storages/:name/files/upload` | `?path=/bucket/key`, `&overwrite=1`; the body is the file, with a `Content-Length` | admin |
+| `GET /storages/:name/files/download` | `?path=/bucket/key`. The file | admin |
 | `POST /storages/:name/rotate-keys` | new secret key, returned once | admin |
 | `DELETE /storages/:name` | `{"confirm": "uploads"}`; refused while an app references it | admin |
 
@@ -165,6 +169,8 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 | `POST /servers/:name/fs/rename` | `{path, name}` | admin |
 | `POST /servers/:name/fs/copy`, `…/move` | `{paths, to, onConflict?}` with `onConflict` one of `fail` (default), `overwrite`, `rename`. Returns `{done, failed: [{path, error}]}`; items are independent | admin |
 | `POST /servers/:name/fs/extract` | `{paths, to?, onConflict?}`. Unpacks each archive (by extension) into a folder named after it, in `to` or beside the archive; `onConflict` defaults to `rename`. Same result as copy | admin |
+| `GET /servers/:name/fs/identities` | The server's `users` and `groups`, each `{name, id}`, for choosing an owner | admin |
+| `POST /servers/:name/fs/chown` | `{paths, owner?, group?, recursive?}`, names or numbers; at least one of `owner`, `group`. `recursive` goes through folders (refused for `/`, `/etc`, `/usr` and the other top-level system folders, and for folders with a remote volume mounted). Same result as copy | admin |
 | `POST /servers/:name/fs/delete` | `{paths}`. Same result | admin |
 | `PUT /servers/:name/fs/upload` | `?path=` the file's full path, `&overwrite=1` to replace. The body is the file, with a `Content-Length`. Streamed to the server and put in place when complete | admin |
 | `GET /servers/:name/fs/download` | `?path=`. The file, streamed | admin |

@@ -28,6 +28,8 @@ export interface Jobs {
   enqueueImageDeploy(job: { id: string; app: string; server: string; manifestText: string; replaceConfig?: boolean }): void;
   /** Replace an app's configuration; a deployed app is redeployed with it (health-gated, rolled back on failure). */
   enqueueConfig(job: { id: string; app: string; server: string; manifestText: string }): void;
+  /** The configuration a queued or running deployment is about to apply, if any (it is only saved once the deploy works). */
+  pendingConfig(app: string): string | null;
   enqueueRollback(job: { id: string; app: string; server: string; release?: string }): void;
   enqueueGit(job: GitJob): void;
   /** Create or update the endpoint that serves a storage, from what the registry holds for it. */
@@ -73,6 +75,9 @@ export function createJobs(ctx: ApiContext): Jobs {
     });
     chains.set(server, next);
   };
+
+  /** app -> the configuration a queued or running configuration change is applying. */
+  const pendingConfigs = new Map<string, string>();
 
   const MAX_DEPTH = 3; // A reaching B reaching C is fine; a loop of apps that read each other must end.
   /** Queue a re-resolve for every app that connects to `target`. They only redeploy when a value they read changed. */
@@ -200,7 +205,10 @@ export function createJobs(ctx: ApiContext): Jobs {
       });
     },
 
+    pendingConfig: (app) => pendingConfigs.get(app) ?? null,
+
     enqueueConfig({ id, app, server, manifestText }) {
+      pendingConfigs.set(app, manifestText);
       enqueue(server, app, async () => {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
@@ -219,6 +227,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           .call("build.log", { id, from: 0 })
           .then((l) => ctx.registry.deployments.setLog(id, l.text))
           .catch(() => {});
+        if (pendingConfigs.get(app) === manifestText) pendingConfigs.delete(app);
       }, undefined, 0, id);
     },
 

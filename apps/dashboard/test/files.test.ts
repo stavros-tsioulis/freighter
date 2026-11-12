@@ -64,3 +64,16 @@ describe("isArchive", () => {
     for (const n of ["a.txt", "tar", "a.zipx"]) expect(isArchive(n), n).toBe(false);
   });
 });
+
+describe("retrying services", () => {
+  it("tells a crashed service waiting to restart from one that is starting, and counts it as trouble", async () => {
+    const { retrying, troubled, troubleLabel } = await import("../app/utils/apps");
+    expect(retrying({ activeState: "activating", subState: "auto-restart" })).toBe(true);
+    expect(retrying({ activeState: "activating", subState: "start" })).toBe(false);
+    expect(retrying({ activeState: "active", subState: "running" })).toBe(false);
+    const app = (...services: [string, string][]) => ({ status: "deployed", services: services.map(([activeState, subState]) => ({ activeState, subState })) }) as never;
+    expect(troubled(app(["active", "running"], ["activating", "auto-restart"]))).toBe(true);
+    expect(troubleLabel(app(["activating", "auto-restart"]))).toBe("Service retrying");
+    expect(troubleLabel(app(["activating", "auto-restart"], ["failed", "failed"]))).toBe("Service failed");
+  });
+});

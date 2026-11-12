@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AppRow } from "~/types";
-import { troubled } from "~/utils/apps";
+import { troubleLabel, troubled } from "~/utils/apps";
 import { shortRelease, timeAgo } from "~/utils/format";
 
 /** The table of apps: status band, services, address, release. Used on the overview and on the apps page. */
@@ -22,7 +22,7 @@ const hosts = (a: AppRow) => [...new Set(a.services.flatMap((s) => s.hostnames))
           <div class="min-w-0">
             <span class="block font-display font-semibold text-[1.4rem] leading-tight truncate">{{ a.name }}</span>
             <span class="flex items-center gap-x-3 text-sm text-muted-color">
-              <StatusTag :state="troubled(a) && a.status !== 'missing' ? 'failed' : a.status" :label="troubled(a) && a.status !== 'missing' ? 'Service failed' : undefined" class="!text-[0.85rem]" />
+              <StatusTag :state="troubled(a) && a.status !== 'missing' ? 'failed' : a.status" :label="troubled(a) && a.status !== 'missing' ? troubleLabel(a) : undefined" class="!text-[0.85rem]" />
               <span v-if="multi" class="truncate"><i class="pi pi-server text-[0.7rem] mr-1" aria-hidden="true" />{{ a.server }}</span>
             </span>
           </div>
