@@ -114,6 +114,8 @@ export interface HostStatus {
   os?: string;
   /** Whether the file explorer is on, and whether it may change anything. */
   files?: { enabled: boolean; readOnly: boolean };
+  /** Likewise for the process list. */
+  processes?: { enabled: boolean; readOnly: boolean };
 }
 export interface ServerRow {
   name: string;
@@ -378,6 +380,31 @@ export interface FsListing {
 export interface FsBulk {
   done: string[];
   failed: { path: string; error: string }[];
+}
+/** A process on a server. `managed` is set for the ones Freighter runs (an app's service, a build, a storage, Freighter itself). */
+export interface ProcessRow {
+  pid: number;
+  ppid: number;
+  name: string;
+  command: string;
+  user: string;
+  uid: number;
+  state: string;
+  /** Percent of one CPU core. */
+  cpu: number;
+  rss: number;
+  threads: number;
+  startedMs: number;
+  starttime: number;
+  unit: string | null;
+  managed: { kind: "app" | "storage" | "build" | "platform"; app: string | null; service: string | null } | null;
+  kernel: boolean;
+}
+export interface ProcessList {
+  cpus: number;
+  memTotal: number;
+  uptimeSeconds: number;
+  processes: ProcessRow[];
 }
 export interface HostSample {
   at: string;

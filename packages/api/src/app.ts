@@ -1643,6 +1643,27 @@ export function createApi(ctx: ApiContext): Api {
     return download(event, stream, path.split("/").pop() || "download", result.size);
   }));
 
+  // ---- the process list of a server ----
+  const procCall = async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      return await fn();
+    } catch (e) {
+      if (e instanceof AgentError && /unknown operation/.test(e.message)) throw new ApiError(409, "conflict", "this server's agent predates the process list. Upgrade it first");
+      throw e;
+    }
+  };
+  router.get("/v1/servers/:name/processes", route("admin", (event) => {
+    const { agent } = fsAgent(event);
+    return procCall(() => agent.call("processes.list", {}, { timeoutMs: 30_000 }));
+  }));
+  router.post("/v1/servers/:name/processes/signal", route("admin", async (event, who) => {
+    const { name, agent } = fsAgent(event);
+    const b = await body(event, z.object({ pid: z.number().int().positive(), starttime: z.number().int().nonnegative(), signal: z.enum(["TERM", "KILL", "HUP", "INT", "STOP", "CONT"]), /** What the user saw, for the audit log (never the command line, which can hold secrets). */ name: z.string().max(64).optional() }));
+    await procCall(() => agent.call("processes.signal", { pid: b.pid, starttime: b.starttime, signal: b.signal }, { timeoutMs: 15_000 }));
+    audit(who, "process.signal", undefined, { server: name, pid: b.pid, signal: b.signal, ...(b.name ? { process: b.name } : {}) });
+    return { ok: true };
+  }));
+
   router.post("/v1/servers/:name/updates/check", route("admin", async (event) => {
     const name = sName(event);
     needServer(name);

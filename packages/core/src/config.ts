@@ -54,6 +54,8 @@ export const hostConfigSchema = z.object({
       maxArtifactMb: z.number().positive().default(200),
       /** The file explorer: everything on this server, as root. `readOnly` allows looking and downloading only. */
       files: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
+      /** The process list: every process on this server. `readOnly` allows looking only (no signals). */
+      processes: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
       /** Optional mutual-TLS listener so a control plane on another host can manage this one. */
       remote: z
         .object({

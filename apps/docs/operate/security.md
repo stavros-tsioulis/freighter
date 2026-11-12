@@ -47,6 +47,10 @@ A compromised agent controls its own server, including the apps and secrets on i
 
 There's no revocation list. The control server decides which agents it talks to, and agents accept only the single client identity.
 
+## The process list
+
+The [process list](/operate/processes) shows every process on a server with its full command line, which can include secrets passed as arguments, and lets an admin signal them. It is admin-only, signals are audited by name and PID, and it can be turned off or made read-only per server with `agent.processes` in that server's `config.yaml`. It never signals PID 1, kernel threads, the agent or Freighter's own services.
+
 ## The file explorer
 
 The [file explorer](/operate/files) shows every file on a server, and the agent runs as root, so this is the most powerful thing an admin token can do. It reads and changes anything the machine has: keys, certificates, the registry database, other apps' data.

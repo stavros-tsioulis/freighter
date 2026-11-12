@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { FsBulk, FsListing, HostSample } from "~/types";
+import type { FsBulk, FsListing, HostSample, ProcessList } from "~/types";
 import { api } from "./api";
 import { joinPath } from "~/utils/files";
 
@@ -25,6 +25,28 @@ export const useFsIdentities = (server: MaybeRef<string>, enabled: MaybeRef<bool
     staleTime: 60_000,
     retry: false,
   });
+
+/** Every process on a server. Read again every few seconds while `live`. */
+export const useProcesses = (server: MaybeRef<string>, live: MaybeRef<boolean>, enabled: MaybeRef<boolean> = true) =>
+  useQuery({
+    queryKey: ["processes", server],
+    enabled: computed(() => toValue(enabled)),
+    queryFn: () => api<ProcessList>(`/servers/${toValue(server)}/processes`),
+    refetchInterval: () => (toValue(live) ? 3000 : false),
+    placeholderData: (prev) => prev,
+    retry: false,
+  });
+
+export function useSignalProcess(server: MaybeRef<string>) {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { pid: number; starttime: number; signal: "TERM" | "KILL" | "HUP" | "INT" | "STOP" | "CONT"; name?: string }) =>
+      api(`/servers/${toValue(server)}/processes/signal`, { method: "POST", body: v }),
+    onSuccess: () => setTimeout(() => void qc.invalidateQueries({ queryKey: ["processes", toValue(server)] }), 600),
+    onError: (e) => notify.fail("Could not signal the process", e),
+  });
+}
 
 export const useHostMetrics = (server: MaybeRef<string>, minutes: MaybeRef<number>, enabled: MaybeRef<boolean> = true) =>
   useQuery({

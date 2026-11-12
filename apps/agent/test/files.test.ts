@@ -116,3 +116,14 @@ describe("file explorer over the agent protocol", () => {
     expect((await client.call("ping", {})).capabilities).toContain("files");
   });
 });
+
+describe.runIf(process.platform === "linux")("the process list over the agent protocol", () => {
+  it("lists this very process as the agent's own, and refuses to signal it or pid 1", async () => {
+    const { client } = await setup();
+    const list = await client.call("processes.list", {});
+    const me = list.processes.find((p) => p.pid === process.pid);
+    expect(me).toBeDefined();
+    await expect(client.call("processes.signal", { pid: process.pid, starttime: me!.starttime, signal: "TERM" })).rejects.toMatchObject({ code: "bad_request" });
+    await expect(client.call("processes.signal", { pid: 1, starttime: 1, signal: "KILL" })).rejects.toMatchObject({ code: "bad_request" });
+  });
+});

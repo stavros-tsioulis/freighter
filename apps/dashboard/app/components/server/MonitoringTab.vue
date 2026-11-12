@@ -21,6 +21,7 @@ const disk = computed(() => (points.value ?? []).map((p) => ({ t: t(p), v: p.dis
 const loadMax = computed(() => niceMax(Math.max(cpus.value ?? 1, ...load.value.map((p) => p.v)), 1));
 const pct = (used: number | null | undefined, total: number | null | undefined) => (used != null && total ? `${Math.round((used / total) * 100)}%` : "–");
 const h = computed(() => props.server.host);
+const { can } = useSession();
 </script>
 
 <template>
@@ -53,5 +54,7 @@ const h = computed(() => props.server.host);
       <ServerMetricChart title="Memory" :value="pct(last?.memUsed, last?.memTotal)" :detail="last ? `${formatBytes(last.memUsed)} of ${formatBytes(last.memTotal)}` : undefined" :points="mem" :from="from" :to="to" :y-max="last?.memTotal ?? 1" :format="formatBytes" />
       <ServerMetricChart title="Disk" :value="pct(last?.diskUsed, last?.diskTotal)" :detail="last?.diskUsed != null && last.diskTotal ? `${formatBytes(last.diskUsed)} of ${formatBytes(last.diskTotal)}` : undefined" :points="disk" :from="from" :to="to" :y-max="last?.diskTotal ?? 1" :format="formatBytes" />
     </div>
+
+    <ServerProcesses v-if="can('admin') && server.status === 'online'" :server="server.name" :enabled="h?.processes?.enabled !== false" :read-only="h?.processes?.readOnly" />
   </div>
 </template>

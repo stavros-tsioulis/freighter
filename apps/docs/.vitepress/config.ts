@@ -59,6 +59,7 @@ export default defineConfig({
           { text: "The dashboard", link: "/operate/dashboard" },
           { text: "Logs and metrics", link: "/operate/logs-metrics" },
           { text: "File explorer", link: "/operate/files" },
+          { text: "Processes", link: "/operate/processes" },
           { text: "Server settings", link: "/operate/server-settings" },
           { text: "Users and tokens", link: "/operate/access" },
           { text: "Security model", link: "/operate/security" },

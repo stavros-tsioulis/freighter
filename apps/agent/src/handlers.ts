@@ -44,6 +44,9 @@ import {
   makeDir,
   renamePath,
   archiveSupport,
+  listProcesses,
+  ProcessError,
+  signalProcess,
   beginOperation,
   cancelOperation,
   CanceledError,
@@ -98,6 +101,12 @@ async function checkArtifact(d: Deps, artifact: string): Promise<string> {
 export class BadRequest extends Error {}
 
 /** The file explorer can be turned off for a server, or limited to looking and downloading. */
+/** The process list can be turned off, or limited to looking, per server. */
+export function processes(d: Deps, changes = false): void {
+  if (!d.config.agent.processes.enabled) throw new BadRequest("the process list is turned off on this server (agent.processes.enabled in its config.yaml)");
+  if (changes && d.config.agent.processes.readOnly) throw new BadRequest("the process list is read-only on this server (agent.processes.readOnly in its config.yaml)");
+}
+
 export function explorer(d: Deps, changes = false): void {
   if (!d.config.agent.files.enabled) throw new FileError("bad_request", "the file explorer is turned off on this server (agent.files.enabled in its config.yaml)");
   if (changes && d.config.agent.files.readOnly) throw new FileError("bad_request", "the file explorer is read-only on this server (agent.files.readOnly in its config.yaml)");
@@ -158,7 +167,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), archives: await archiveSupport(), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), archives: await archiveSupport(), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files, processes: d.config.agent.processes };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -233,6 +242,15 @@ export function createHandlers(d: Deps): Handlers {
     async "storage.rm"({ name, paths }) {
       explorer(d, true);
       return deleteStoragePaths(d, name, paths);
+    },
+    async "processes.list"() {
+      processes(d);
+      return listProcesses({ appUsers: new Set(await listApps(d)) });
+    },
+    async "processes.signal"({ pid, starttime, signal }) {
+      processes(d, true);
+      await signalProcess(pid, starttime, signal);
+      return {};
     },
     async "fs.identities"() {
       explorer(d);
@@ -412,6 +430,7 @@ export function classify(e: unknown): WireError {
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
   if (e instanceof FileError) return { code: e.code, message: e.message };
+  if (e instanceof ProcessError) return { code: e.code, message: e.message };
   if (e instanceof CanceledError) return { code: "conflict", message: e.message };
   if (e instanceof UpgradeError) return { code: /in progress/.test(e.message) ? "conflict" : "bad_request", message: e.message };
   if (e instanceof BadRequest || e instanceof SettingsError) return { code: "bad_request", message: e.message };

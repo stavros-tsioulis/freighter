@@ -15,6 +15,8 @@ describe("file explorer", () => {
       ["POST", "/v1/servers/local/fs/extract"],
       ["POST", "/v1/servers/local/fs/chown"],
       ["GET", "/v1/servers/local/fs/identities"],
+      ["GET", "/v1/servers/local/processes"],
+      ["POST", "/v1/servers/local/processes/signal"],
       ["POST", "/v1/servers/local/fs/delete"],
       ["PUT", "/v1/servers/local/fs/upload?path=/tmp/x"],
       ["GET", "/v1/servers/local/fs/download?path=/etc/passwd"],
@@ -133,5 +135,24 @@ describe("server metrics", () => {
     expect(r.json.points).toMatchObject([{ load1: 1.5, cpus: 4, memUsed: 600, memTotal: 1000, diskUsed: 1500, diskTotal: 2000 }]);
     expect((await t.request("/v1/servers/ghost/metrics", { token: t.tokens.viewer })).status).toBe(404);
     expect((await t.request("/v1/servers/local/metrics?minutes=0", { token: t.tokens.viewer })).status).toBe(400);
+  });
+});
+
+describe("the process list", () => {
+  it("is admin-only, passes the list through and audits signals by process name, not command line", async () => {
+    const t = await makeApi();
+    t.handlers["processes.list"] = () => ({ cpus: 4, memTotal: 8e9, uptimeSeconds: 10, processes: [] });
+    t.handlers["processes.signal"] = () => ({});
+    expect((await t.request("/v1/servers/local/processes", { token: t.tokens.admin })).json).toMatchObject({ cpus: 4, processes: [] });
+    const sig = (json: unknown) => t.request("/v1/servers/local/processes/signal", { method: "POST", token: t.tokens.admin, json });
+    expect((await sig({ pid: 123, starttime: 500, signal: "TERM", name: "node" })).status).toBe(200);
+    expect(t.calls.find((c) => c.op === "processes.signal")!.args).toEqual({ pid: 123, starttime: 500, signal: "TERM" });
+    expect((await sig({ pid: 123, starttime: 500, signal: "BOOM" })).status).toBe(400);
+    expect((await sig({ pid: 0, starttime: 500, signal: "TERM" })).status).toBe(400);
+    expect(t.registry.audit.list().find((a) => a.action === "process.signal")!.detail).toEqual({ server: "local", pid: 123, signal: "TERM", process: "node" });
+    t.handlers["processes.list"] = () => {
+      throw new t.AgentError("bad_request", 'unknown operation "processes.list"');
+    };
+    expect((await t.request("/v1/servers/local/processes", { token: t.tokens.admin })).status).toBe(409);
   });
 });
