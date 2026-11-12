@@ -366,7 +366,8 @@ export function createApi(ctx: ApiContext): Api {
         /* not parseable: nothing to show */
       }
     }
-    if (!text) return { text: null, settings: null, pending };
+    // An app whose first deployment is still running has no saved configuration yet: show the one it was sent with.
+    if (!text) return { text: null, settings: pending, pending };
     const { name: _name, source: _source, ...settings } = parseManifest(text, { legacy: true, raw: true });
     return { text, settings, pending };
   }));

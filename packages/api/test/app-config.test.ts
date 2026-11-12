@@ -127,7 +127,8 @@ describe("an app being created", () => {
     const r = await t.request("/v1/apps/fresh/image-deployments", { method: "POST", token: t.tokens.deployer, json: { manifest } });
     expect(r.status).toBe(202);
     const during = (await t.request("/v1/apps/fresh/config", { token: t.tokens.viewer })).json;
-    expect(during.settings).toBeNull();
+    expect(during.text).toBeNull();
+    expect(Object.keys(during.settings.services)).toEqual(["web", "cache"]); // what it was sent with, to show and edit
     expect(Object.keys(during.pending.services)).toEqual(["web", "cache"]);
     release();
     await t.api.jobs.idle();

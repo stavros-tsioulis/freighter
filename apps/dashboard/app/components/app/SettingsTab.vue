@@ -13,7 +13,7 @@ const { data: link } = useGitLink(appName);
 
 const form = ref(emptyForm());
 const dirty = ref(false);
-watch(() => config.value?.text, () => { form.value = fromSettings(config.value?.settings); dirty.value = false; }, { immediate: true });
+watch(() => config.value?.text ?? JSON.stringify(config.value?.settings ?? null), () => { form.value = fromSettings(config.value?.settings); dirty.value = false; }, { immediate: true });
 watch(form, () => { dirty.value = true; }, { deep: true });
 const reset = () => { form.value = fromSettings(config.value?.settings); dirty.value = false; };
 async function submit() {
