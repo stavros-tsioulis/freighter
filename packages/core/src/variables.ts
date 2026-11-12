@@ -1,17 +1,18 @@
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { z } from "zod";
-import { loadReleaseManifest } from "./apply.ts";
+import { parseManifest, renderManifest } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
-import { deploy, type DeployResult } from "./deploy.ts";
-import { currentRelease, appDir, releaseDir } from "./releases.ts";
-import { currentSource } from "./source.ts";
+import { readConfig, writeConfig } from "./appconfig.ts";
+import { setConfig } from "./configure.ts";
+import type { DeployResult } from "./deploy.ts";
+import { appDir } from "./releases.ts";
 import { migrateShared } from "./shared.ts";
 
 /**
- * Variables added on the server, per service, on top of the service's `environment:` in app.yaml (which gives the initial
- * values). An entry here wins over the same name in app.yaml; removing it brings the app.yaml value back. They live next
- * to the app like its domains, so every release, rollback included, gets them.
+ * Variables an older version kept apart from the configuration, per service, laid over the service's `environment:`
+ * (an entry here wins over the same name there). New variables go into the configuration itself; the first change moves
+ * these there, and this file is then removed. Until then they still apply.
  */
 export const variablesPath = (d: Deps, app: string) => `${appDir(d, app)}/variables.json`;
 
@@ -42,15 +43,19 @@ export async function writeVariables(d: Deps, app: string, vars: Variables): Pro
 }
 
 export interface SetVariablesResult {
-  /** The service's variables after the change. */
+  /** The service's own variables after the change. */
   variables: Record<string, string>;
-  /** The release was redeployed unchanged so the services pick the values up; null if the app isn't deployed yet. */
+  /** The services that changed were restarted with them; null if the app isn't deployed yet. */
   deploy: DeployResult | null;
 }
 
 /**
- * Add, change or remove a service's variables. A deployed app is redeployed with its current release unchanged (new
- * instances, health check, rollback on failure), because values are part of each service's unit.
+ * Add, change or remove a variable of a service. It goes into the service's `environment:` in the app's configuration,
+ * the same place the Settings tab and the service's edit dialog show, so it is part of the service like any other
+ * value (connections to it appear on the graph, a rollback keeps it with the release). The configuration is saved
+ * first and the app then takes it the quick way: only the service concerned restarts.
+ *
+ * Variables an older version kept apart (`variables.json`) are moved into the configuration by the first change.
  */
 export async function setVariables(
   d: Deps,
@@ -60,13 +65,15 @@ export async function setVariables(
   opts: { skipVerify?: boolean; log?: DeployLog } = {},
 ): Promise<SetVariablesResult> {
   const log = opts.log ?? noLog;
-  const all = await readVariables(d, app);
-  const before = all[service] ?? {};
-  const release = await currentRelease(d, app);
-  const manifest = release ? await loadReleaseManifest(d, app, release) : undefined;
-  if (manifest && !(service in manifest.services)) throw new Error(`${app} has no service "${service}"`);
-  const secrets = manifest?.services[service]!.secrets ?? [];
+  const text = await readConfig(d, app);
+  if (!text) throw new Error(`${app} has no configuration yet`);
+  const { name, source: _source, ...settings } = parseManifest(text, { legacy: true, raw: true });
+  if (!(service in settings.services)) throw new Error(`${app} has no service "${service}"`);
+  const kept = await readVariables(d, app);
+  const services = Object.fromEntries(Object.entries(settings.services).map(([n, def]) => [n, { ...def, environment: { ...def.environment, ...kept[n] } }]));
+  const secrets = services[service]!.secrets;
 
+  const before = services[service]!.environment;
   const next = { ...before };
   for (const [k, v] of Object.entries(change.set ?? {})) {
     if (!KEY_RE.test(k)) throw new Error(`invalid variable name "${k}": expected UPPER_SNAKE_CASE`);
@@ -78,27 +85,12 @@ export async function setVariables(
   }
   for (const k of change.remove ?? []) delete next[k];
 
-  if (JSON.stringify(before) === JSON.stringify(next)) return { variables: next, deploy: null };
-  await writeVariables(d, app, { ...all, [service]: next });
-  if (!release) {
-    await log("==> the app isn't deployed yet, so the variables are saved and take effect with its first deploy");
-    return { variables: next, deploy: null };
-  }
-
-  await log(`==> variables for ${app}/${service} changed; redeploying the current release (${release}) unchanged so the services get them`);
-  const dir = releaseDir(d, app, release);
-  try {
-    const result = await deploy(d, {
-      manifestText: await readFile(`${dir}/app.yaml`, "utf8"),
-      source: dir,
-      meta: (await currentSource(d, app)) ?? undefined,
-      skipVerify: opts.skipVerify,
-      log,
-      legacy: true,
-    });
-    return { variables: next, deploy: result };
-  } catch (e) {
-    await writeVariables(d, app, all);
-    throw e;
-  }
+  if (JSON.stringify(before) === JSON.stringify(next) && Object.keys(kept).length === 0) return { variables: next, deploy: null };
+  services[service] = { ...services[service]!, environment: next };
+  const rendered = renderManifest(name, { ...settings, services } as never); // checks it the way app.yaml is checked
+  await writeConfig(d, app, rendered);
+  await writeVariables(d, app, {}); // everything is in the configuration now
+  await log(`==> ${service} of ${app}: variables changed, saved in the configuration`);
+  const r = await setConfig(d, app, rendered, { skipVerify: opts.skipVerify, log });
+  return { variables: next, deploy: r.deploy };
 }

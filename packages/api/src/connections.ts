@@ -75,12 +75,13 @@ export async function pushConnections(ctx: ApiContext, server: string, app: stri
 }
 
 /** What `app`'s own environment can read about its services right now (for showing resolved values). */
-export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts & { fromFile: Record<string, Record<string, string>>; stored: Record<string, Record<string, string>> }) | undefined> {
+export async function ownFacts(ctx: ApiContext, app: string, configText?: string): Promise<(AppFacts & { fromFile: Record<string, Record<string, string>>; own: Record<string, Record<string, string>>; stored: Record<string, Record<string, string>> }) | undefined> {
   const row = ctx.registry.apps.get(app);
-  if (!row?.manifestText) return undefined;
+  const text = configText ?? row?.manifestText;
+  if (!row || !text) return undefined;
   let manifest;
   try {
-    manifest = parseManifest(row.manifestText, { legacy: true });
+    manifest = parseManifest(text, { legacy: true });
   } catch {
     return undefined;
   }
@@ -96,6 +97,8 @@ export async function ownFacts(ctx: ApiContext, app: string): Promise<(AppFacts 
     volumePaths: volumePaths(manifest, `/srv/apps/${app}/shared`),
     environment: withStored(manifest, stored),
     fromFile: Object.fromEntries(Object.entries(manifest.services).map(([name, def]) => [name, def.environment])),
+    // what each service sets itself, apart from what it gets from the app
+    own: Object.fromEntries(Object.entries(parseManifest(text, { legacy: true, raw: true }).services).map(([name, def]) => [name, def.environment])),
     stored,
   };
 }

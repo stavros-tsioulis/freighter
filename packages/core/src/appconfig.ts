@@ -1,5 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { parseManifest, renderManifest, type Manifest } from "@freighter/manifest";
+import { readVariables, writeVariables } from "./variables.ts";
 import type { Deps } from "./deps.ts";
 import { appDir, currentRelease, releaseDir } from "./releases.ts";
 
@@ -33,16 +34,39 @@ export async function writeConfig(d: Deps, app: string, text: string): Promise<v
  * separately takes the app.yaml of its current release.
  */
 export async function readConfig(d: Deps, app: string): Promise<string | null> {
+  let text: string | null = null;
   try {
-    return await readFile(configPath(d, app), "utf8");
+    text = await readFile(configPath(d, app), "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
   }
-  const release = await currentRelease(d, app);
-  if (!release) return null;
-  const text = normalizeConfig(await readFile(`${releaseDir(d, app, release)}/app.yaml`, "utf8"));
-  await writeConfig(d, app, text);
-  return text;
+  if (text === null) {
+    const release = await currentRelease(d, app);
+    if (!release) return null;
+    text = normalizeConfig(await readFile(`${releaseDir(d, app, release)}/app.yaml`, "utf8"));
+    await writeConfig(d, app, text);
+  }
+  return foldVariables(d, app, text);
+}
+
+/**
+ * Variables an older version kept apart from the configuration already apply to the services (they are laid over their
+ * environment), so moving them into the configuration changes nothing that runs. It makes them what the settings, the
+ * edit dialog and the graph read.
+ */
+async function foldVariables(d: Deps, app: string, text: string): Promise<string> {
+  try {
+    const kept = await readVariables(d, app);
+    if (Object.keys(kept).length === 0) return text;
+    const { name, source: _source, ...settings } = parseManifest(text, { legacy: true, raw: true });
+    const services = Object.fromEntries(Object.entries(settings.services).map(([n, def]) => [n, { ...def, environment: { ...def.environment, ...kept[n] } }]));
+    const rendered = renderManifest(name, { ...settings, services } as never);
+    await writeConfig(d, app, rendered);
+    await writeVariables(d, app, {});
+    return rendered;
+  } catch {
+    return text; // not something that can be moved right now: it keeps applying where it is
+  }
 }
 
 export const sameConfig = (a: Manifest, b: Manifest) => JSON.stringify(a) === JSON.stringify(b);

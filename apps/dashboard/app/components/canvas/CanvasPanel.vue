@@ -43,7 +43,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
     <header class="px-5 pt-4 pb-3 border-b border-[var(--fr-line)] flex items-start justify-between gap-3">
       <div class="min-w-0">
         <p v-if="selection.service" class="text-sm text-muted-color truncate"><i class="pi pi-box text-[0.7rem] mr-1" aria-hidden="true" />{{ selection.app }}</p>
-        <h2 class="font-display font-semibold text-[1.7rem] leading-tight truncate">{{ title }}</h2>
+        <h2 class="font-display font-semibold text-[1.7rem] leading-1.7 truncate">{{ title }}</h2>
         <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           <StatusTag :state="svc ? svc.activeState : graphApp?.status" :sub="svc?.subState" />
           <span v-if="svc" class="text-sm text-muted-color">{{ svc.subState }}</span>

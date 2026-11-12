@@ -20,7 +20,7 @@ Opening a project shows its **canvas**. The header stays the same when you switc
 
 The canvas draws every app of the project as a box holding its services, and an arrow from a service to each service it [connects to](/deploy/connections). Click a service or an app to open its panel: state, address, release, its connections, start/stop/restart, and tabs for logs, domains, variables and deployments. The open item is in the URL (`?node=`), so a link opens the same view; press <kbd>Esc</kbd> to close the panel.
 
-Drag an app's box to arrange the canvas; boxes snap to the grid. Deployers can do this, and positions are saved for everyone who opens the project. An arrow is dashed red when its reference can't be resolved right now (the target has no port, is on another server for `.internal`, or isn't in the project); the panel says why.
+Drag an app's box to arrange the canvas, and drag a service inside its box to put it where you want it; the box closes in around its services when you let go. Everything snaps to the grid. Deployers can do this, and positions are saved for everyone who opens the project. A service you add later is placed under the others. An arrow is dashed red when its reference can't be resolved right now (the target has no port, is on another server for `.internal`, or isn't in the project); the panel says why.
 
 The **Deploy** button is on the Overview and project pages. It asks what to deploy, then shows that kind's form: a **Git repository** (admin), a **Container image** (see [Deploy images](/deploy/images)) or an **Archive** (both deployer). **Sync** (admin) re-reads every server immediately instead of waiting for the next periodic sync.
 
@@ -42,7 +42,7 @@ The header shows the app's server, how many services are running, the current an
 | **Source** | for an app that runs container images: each service's image, its registry and login, where it is reachable (domains, the published port and the container port), its volumes, **Pull again and redeploy** and **Change image**; for other apps: the linked repository, branch, key, auto-deploy, last webhook, settings for repositories without `app.yaml`; **Deploy latest**, **Test connection**, rotate secret or key, unlink | viewer (changes: admin) |
 | **Logs** | the journal of a service, 10–1000 lines, *Live* mode refreshing every 3 seconds, copy and download | deployer |
 | **Settings** | the app's configuration as a form: services, environment, secret names, build commands, limits. It started from `app.yaml`; **Save and redeploy** applies a change | viewer (change: admin) |
-| **Variables** | of one service (pick it on the app page; on the canvas, select the service): its variables (the `environment:` of app.yaml as initial values, plus any you add or change here; connections show what they resolve to), and its secrets (names, and a way to set a value) | viewer (change: admin) |
+| **Variables** | of one service (pick it on the app page; on the canvas, select the service): its variables (the service's `environment:` in its configuration, with the ones it gets from the app marked; what you add or change here is saved in the configuration, so it shows in the service's edit dialog and on the graph, and only that service restarts; connections show what they resolve to), and its secrets (names, and a way to set a value) | viewer (change: admin) |
 
 The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link straight to it.
 

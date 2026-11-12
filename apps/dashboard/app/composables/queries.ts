@@ -150,12 +150,13 @@ export interface VariableRow {
   /** It resolves to a credential (a storage's key pair), which is never shown. */
   secret?: boolean;
   /** `app.yaml`: the initial value; `added`: set in the dashboard; `override`: set in the dashboard over app.yaml's. */
-  source: "app.yaml" | "added" | "override";
+  /** `service`: set on this service. `app`: from the app's environment, which every service gets. */
+  source: "service" | "app";
 }
 export const useVariables = (app: MaybeRef<string>, enabled: MaybeRef<boolean> = true) =>
   useQuery({ queryKey: ["variables", app], enabled: computed(() => toValue(enabled)), queryFn: () => api<{ variables: VariableRow[] }>(`/apps/${toValue(app)}/variables`).then((r) => r.variables), refetchInterval: 15_000 });
 
-/** Add or change a variable, or remove one added in the dashboard (an override goes back to app.yaml's value). The app is redeployed to apply it. */
+/** Add, change or remove a service's variable. It is part of the configuration, applied in the background: the call returns once it is queued. */
 export function useVariableChange(app: MaybeRef<string>) {
   const qc = useQueryClient();
   const notify = useNotify();
@@ -165,9 +166,8 @@ export function useVariableChange(app: MaybeRef<string>) {
         ? api(`/apps/${toValue(app)}/services/${v.service}/variables/${v.key}`, { method: "DELETE" })
         : api(`/apps/${toValue(app)}/services/${v.service}/variables/${v.key}`, { method: "PUT", body: { value: v.value } }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["variables"] });
-      void qc.invalidateQueries({ queryKey: ["app"] });
-      void qc.invalidateQueries({ queryKey: ["graph"] });
+      notify.started(toValue(app));
+      for (const key of ["variables", "config", "app", "apps", "graph", "deployments", "app-deployments"]) void qc.invalidateQueries({ queryKey: [key] });
     },
     onError: (e) => notify.fail("Could not change the variable", e),
   });

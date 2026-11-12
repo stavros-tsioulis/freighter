@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { deploy, listEnvNames, readVariables, setEnv, setVariables } from "../src/index.ts";
+import { deploy, getConfig, listEnvNames, readVariables, setEnv, setVariables } from "../src/index.ts";
 import { artifact, makeDeps } from "./helpers.ts";
 
 const units = (h: Awaited<ReturnType<typeof makeDeps>>, service: string) => h.unitText(h.unitFiles().find((u) => u.includes(`--${service}.`))!);
@@ -32,7 +32,8 @@ services:
     await setVariables(h.deps, "shop", "worker", { set: { EXTRA: "1" } });
     expect(units(h, "worker")).toContain('Environment="EXTRA=1"');
     expect(units(h, "web")).not.toContain("EXTRA");
-    expect(await readVariables(h.deps, "shop")).toEqual({ worker: { EXTRA: "1" } });
+    expect((await getConfig(h.deps, "shop"))!.match(/EXTRA/g)).toHaveLength(1); // in the worker's environment in the configuration, not in the web's
+    expect(await readVariables(h.deps, "shop")).toEqual({});
     await expect(setVariables(h.deps, "shop", "nope", { set: { A: "1" } })).rejects.toThrow(/no service "nope"/);
   });
 

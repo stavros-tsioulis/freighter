@@ -64,7 +64,7 @@ function save() {
       </div>
       <Skeleton v-if="loadingVars" height="3rem" />
       <p v-else-if="!(variables ?? []).length" class="text-sm text-muted-color">None</p>
-      <ul v-else class="rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] divide-y divide-[var(--fr-line)]">
+      <ul v-else class="var-list rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] divide-y divide-[var(--fr-line)]">
         <li v-for="v in variables" :key="v.key" class="var-row">
           <code class="var-key">{{ v.key }}</code>
           <div class="min-w-0">
@@ -74,10 +74,10 @@ function save() {
             <p v-else-if="v.error" class="var-res text-red-600 dark:text-red-400"><i class="pi pi-exclamation-triangle text-[0.7rem]" aria-hidden="true" />{{ v.error }}</p>
           </div>
           <div class="var-end">
-            <span v-if="v.source !== 'added'" class="text-xs text-muted-color whitespace-nowrap">{{ v.source === "override" ? "overridden" : "app.yaml" }}</span>
+            <span v-if="v.source === 'app'" class="text-xs text-muted-color whitespace-nowrap" title="Set for the whole app. Editing it here sets this service's own value.">from the app</span>
             <template v-if="can('admin')">
               <Button icon="pi pi-pencil" text rounded size="small" severity="secondary" :aria-label="`Edit ${v.key}`" @click="openVar(v)" />
-              <Button v-if="v.source !== 'app.yaml'" :icon="v.source === 'override' ? 'pi pi-undo' : 'pi pi-trash'" text rounded size="small" severity="secondary" :aria-label="v.source === 'override' ? `Reset ${v.key} to app.yaml` : `Remove ${v.key}`" :title="v.source === 'override' ? 'Back to the app.yaml value' : 'Remove'" :loading="change.isPending.value && change.variables.value?.key === v.key" @click="change.mutate({ service: current, key: v.key })" />
+              <Button v-if="v.source === 'service'" icon="pi pi-trash" text rounded size="small" severity="secondary" :aria-label="`Remove ${v.key}`" title="Remove" :loading="change.isPending.value && change.variables.value?.key === v.key" @click="change.mutate({ service: current, key: v.key })" />
             </template>
           </div>
         </li>
@@ -145,5 +145,7 @@ function save() {
 .var-res { margin: 0.15rem 0 0; display: flex; align-items: baseline; gap: 0.4rem; font-size: 0.86rem; overflow-wrap: anywhere; }
 .var-res i { flex: none; }
 .var-end { display: flex; align-items: center; gap: 0.15rem; justify-self: end; }
-@media (max-width: 639px) { .var-row { grid-template-columns: minmax(0, 1fr) auto; } .var-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; } .var-row > :nth-child(3) { grid-column: 2; grid-row: 1; } }
+/* Where the list is narrow (a side panel, a phone) the value goes under its name instead of squeezing into what is left. */
+.var-list { container-type: inline-size; }
+@container (max-width: 44rem) { .var-row { grid-template-columns: minmax(0, 1fr) auto; } .var-row > :nth-child(2) { grid-column: 1 / -1; grid-row: 2; } .var-row > :nth-child(3) { grid-column: 2; grid-row: 1; } }
 </style>

@@ -7,7 +7,7 @@ import "@vue-flow/core/dist/style.css";
 import "@vue-flow/controls/dist/style.css";
 import "@vue-flow/minimap/dist/style.css";
 import type { ProjectGraph } from "~/types";
-import { GRID, buildFlow, type FlowEdge, type FlowNode } from "~/utils/graph";
+import { GRID, buildFlow, serviceNodeId, settleGroup, type FlowEdge, type FlowNode } from "~/utils/graph";
 
 type Selection = { app: string; service?: string } | null;
 const props = defineProps<{ graph: ProjectGraph; selected: Selection; editable: boolean }>();
@@ -44,10 +44,21 @@ watch(flow, sync, { immediate: true });
 
 const { getNodes, fitView, onNodeDragStart, onNodeDragStop, onNodeClick, onPaneClick } = useVueFlow();
 onNodeDragStart(() => (dragging.value = true));
-onNodeDragStop(() => {
+onNodeDragStop(({ node }) => {
   dragging.value = false;
   const positions: ProjectGraph["layout"] = { ...props.graph.layout };
   for (const n of getNodes.value) if (n.type === "app" || n.type === "storage") positions[n.id] = { x: Math.round(n.position.x / GRID) * GRID, y: Math.round(n.position.y / GRID) * GRID };
+  // A service moved inside its app: its place is kept relative to the app's box, and the box closes in around them.
+  if (node.type === "service") {
+    const d = node.data as FlowNode["data"];
+    const group = getNodes.value.find((n) => n.id === node.parentNode);
+    if (group && d.app) {
+      const rel = Object.fromEntries(d.app.services.map((s) => [s.name, getNodes.value.find((n) => n.id === serviceNodeId(d.app!.name, s.name))?.position ?? { x: 0, y: 0 }]));
+      const settled = settleGroup(group.position, rel);
+      positions[group.id] = settled.at;
+      for (const [name, p] of Object.entries(settled.rel)) positions[serviceNodeId(d.app.name, name)] = p;
+    }
+  }
   emit("layout", positions);
 });
 onNodeClick(({ node }: NodeMouseEvent) => {
@@ -100,7 +111,7 @@ const minimapColor = (n: { data?: FlowNode["data"]; type?: string }) =>
 }
 .app-dark .canvas.vue-flow { --canvas-dot: var(--p-surface-700); }
 .canvas .vue-flow__node { cursor: pointer; }
-.canvas .vue-flow__node-app { cursor: grab; }
+.canvas .vue-flow__node-app, .canvas .vue-flow__node-service { cursor: grab; }
 .canvas .vue-flow__node:focus-visible { outline: 2px solid var(--p-primary-color); outline-offset: 2px; border-radius: 10px; }
 .canvas .vue-flow__node.selected, .canvas .vue-flow__node:focus { box-shadow: none; }
 .canvas .vue-flow__controls { box-shadow: none; border: 1px solid var(--fr-line); border-radius: var(--p-border-radius-md); overflow: hidden; margin: 1rem; }

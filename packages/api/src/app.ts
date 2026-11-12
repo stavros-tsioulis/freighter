@@ -277,7 +277,8 @@ export function createApi(ctx: ApiContext): Api {
     const name = appParam(event);
     const row = ctx.registry.apps.get(name);
     if (!row) throw new ApiError(404, "not_found", `unknown app "${name}"`);
-    const facts = await ownFacts(ctx, name);
+    // a change that is still being applied counts: what was just added is listed at once
+    const facts = await ownFacts(ctx, name, jobs.pendingConfig(name) ?? undefined);
     if (!facts) return { variables: [] };
     const { peers, storages } = await buildConnections(ctx, name, row.server);
     return {
@@ -287,7 +288,8 @@ export function createApi(ctx: ApiContext): Api {
           .sort(([a], [b]) => a.localeCompare(b))
           .map(([key, value]) => {
             const r = resolved[key]!;
-            const source = key in (facts.stored[service] ?? {}) ? (key in (facts.fromFile[service] ?? {}) ? "override" : "added") : "app.yaml";
+            // a variable is the service's own, or it comes from the app's environment and applies to every service
+            const source = key in (facts.own[service] ?? {}) || key in (facts.stored[service] ?? {}) ? "service" : "app";
             // credentials a connection resolves to are not shown
             return { service, key, value, source, resolved: "value" in r && !r.secret ? r.value : null, secret: "value" in r && r.secret, error: "error" in r ? r.error : null, reference: findReferences(value).length > 0 };
           });
@@ -296,17 +298,44 @@ export function createApi(ctx: ApiContext): Api {
   }));
 
   const serviceParam = (event: H3Event) => z.string().regex(IDENT_RE).parse(getRouterParam(event, "service"));
+  /**
+   * A variable is part of its service's configuration, so changing one is a change of the configuration: checked here
+   * (a reference to nothing is refused at once), then applied in the background like any other.
+   */
   const variableChange = async (event: H3Event, who: Principal, change: { set?: Record<string, string>; remove?: string[] }) => {
     const name = userAppParam(event);
     const service = serviceParam(event);
     const server = serverOf(event, name);
     const key = Object.keys(change.set ?? {})[0] ?? change.remove?.[0];
-    await pushConnections(ctx, server, name);
-    const r = await ctx.agents.forServer(server).call("variables.set", { app: name, service, ...change }, { timeoutMs: 5 * 60_000 });
+    // The agent folds variables an older version kept apart into the configuration when it reads it.
+    let current: string | null = ctx.registry.apps.get(name)?.manifestText ?? null;
+    try {
+      current = (await ctx.agents.forServer(server).call("app.config.get", { app: name })).manifestText ?? current;
+    } catch {
+      /* an agent from before configuration was kept separately */
+    }
+    current = jobs.pendingConfig(name) ?? current; // build on a change that is still being applied, not beside it
+    if (!current) throw new ApiError(404, "not_found", `app "${name}" has no configuration yet`);
+    const { name: _name, source: _source, ...settings } = parseManifest(current, { legacy: true, raw: true });
+    const svc = settings.services[service];
+    if (!svc) throw new ApiError(400, "bad_request", `${name} has no service "${service}"`);
+    const env = { ...svc.environment };
+    for (const [k, v] of Object.entries(change.set ?? {})) {
+      if (k === "PORT") throw new ApiError(400, "bad_request", "PORT is set by Freighter");
+      if (svc.secrets.includes(k)) throw new ApiError(400, "bad_request", `${k} is a secret; set it under Secrets`);
+      if (/[\r\n\0]/.test(v)) throw new ApiError(400, "bad_request", "variable values cannot contain newlines");
+      env[k] = v;
+    }
+    for (const k of change.remove ?? []) delete env[k];
+    let text: string;
+    try {
+      text = renderManifest(name, { ...settings, services: { ...settings.services, [service]: { ...svc, environment: env } } } as never);
+    } catch (e) {
+      if (e instanceof z.ZodError) throw e;
+      throw new ApiError(400, "bad_request", e instanceof Error ? e.message.split("\n")[0]! : String(e));
+    }
     audit(who, change.set ? "variable.set" : "variable.remove", name, { service, key }); // plain values, but not worth logging
-    await syncApp(ctx, server, name).catch(() => {});
-    void jobs.cascade({ app: name }).catch(() => {}); // apps that read this app's variables follow
-    return { ok: true, redeployed: r.deploy !== null };
+    return queueConfig(event, who, name, text);
   };
   router.put("/v1/apps/:app/services/:service/variables/:key", route("admin", async (event, who) => {
     const key = envKey.parse(getRouterParam(event, "key"));
@@ -347,8 +376,11 @@ export function createApi(ctx: ApiContext): Api {
     if (Object.keys(settings.services ?? {}).length === 0) throw new ApiError(422, "no_manifest", "define at least one service");
     checkSettings(name, settings);
     const text = renderManifest(name, settings as never);
+    return queueConfig(event, who, name, text);
+  }));
+  /** Make `text` the app's configuration. The deploy runs in the background; the deployment follows it and holds its log. */
+  const queueConfig = async (event: H3Event, who: Principal, name: string, text: string) => {
     const server = serverOf(event, name);
-    // The deploy runs in the background; the deployment follows it (and holds its log).
     const id = randomUUID();
     ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger: "manual" });
     // New build commands only mean something when the code is built again, so an app that is built from Git is built
@@ -374,7 +406,7 @@ export function createApi(ctx: ApiContext): Api {
     }
     setResponseStatus(event, 202);
     return { ok: true, id, status: "queued", rebuild };
-  }));
+  };
 
   // Remote volumes of the app (declared in its configuration): what is mounted, and whether an SMB password is set.
   router.get("/v1/apps/:app/volumes", route("viewer", async (event) => {

@@ -24,6 +24,49 @@ export function groupSize(services: number) {
   return { w: CARD.w + CARD.pad * 2, h: CARD.head + n * CARD.h + (n - 1) * CARD.gap + CARD.pad };
 }
 
+type Point = { x: number; y: number };
+
+/**
+ * Where each service sits inside its app's box (relative to the box). A service the user has moved keeps the place saved
+ * in the layout; the others are stacked, below everything placed so far. Never above or left of the box's padding.
+ */
+export function serviceSlots(app: Pick<GraphApp, "name" | "services">, layout: Record<string, Point> = {}): Record<string, Point> {
+  const slots: Record<string, Point> = {};
+  const unplaced: string[] = [];
+  for (const s of app.services) {
+    const saved = layout[serviceNodeId(app.name, s.name)];
+    if (saved) slots[s.name] = { x: Math.max(CARD.pad, saved.x), y: Math.max(CARD.head, saved.y) };
+    else unplaced.push(s.name);
+  }
+  let y = Object.values(slots).reduce<number>((bottom, p) => Math.max(bottom, p.y + CARD.h + CARD.gap), CARD.head);
+  // with nothing saved this is the plain stack, in the order the services come
+  for (const name of unplaced) {
+    slots[name] = { x: CARD.pad, y };
+    y += CARD.h + CARD.gap;
+  }
+  return slots;
+}
+
+/** The box that holds the services at these places. */
+export function boxAround(slots: Record<string, Point>): { w: number; h: number } {
+  const all = Object.values(slots);
+  if (!all.length) return groupSize(0);
+  return { w: Math.max(...all.map((p) => p.x)) + CARD.w + CARD.pad, h: Math.max(...all.map((p) => p.y)) + CARD.h + CARD.pad };
+}
+
+/**
+ * After services were dragged: put the first of them back at the box's padding and move the box by the same amount, so
+ * nothing moves on screen and the box stays snug around its services. `at` is where the box is, `rel` where the
+ * services are inside it.
+ */
+export function settleGroup(at: Point, rel: Record<string, Point>): { at: Point; rel: Record<string, Point> } {
+  const all = Object.values(rel);
+  if (!all.length) return { at, rel };
+  const dx = Math.min(...all.map((p) => p.x)) - CARD.pad;
+  const dy = Math.min(...all.map((p) => p.y)) - CARD.head;
+  return { at: { x: at.x + dx, y: at.y + dy }, rel: Object.fromEntries(Object.entries(rel).map(([k, p]) => [k, { x: p.x - dx, y: p.y - dy }])) };
+}
+
 export interface FlowNode {
   id: string;
   type: "app" | "service" | "storage";
@@ -52,12 +95,12 @@ export interface FlowEdge {
 }
 
 /** Where apps without a saved position go: left to right in the order the connections flow (dagre). */
-export function autoLayout(apps: GraphApp[], edges: GraphEdge[], storages: GraphStorage[] = [], storageEdges: GraphStorageEdge[] = []): Record<string, { x: number; y: number }> {
+export function autoLayout(apps: GraphApp[], edges: GraphEdge[], storages: GraphStorage[] = [], storageEdges: GraphStorageEdge[] = [], layout: Record<string, Point> = {}): Record<string, { x: number; y: number }> {
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "LR", nodesep: 56, ranksep: 120, marginx: 24, marginy: 24 });
   g.setDefaultEdgeLabel(() => ({}));
   for (const a of apps) {
-    const { w, h } = groupSize(a.services.length);
+    const { w, h } = boxAround(serviceSlots(a, layout));
     g.setNode(a.name, { width: w, height: h });
   }
   for (const st of storages) g.setNode(`storage:${st.name}`, { width: STORAGE_CARD.w, height: STORAGE_CARD.h });
@@ -88,13 +131,14 @@ export function autoLayout(apps: GraphApp[], edges: GraphEdge[], storages: Graph
  * project has no node to point at, so it is returned in `unresolved` for the panel to list.
  */
 export function buildFlow(graph: ProjectGraph, selected: { app: string; service?: string } | null) {
-  const auto = autoLayout(graph.apps, graph.edges, graph.storages ?? [], graph.storageEdges ?? []);
+  const auto = autoLayout(graph.apps, graph.edges, graph.storages ?? [], graph.storageEdges ?? [], graph.layout);
   const nodes: FlowNode[] = [];
   const services = new Set<string>();
 
   for (const a of graph.apps) {
     const id = appNodeId(a.name);
-    const { w, h } = groupSize(a.services.length);
+    const slots = serviceSlots(a, graph.layout);
+    const { w, h } = boxAround(slots);
     nodes.push({
       id,
       type: "app",
@@ -106,15 +150,14 @@ export function buildFlow(graph: ProjectGraph, selected: { app: string; service?
       style: { width: `${w}px`, height: `${h}px` },
       data: { app: a, selected: selected?.app === a.name && !selected.service },
     });
-    a.services.forEach((s, i) => {
+    a.services.forEach((s) => {
       services.add(serviceNodeId(a.name, s.name));
       nodes.push({
         id: serviceNodeId(a.name, s.name),
         type: "service",
         parentNode: id,
-        extent: "parent",
-        position: { x: CARD.pad, y: CARD.head + i * (CARD.h + CARD.gap) },
-        draggable: false,
+        position: slots[s.name]!,
+        draggable: true,
         selectable: true,
         focusable: true,
         zIndex: 1,

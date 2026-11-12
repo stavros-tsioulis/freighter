@@ -119,9 +119,9 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 
 | | | Role |
 | --- | --- | --- |
-| `GET /apps/:app/variables` | the environment of every service: `service`, `key`, `value` as written, `source` (`app.yaml`, `added`, `override`), `resolved` (connections filled in), `error` if one can't be resolved, `reference` | viewer |
-| `PUT /apps/:app/services/:service/variables/:KEY` | `{"value": "…"}`. Adds or changes a variable of the service over app.yaml's and redeploys the current release to apply it | admin |
-| `DELETE /apps/:app/services/:service/variables/:KEY` | removes an added variable, or takes an override back to app.yaml's value | admin |
+| `GET /apps/:app/variables` | the environment of every service: `service`, `key`, `value` as written, `source` (`service`: the service's own; `app`: from the app's environment), `resolved` (connections filled in), `error` if one can't be resolved, `reference`. A change that is still being applied is included | viewer |
+| `PUT /apps/:app/services/:service/variables/:KEY` | `{"value": "…"}`. Sets the variable in the service's `environment` in the app's configuration. Checked at once (`400` for a bad name, `PORT`, a secret's name or a reference to nothing); `202` with a deployment `id`, and only that service restarts | admin |
+| `DELETE /apps/:app/services/:service/variables/:KEY` | removes it from the service's `environment` (a value from the app's environment shows through again). `202`, like the above | admin |
 | `GET /apps/:app/config` | the app's configuration: `text` (as app.yaml) and `settings` (the same as a form) | viewer |
 | `PUT /apps/:app/config` | `{"settings": {…}}`. Replaces the configuration and redeploys the current release with it | admin |
 | `GET /apps/:app/services/:service/env` | `names` of the service's secrets that have a value, and the `declared` ones | viewer |

@@ -18,6 +18,19 @@ describe("GET /v1/apps/:app/config", () => {
   });
 });
 
+describe("variables of a service", () => {
+  it("say whether they are the service's own or come from the app's environment", async () => {
+    const t = await makeApi();
+    const text = "name: shop\nenvironment:\n  REGION: eu\n  LOG: info\nservices:\n  web:\n    command: node a.js\n    environment:\n      LOG: debug\n      MODE: prod\n";
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: text, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    const vars = (await t.request("/v1/apps/shop/variables", { token: t.tokens.viewer })).json.variables as { key: string; source: string; value: string }[];
+    const by = Object.fromEntries(vars.map((v) => [v.key, v]));
+    expect(by.REGION).toMatchObject({ source: "app", value: "eu" });
+    expect(by.LOG).toMatchObject({ source: "service", value: "debug" }); // its own wins, and is its own
+    expect(by.MODE?.source).toBe("service");
+  });
+});
+
 describe("app-level environment", () => {
   it("is shown apart from each service's own in the settings, and written back as it was", async () => {
     const t = await makeApi();

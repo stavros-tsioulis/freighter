@@ -31,11 +31,11 @@ const state = computed(() => retrying.value ? "Retrying" : ({ active: "Running",
   position: relative;
   height: 100%;
   box-sizing: border-box;
-  padding: 0.6rem 0.8rem 0.55rem 1rem;
+  padding: 0.5rem 0.8rem 0.5rem 1rem;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 0.2rem;
+  gap: 0.1rem;
   background: var(--fr-panel);
   border: 1px solid var(--fr-line);
   border-radius: var(--p-border-radius-lg);
@@ -57,7 +57,7 @@ const state = computed(() => retrying.value ? "Retrying" : ({ active: "Running",
 .svc[data-tone="idle"] { --band: var(--p-surface-300); }
 .svc:hover { border-color: var(--p-surface-400); }
 .svc[data-selected] { border-color: var(--p-primary-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--p-primary-color) 35%, transparent); }
-.svc-name { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; line-height: 1.15; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.svc-name { font-family: var(--font-display); font-weight: 600; font-size: 1.25rem; line-height: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .svc-line { display: flex; align-items: center; gap: 0.45rem; font-size: 0.85rem; color: var(--p-text-muted-color); min-width: 0; }
 .svc-line i { font-size: 0.7rem; flex: none; }
 :deep(.vue-flow__handle) { width: 8px; height: 8px; background: var(--fr-panel); border: 2px solid var(--p-surface-400); }

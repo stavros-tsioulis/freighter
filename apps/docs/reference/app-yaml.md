@@ -81,12 +81,12 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `restart` | `on-failure`, `always`, `no` | `on-failure` | systemd's restart policy, with 3 seconds between restarts and at most 5 starts per minute. |
 | `proxy.timeout` | duration | HAProxy's `30s` | Routed services: how long HAProxy waits on the service before giving up, for uploads, streaming and slow responses. |
 | `replicas` | integer | `1` | Accepted, but only one instance runs for now, and values above 1 produce a warning. |
-| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for this service. These are the initial values: variables added or changed on the service's **Variables** tab are laid over them. Values may contain [connections](/deploy/connections). |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for this service. Variables added or changed on the service's **Variables** tab are saved here, in the app's configuration. Values may contain [connections](/deploy/connections). |
 | `secrets` | list of `UPPER_SNAKE_CASE` | `[]` | Names that must have a value (set separately) before a deploy. See [secrets](/deploy/secrets). A name can't be in both `environment` and `secrets`. |
 
 Set exactly one of `command` and `image` on each service. An app can mix both kinds.
 
-An `app.yaml` with `environment:` or `secrets:` at the top, from before they belonged to services, is refused. Move them under the services that use them. Releases that are already deployed keep working: their top-level values count for every service, and secrets and variables saved for the app move to its services the next time the app is deployed or its Variables are opened.
+An `app.yaml` with `secrets:` at the top, from before they belonged to services, is refused. Move them under the services that use them. Releases that are already deployed keep working: their top-level secrets count for every service, and secrets saved for the app move to its services the next time the app is deployed or its Variables are opened. Variables an older version kept apart from the configuration are moved into it the first time the configuration is read.
 
 Durations are a number followed by `ms`, `s`, `m` or `h`, such as `500ms`, `30s`, `15m` or `1h`.
 
