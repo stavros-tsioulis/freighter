@@ -44,6 +44,20 @@ freighter rollback shop r20261106-134501      # a specific one
 
 A rollback is a deployment of its own and shows up in the history. Domains and secrets aren't part of a release, so they stay as they are.
 
+## Changing services without a deploy
+
+Adding a service, removing one, or changing the environment, command, port, limits or restart policy of existing ones doesn't deploy your code again. Saving the configuration makes a new release from the running one (the same files, linked rather than copied, so the size of `node_modules` doesn't matter) with the new `app.yaml`, and then touches only the services whose unit would actually differ:
+
+- a **new** service is started;
+- a **changed** service is restarted; a routed one starts as a new instance, is health-checked, and only then does HAProxy switch to it and the old instance drain;
+- a service whose value depends on one that moved (`@web.internal` after `web` got a new port) counts as changed too;
+- an **unchanged** service keeps running exactly as it is, from the release it started in. That release is kept as long as anything runs from it;
+- a **removed** service is stopped and its unit removed.
+
+If a changed service doesn't come up, only the changed services are put back, the new release is dropped and the others were never touched. What you entered stays in the configuration so you can fix it.
+
+It falls back to a full deploy (every service replaced) when the change needs more than that: a new or changed image to pull, or a change to the app's remote volumes. A change to the build commands of a Git app builds the code again, as before. Rolling back goes to a whole earlier release, as always.
+
 ## Cancel a deployment
 
 A deployment that is waiting or running has a **Cancel** button on the Deployments tab (and in the progress dialog).

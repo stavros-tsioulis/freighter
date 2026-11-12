@@ -330,14 +330,14 @@ export function createApi(ctx: ApiContext): Api {
     const queued = jobs.pendingConfig(name);
     if (queued) {
       try {
-        const { name: _n, source: _s, ...p } = parseManifest(queued, { legacy: true });
+        const { name: _n, source: _s, ...p } = parseManifest(queued, { legacy: true, raw: true });
         pending = p;
       } catch {
         /* not parseable: nothing to show */
       }
     }
     if (!text) return { text: null, settings: null, pending };
-    const { name: _name, source: _source, ...settings } = parseManifest(text, { legacy: true });
+    const { name: _name, source: _source, ...settings } = parseManifest(text, { legacy: true, raw: true });
     return { text, settings, pending };
   }));
   router.put("/v1/apps/:app/config", route("admin", async (event, who) => {
@@ -677,7 +677,7 @@ export function createApi(ctx: ApiContext): Api {
     try {
       parseManifest(text);
     } catch {
-      const { name: _name, source: _source, ...rest } = parseManifest(text, { legacy: true });
+      const { name: _name, source: _source, ...rest } = parseManifest(text, { legacy: true, raw: true });
       current = renderManifest(name, rest);
     }
     return queueImageDeploy(event, who, name, current, "manual");
@@ -689,7 +689,7 @@ export function createApi(ctx: ApiContext): Api {
     const { images } = await body(event, z.object({ images: z.record(z.string(), z.string().min(1)).refine((i) => Object.keys(i).length > 0, "name at least one service") }));
     const text = ctx.registry.apps.get(name)?.manifestText;
     if (!text) throw new ApiError(404, "not_found", `app "${name}" has not been deployed`);
-    const current = parseManifest(text, { legacy: true });
+    const current = parseManifest(text, { legacy: true, raw: true });
     for (const service of Object.keys(images)) {
       if (!current.services[service]?.image) throw new ApiError(400, "bad_request", `service "${service}" does not run an image`);
     }

@@ -16,7 +16,7 @@ export function normalizeConfig(text: string): string {
     parseManifest(text);
     return text;
   } catch {
-    const { name, source: _source, ...rest } = parseManifest(text, { legacy: true });
+    const { name, source: _source, ...rest } = parseManifest(text, { legacy: true, raw: true });
     return renderManifest(name, rest);
   }
 }

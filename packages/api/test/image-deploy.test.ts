@@ -76,14 +76,14 @@ describe("POST /v1/apps/:app/redeploy", () => {
     await t.api.jobs.idle();
     expect(t.calls.find((c) => c.op === "app.deploy")?.args).toMatchObject({ manifestText: IMAGE_YAML });
   });
-  it("moves a release written with a shared environment into its services", async () => {
+  it("moves the shared secrets of an old release into its services, and keeps the app's environment where it is", async () => {
     const t = await makeApi();
     t.registry.apps.upsert({ name: "shop", server: "local", manifestText: `${IMAGE_YAML}environment:\n  A: b\nsecrets:\n  - S\n`, currentRelease: "r1", previousRelease: null, status: "deployed" });
     expect((await t.request("/v1/apps/shop/redeploy", { method: "POST", token: t.tokens.deployer })).status).toBe(202);
     await t.api.jobs.idle();
     const sent = (t.calls.find((c) => c.op === "app.deploy")!.args as { manifestText: string }).manifestText;
-    expect(sent).not.toMatch(/^environment:/m);
-    expect(sent).toMatch(/environment:\n\s+A: b/);
+    expect(sent).toMatch(/^environment:\n\s+A: b/m);
+    expect(sent).not.toMatch(/^secrets:/m);
     expect(sent).toMatch(/secrets:\n\s+- S/);
   });
   it("is a 404 for an app that was never deployed", async () => {

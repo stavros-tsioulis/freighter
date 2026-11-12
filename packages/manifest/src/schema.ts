@@ -105,8 +105,12 @@ const manifestBase = z.object({
         timeout: duration.default("15m"),
         memory: z.string().regex(/^\d+[KMG]$/).default("2G"),
         cpu: z.number().positive().max(64).default(2),
+        /** Plain values the build commands see. Builds get nothing else of the app's environment, and no secrets. */
+        environment: z.record(envKey, z.string().refine((v) => !/[\r\n\0]/.test(v), "no newlines")).default({}),
       })
       .optional(),
+    /** Plain values for every service of the app, at run time. What a service sets itself wins. May contain references. */
+    environment: z.record(envKey, z.string()).default({}),
     services: z.record(ident, serviceSchema),
     /** Volumes that live on another machine (SMB, NFS). A name a service attaches that is not here is a plain folder of the app. */
     volumes: z.record(ident, volumeSchema).default({}),
@@ -115,10 +119,18 @@ const manifestBase = z.object({
 
 function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
   if (SHARED_VOLUME in m.volumes) ctx.addIssue({ code: "custom", path: ["volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
+  // What a service runs with: the app's values, then its own.
+  const effective = (svc: { environment: Record<string, string> }) => ({ ...m.environment, ...svc.environment });
+  for (const [key, value] of Object.entries(m.environment)) {
+    for (const ref of findReferences(value)) {
+      if (ref.volume !== undefined || ref.storage !== undefined || (ref.app !== undefined && ref.app !== m.name)) continue;
+      if (!m.services[ref.service]) ctx.addIssue({ code: "custom", path: ["environment", key], message: `${ref.text}: this app has no service "${ref.service}"` });
+    }
+  }
   for (const [name, svc] of Object.entries(m.services)) {
     if (SHARED_VOLUME in (svc.volumes ?? {})) ctx.addIssue({ code: "custom", path: ["services", name, "volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
     for (const s of svc.secrets) {
-      if (s in svc.environment) {
+      if (s in effective(svc)) {
         ctx.addIssue({ code: "custom", path: ["services", name, "secrets"], message: `${s} is both an environment value and a secret` });
       }
     }
@@ -136,7 +148,7 @@ function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
         const target = m.services[ref.service];
         if (!target) {
           ctx.addIssue({ code: "custom", path, message: `${ref.text}: this app has no service "${ref.service}"` });
-        } else if (isEnvAttr(ref.attr) && !(ref.attr in target.environment)) {
+        } else if (isEnvAttr(ref.attr) && !(ref.attr in effective(target))) {
           ctx.addIssue({ code: "custom", path, message: `${ref.text}: ${ref.attr} is not set in the environment of ${ref.service} (secrets can't be referenced)` });
         }
       }

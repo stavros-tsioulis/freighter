@@ -41,8 +41,12 @@ export const newRemoteVolume = (): RemoteVolumeForm => ({ name: "", type: "smb",
 export interface SettingsForm {
   services: ServiceForm[];
   remoteVolumes: RemoteVolumeForm[];
+  /** Values for every service at run time (a service's own wins). */
+  env: { key: string; value: string }[];
   /** One command per line. */
   buildCommands: string;
+  /** Values the build commands see. */
+  buildEnv: { key: string; value: string }[];
   buildTimeout: string;
   buildMemory: string;
   buildCpu: number | null;
@@ -54,7 +58,9 @@ export const newService = (name = "web", kind: ServiceForm["kind"] = "command"):
 export const emptyForm = (): SettingsForm => ({
   services: [newService()],
   remoteVolumes: [],
+  env: [],
   buildCommands: "",
+  buildEnv: [],
   buildTimeout: "",
   buildMemory: "",
   buildCpu: null,
@@ -97,10 +103,14 @@ export function toSettings(f: SettingsForm): AppSettings {
         : { type: "nfs", host: v.host.trim(), export: v.export.trim(), ...(v.version ? { version: v.version } : {}) },
     ]);
   const commands = f.buildCommands.split("\n").map((c) => c.trim()).filter(Boolean);
+  const pairs = (rows: { key: string; value: string }[]) => Object.fromEntries(rows.filter((e) => e.key.trim()).map((e) => [e.key.trim(), e.value]));
+  const buildEnv = pairs(f.buildEnv);
+  const env = pairs(f.env);
   return {
     ...(commands.length
-      ? { build: { commands, ...(f.buildTimeout.trim() ? { timeout: f.buildTimeout.trim() } : {}), ...(f.buildMemory.trim() ? { memory: f.buildMemory.trim() } : {}), ...(f.buildCpu ? { cpu: f.buildCpu } : {}) } }
+      ? { build: { commands, ...(f.buildTimeout.trim() ? { timeout: f.buildTimeout.trim() } : {}), ...(f.buildMemory.trim() ? { memory: f.buildMemory.trim() } : {}), ...(f.buildCpu ? { cpu: f.buildCpu } : {}), ...(Object.keys(buildEnv).length ? { environment: buildEnv } : {}) } }
       : {}),
+    ...(Object.keys(env).length ? { environment: env } : {}),
     services,
     ...(remote.length ? { volumes: Object.fromEntries(remote) } : {}),
     releases: { keep: f.keep || 5 },
@@ -135,7 +145,9 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
       host: v.host,
       ...(v.type === "smb" ? { share: v.share, path: v.path ?? "", user: v.user, domain: v.domain ?? "", port: v.port ?? null } : { export: v.export, version: v.version ?? "4" }),
     })),
+    env: Object.entries(s.environment ?? {}).map(([key, value]) => ({ key, value })),
     buildCommands: (s.build?.commands ?? []).join("\n"),
+    buildEnv: Object.entries(s.build?.environment ?? {}).map(([key, value]) => ({ key, value })),
     buildTimeout: s.build?.timeout ?? "",
     buildMemory: s.build?.memory ?? "",
     buildCpu: s.build?.cpu ?? null,

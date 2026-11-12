@@ -36,13 +36,32 @@ describe("parseManifest validation", () => {
     expect(m.services.web).toMatchObject({ environment: { A: "1" }, secrets: ["S"] });
     expect(m.services.job).toMatchObject({ environment: {}, secrets: [] });
   });
-  it("refuses a shared environment (it belongs to each service now), but folds it into the services of old releases", () => {
-    const text = `${base}  job:\n    command: y\n    environment:\n      A: own\nenvironment:\n  A: shared\n  B: shared\nsecrets:\n  - S\n`;
-    expect(() => parseManifest(text)).toThrow(/belong to each service/);
+  it("refuses shared secrets (they belong to each service), but folds them into the services of old releases", () => {
+    const text = `${base}  job:\n    command: y\n    secrets: [T]\nsecrets:\n  - S\n`;
+    expect(() => parseManifest(text)).toThrow(/"secrets" belong to each service/);
     const m = parseManifest(text, { legacy: true });
-    expect(m.services.web).toMatchObject({ environment: { A: "shared", B: "shared" }, secrets: ["S"] });
-    expect(m.services.job).toMatchObject({ environment: { A: "own", B: "shared" }, secrets: ["S"] });
-    expect("environment" in m).toBe(false);
+    expect(m.services.web).toMatchObject({ secrets: ["S"] });
+    expect(m.services.job).toMatchObject({ secrets: ["S", "T"] });
+  });
+  it("gives every service the app's environment under its own, and keeps the two apart when asked", () => {
+    const text = `${base}  job:\n    command: y\n    environment:\n      A: own\nenvironment:\n  A: shared\n  B: shared\nbuild:\n  commands: [make]\n  environment:\n    CACHE: 'on'\n`;
+    const m = parseManifest(text);
+    expect(m.services.web!.environment).toEqual({ A: "shared", B: "shared" });
+    expect(m.services.job!.environment).toEqual({ A: "own", B: "shared" });
+    expect(m.environment).toEqual({ A: "shared", B: "shared" });
+    expect(m.build!.environment).toEqual({ CACHE: "on" });
+    const raw = parseManifest(text, { raw: true });
+    expect(raw.services.web!.environment).toEqual({});
+    expect(raw.services.job!.environment).toEqual({ A: "own" });
+    expect(raw.environment).toEqual({ A: "shared", B: "shared" });
+  });
+  it("checks the app's environment like a service's: names, references, secrets it would collide with", () => {
+    expect(() => parseManifest(`${base}environment:\n  lower: x\n`)).toThrow();
+    expect(() => parseManifest(`${base}environment:\n  A: "@nope.url"\n`)).toThrow(/no service/);
+    expect(() => parseManifest(`${base}    secrets: [A]\nenvironment:\n  A: x\n`)).toThrow(/both an environment value and a secret/);
+    expect(() => parseManifest(`${base}build:\n  commands: [x]\n  environment:\n    A: "a\\nb"\n`)).toThrow(/no newlines/);
+    // a service can read what the app set for another one
+    expect(() => parseManifest(`${base}  job:\n    command: y\n    environment:\n      W: "@web.REGION"\nenvironment:\n  REGION: eu\n`)).not.toThrow();
   });
 });
 

@@ -195,7 +195,7 @@ export async function inspectRepo(d: Deps, o: { repository: string; branch: stri
   const text = await readFileAt(d, scope, sha, subpath ? `${subpath}/app.yaml` : "app.yaml");
   if (text === null) return { sha, commit, hasManifest: false, valid: false, appName: null, error: "app.yaml not found", buildCommands: [], settings: null };
   try {
-    const m = parseManifest(text);
+    const m = parseManifest(text, { raw: true });
     return { sha, commit, hasManifest: true, valid: true, appName: m.name, error: null, buildCommands: m.build?.commands ?? [], settings: (({ name: _n, source: _s, ...rest }) => rest)(m) };
   } catch (e) {
     return { sha, commit, hasManifest: true, valid: false, appName: null, error: e instanceof Error ? e.message : String(e), buildCommands: [], settings: null };

@@ -4,37 +4,41 @@ import { manifestSchema, type Manifest } from "./schema.ts";
 export interface ParseOptions {
   /** Releases written before domains moved out of app.yaml may still contain them; ignore them instead of failing. */
   legacy?: boolean;
+  /**
+   * Keep the app's `environment` apart from each service's own, as the file has them, for showing and editing. The default
+   * is what runs: every service with the app's values under its own.
+   */
+  raw?: boolean;
 }
 
 /**
- * `environment` and `secrets` used to sit at the top of app.yaml and applied to every service. Move them into each
- * service (what a service sets itself wins), so releases and stored settings written that way keep working.
+ * `secrets` used to sit at the top of app.yaml and apply to every service. Move them into each service, so releases and
+ * stored settings written that way keep working. (`environment` at the top is the app's own now and stays where it is.)
  */
 export function foldSharedEnvironment(raw: unknown): unknown {
   if (!raw || typeof raw !== "object") return raw;
-  const { environment, secrets, ...rest } = raw as Record<string, unknown>;
-  if (environment === undefined && secrets === undefined) return raw;
+  const { secrets, ...rest } = raw as Record<string, unknown>;
+  if (secrets === undefined) return raw;
   const services = rest.services;
-  if (services && typeof services === "object") {
+  if (services && typeof services === "object" && Array.isArray(secrets)) {
     rest.services = Object.fromEntries(
       Object.entries(services).map(([name, svc]) => {
         if (!svc || typeof svc !== "object") return [name, svc];
         const own = svc as Record<string, unknown>;
-        return [
-          name,
-          {
-            ...own,
-            ...(environment && typeof environment === "object" ? { environment: { ...environment, ...(own.environment as object | undefined) } } : {}),
-            ...(Array.isArray(secrets) ? { secrets: [...new Set([...secrets, ...(Array.isArray(own.secrets) ? own.secrets : [])])] } : {}),
-          },
-        ];
+        return [name, { ...own, secrets: [...new Set([...secrets, ...(Array.isArray(own.secrets) ? own.secrets : [])])] }];
       }),
     );
   }
   return rest;
 }
 
-const hasShared = (raw: unknown) => !!raw && typeof raw === "object" && ("environment" in raw || "secrets" in raw);
+const hasSharedSecrets = (raw: unknown) => !!raw && typeof raw === "object" && "secrets" in raw;
+
+/** Give each service the app's environment under its own. */
+function withAppEnvironment(m: Manifest): Manifest {
+  if (Object.keys(m.environment).length === 0) return m;
+  return { ...m, services: Object.fromEntries(Object.entries(m.services).map(([name, svc]) => [name, { ...svc, environment: { ...m.environment, ...svc.environment } }])) };
+}
 
 export function parseManifest(source: string, opts: ParseOptions = {}): Manifest {
   const raw = parse(source);
@@ -44,11 +48,13 @@ export function parseManifest(source: string, opts: ParseOptions = {}): Manifest
     }
     delete (raw as Record<string, unknown>).domains;
   }
-  if (hasShared(raw)) {
+  if (hasSharedSecrets(raw)) {
     if (!opts.legacy) {
-      throw new Error('"environment" and "secrets" belong to each service now: put them under the service they are for');
+      throw new Error('"secrets" belong to each service: put them under the service they are for');
     }
-    return manifestSchema.parse(foldSharedEnvironment(raw));
+    const m = manifestSchema.parse(foldSharedEnvironment(raw));
+    return opts.raw ? m : withAppEnvironment(m);
   }
-  return manifestSchema.parse(raw);
+  const m = manifestSchema.parse(raw);
+  return opts.raw ? m : withAppEnvironment(m);
 }

@@ -18,16 +18,18 @@ export async function ensureBuildUser(d: Deps): Promise<string> {
 }
 
 /** Package-manager caches live in a per-app directory so repeat builds are fast without sharing anything between apps. */
-export function buildEnv(d: Deps, app: string): Record<string, string> {
+export function buildEnv(d: Deps, app: string, extra: Record<string, string> = {}): Record<string, string> {
   const cache = buildCacheDir(d, app);
   return {
+    CI: "1",
+    NODE_ENV: "development", // build tools (pnpm/npm install) need their dev dependencies; the app's build environment can change it
+    ...extra,
+    // Where a build keeps its files is not for the app to move.
     HOME: `${cache}/home`,
     XDG_CACHE_HOME: `${cache}/xdg`,
     npm_config_cache: `${cache}/npm`,
     PNPM_HOME: `${cache}/pnpm`,
     YARN_CACHE_FOLDER: `${cache}/yarn`,
-    CI: "1",
-    NODE_ENV: "development", // build tools (pnpm/npm install) need their dev dependencies
   };
 }
 
@@ -55,7 +57,7 @@ export function sandboxArgs(d: Deps, o: { app: string; buildId: string; dir: str
       .map((p) => `-${p}`)
       .join(" "),
   };
-  const env = buildEnv(d, o.app);
+  const env = buildEnv(d, o.app, o.spec.environment);
   return [
     "--quiet", "--wait", "--pipe", "--collect",
     `--unit=freighter-build-${o.buildId.slice(0, 8)}`,
@@ -87,7 +89,7 @@ export async function runBuild(d: Deps, o: { app: string; buildId: string; dir: 
 
   let r: { code: number; timedOut: boolean };
   if (d.dev) {
-    r = await d.runLogged("sh", ["-ec", script], { logFile, cwd: o.dir, env: buildEnv(d, o.app), timeoutMs, signal: o.signal });
+    r = await d.runLogged("sh", ["-ec", script], { logFile, cwd: o.dir, env: buildEnv(d, o.app, o.spec.environment), timeoutMs, signal: o.signal });
   } else {
     const user = d.config.git.buildUser;
     await d.run("chown", ["-R", `${user}:${user}`, buildCacheDir(d, o.app)]);

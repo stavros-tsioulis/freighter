@@ -54,7 +54,7 @@ describe("app.yaml as an init file", () => {
     await setConfig(h.deps, "shop", yaml('    environment:\n      A: set\n'));
     expect(await getConfig(h.deps, "shop")).toContain("A: set");
     await expect(setConfig(h.deps, "shop", yaml().replace("name: shop", "name: other"))).rejects.toThrow(/not "shop"/);
-    await expect(setConfig(h.deps, "shop", "name: shop\nenvironment:\n  A: b\nservices:\n  web:\n    command: x\n")).rejects.toThrow(/belong to each service/);
+    await expect(setConfig(h.deps, "shop", "name: shop\nsecrets: [A]\nservices:\n  web:\n    command: x\n")).rejects.toThrow(/belong to each service/);
   });
 
   it("setConfig on an app that isn't deployed yet only saves it for the first deploy", async () => {

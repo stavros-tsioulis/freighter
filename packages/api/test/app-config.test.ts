@@ -18,6 +18,27 @@ describe("GET /v1/apps/:app/config", () => {
   });
 });
 
+describe("app-level environment", () => {
+  it("is shown apart from each service's own in the settings, and written back as it was", async () => {
+    const t = await makeApi();
+    const text = "name: shop\nbuild:\n  commands: [make]\n  environment:\n    PUBLIC_URL: https://x.example.com\nenvironment:\n  REGION: eu\nservices:\n  web:\n    command: node a.js\n    environment:\n      LOG: debug\n";
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: text, currentRelease: "r1", previousRelease: null, status: "deployed" });
+    t.handlers["app.config.get"] = () => ({ manifestText: text });
+    const got = (await t.request("/v1/apps/shop/config", { token: t.tokens.viewer })).json.settings;
+    expect(got.environment).toEqual({ REGION: "eu" });
+    expect(got.build.environment).toEqual({ PUBLIC_URL: "https://x.example.com" });
+    expect(got.services.web.environment).toEqual({ LOG: "debug" }); // not merged with the app's
+    t.handlers["app.config.set"] = () => ({ deploy: null });
+    const put = await t.request("/v1/apps/shop/config", { method: "PUT", token: t.tokens.admin, json: { settings: got } });
+    expect(put.status).toBe(202);
+    await t.api.jobs.idle();
+    const sent = (t.calls.find((c) => c.op === "app.config.set")!.args as { manifestText: string }).manifestText;
+    expect(sent).toMatch(/^environment:\n {2}REGION: eu/m);
+    expect(sent).toMatch(/PUBLIC_URL: https:\/\/x\.example\.com/);
+    expect(sent).not.toMatch(/LOG: debug[\s\S]*REGION: eu[\s\S]*services/); // the app's value is not copied into the service
+  });
+});
+
 describe("PUT /v1/apps/:app/config", () => {
   const settings = { services: { web: { command: "node other.js", environment: { A: "two" } } } };
   it("is admin-only, validates, and hands the rendered configuration to the agent after the connections", async () => {

@@ -43,6 +43,31 @@ export async function stageRelease(d: Deps, app: string, source: string, id: str
   return dest;
 }
 
+/**
+ * A new release that is the same files as an existing one, made of hard links: it costs about what listing the folder
+ * does, however big `node_modules` is, and takes no more space. Releases are never written to after they are staged
+ * (services cannot write there), so sharing the files is safe. Where hard links are not possible (another filesystem,
+ * a system without GNU cp) the files are copied. A file that is to differ must be replaced, never written in place.
+ */
+export async function cloneRelease(d: Deps, app: string, from: string, id: string): Promise<string> {
+  const src = releaseDir(d, app, from);
+  const dest = releaseDir(d, app, id);
+  await mkdir(releasesDir(d, app), { recursive: true });
+  await mkdir(dest); // fails if the release already exists
+  try {
+    const linked = await execFileP("cp", ["-al", `${src}/.`, `${dest}/`]).then(() => true, () => false);
+    if (!linked) {
+      await rm(dest, { recursive: true, force: true });
+      await mkdir(dest);
+      await cp(src, dest, { recursive: true, verbatimSymlinks: true });
+    }
+  } catch (e) {
+    await rm(dest, { recursive: true, force: true });
+    throw e;
+  }
+  return dest;
+}
+
 /** Atomically point `current` at the release (relative link, replaced via rename). */
 export async function activate(d: Deps, app: string, id: string): Promise<void> {
   const link = currentLink(d, app);

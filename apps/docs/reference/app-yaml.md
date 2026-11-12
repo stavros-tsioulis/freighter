@@ -16,6 +16,11 @@ build:
   timeout: 15m
   memory: 2G
   cpu: 2
+  environment:
+    PUBLIC_API_URL: https://api.example.com
+
+environment:
+  TZ: UTC
 
 services:
   web:
@@ -51,10 +56,11 @@ releases:
 | `name` | identifier | required | The app's name: lowercase letters, digits and single hyphens, starting with a letter. It must match the app you deploy to. |
 | `services` | map of identifier to [service](#services) | required | The app's processes. |
 | `build` | [build](#build) | none | Commands that run before deploying, for Git deploys. |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain values every service gets at run time. A service's own `environment` wins over it. May contain [references](/deploy/connections). Build-time values go in `build.environment`. |
 | `releases.keep` | integer, 2 or more | `5` | How many releases to keep on disk. The current and previous ones are always kept. |
 | `source` | object | none | `type: git`, `repository`, `branch` (default `main`). Accepted for documentation only: the repository link set in Freighter is what's used. |
 
-`environment:` and `secrets:` belong to each [service](#services), not to the app. The app-level `volumes:` map declares [remote volumes](/deploy/volumes#remote-volumes) (SMB, NFS). `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
+`secrets:` belong to each [service](#services), not to the app. (An `environment:` at the top is the app's, for every service; see above.) The app-level `volumes:` map declares [remote volumes](/deploy/volumes#remote-volumes) (SMB, NFS). `domains:` isn't allowed: domains are set on the app. See [Domains and HTTPS](/deploy/domains).
 
 ## services
 
@@ -94,6 +100,7 @@ Used by Git deploys. The commands run in the checkout, one after another, inside
 | `timeout` | duration | `15m` | The build is killed after this. |
 | `memory` | `<n>K`, `<n>M` or `<n>G` | `2G` | Memory limit for the whole build. |
 | `cpu` | number | `2` | CPU limit in cores. |
+| `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain values the build commands see, and only them: not the services, and not the app's run-time `environment`. No secrets and no references. `CI=1` and `NODE_ENV=development` are set for builds and can be changed here; where the build keeps its files (`HOME`, the package-manager caches) can't. |
 
 ## What each service gets
 
@@ -101,7 +108,7 @@ Used by Git deploys. The commands run in the checkout, one after another, inside
 | --- | --- |
 | User | a system user named after the app |
 | Working directory | the release directory, `/srv/apps/<app>/releases/<id>` |
-| Environment | `HOST=127.0.0.1` (routed services only), then `environment`, then secrets, then `PORT` |
+| Environment | `HOST=127.0.0.1` (routed services only), then the app's `environment`, then the service's own, then secrets, then `PORT` |
 | Writable | `/srv/apps/<app>/shared` and a private `/tmp` |
 | Logs | stdout and stderr go to the journal |
 

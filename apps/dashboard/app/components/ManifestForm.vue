@@ -22,7 +22,9 @@ watch(form, (f) => {
 }, { deep: true, immediate: true });
 onBeforeUnmount(() => clearTimeout(timer));
 
-const preview = useManifestPreview(() => props.appName, settled, () => !!props.appName && Object.keys(settled.value.services).length > 0);
+const previewQuery = useManifestPreview(() => props.appName, settled, () => !!props.appName && Object.keys(settled.value.services).length > 0);
+const previewText = computed(() => previewQuery.data.value?.text ?? "");
+const previewError = computed(() => previewQuery.error.value?.message ?? "");
 
 function removeService(i: number) {
   form.value.services.splice(i, 1);
@@ -51,6 +53,20 @@ const addService = () => form.value.services.push(newService(form.value.services
           :images-only="imagesOnly"
         />
       </Panel>
+    </section>
+
+    <!-- the app's environment -->
+    <section class="flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <h3 class="font-medium">Environment <span class="text-muted-color font-normal text-sm">(every service, at run time)</span></h3>
+        <Button label="Add variable" icon="pi pi-plus" size="small" severity="secondary" text @click="form.env.push({ key: '', value: '' })" />
+      </div>
+      <p v-if="!form.env.length" class="text-sm text-muted-color">Values every service gets. A value set on the service itself wins. Build-time values are in the Build section.</p>
+      <div v-for="(e, j) in form.env" :key="j" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
+        <InputText v-model="e.key" placeholder="TZ" autocomplete="off" class="font-mono" :aria-label="`App variable ${j + 1} name`" />
+        <ReferenceInput v-model="e.value" :app="appName" :own-services="form.services.map((x) => x.name.trim())" :own-volumes="[...new Set([...form.remoteVolumes, ...form.services.flatMap((x) => x.volumes)].map((x) => x.name.trim()).filter(Boolean))]" placeholder="UTC" :aria-label="`App variable ${j + 1} value`" />
+        <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="form.env.splice(j, 1)" />
+      </div>
     </section>
 
     <!-- remote volumes -->
@@ -86,6 +102,17 @@ const addService = () => form.value.services.push(newService(form.value.services
         <label for="mf-build" class="text-sm font-medium">Commands, one per line</label>
         <Textarea id="mf-build" v-model="form.buildCommands" rows="3" auto-resize placeholder="npm ci&#10;npm run build" class="font-mono" />
       </div>
+      <div v-if="form.buildCommands.trim()" class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-medium">Build environment <span class="text-muted-color font-normal">(only the build sees these; no secrets)</span></span>
+          <Button label="Add variable" icon="pi pi-plus" size="small" severity="secondary" text @click="form.buildEnv.push({ key: '', value: '' })" />
+        </div>
+        <div v-for="(row, k) in form.buildEnv" :key="k" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
+          <InputText v-model="row.key" placeholder="PUBLIC_API_URL" autocomplete="off" class="font-mono" :aria-label="`Build variable ${k + 1} name`" />
+          <InputText v-model="row.value" placeholder="api.example.com" autocomplete="off" class="font-mono" :aria-label="`Build variable ${k + 1} value`" />
+          <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove build variable" @click="form.buildEnv.splice(k, 1)" />
+        </div>
+      </div>
       <div v-if="form.buildCommands.trim()" class="grid grid-cols-3 gap-3">
         <div class="flex flex-col gap-1"><label for="mf-bt" class="text-sm font-medium">Time limit</label><InputText id="mf-bt" v-model="form.buildTimeout" placeholder="15m" autocomplete="off" /></div>
         <div class="flex flex-col gap-1"><label for="mf-bm" class="text-sm font-medium">Memory limit</label><InputText id="mf-bm" v-model="form.buildMemory" placeholder="2G" autocomplete="off" /></div>
@@ -101,9 +128,9 @@ const addService = () => form.value.services.push(newService(form.value.services
     <!-- what this adds up to -->
     <section class="flex flex-col gap-2" aria-live="polite">
       <h3 class="font-medium">Equivalent <code>app.yaml</code></h3>
-      <Message v-if="preview.error.value" severity="warn" size="small">{{ preview.error.value.message }}</Message>
-      <pre v-if="preview.data.value && !preview.error.value" class="well !break-normal overflow-auto max-h-72">{{ preview.data.value.text }}</pre>
-      <p v-else-if="!preview.error.value" class="text-sm text-muted-color">Add a service with a start command or an image.</p>
+      <Message v-if="previewError" severity="warn" size="small">{{ previewError }}</Message>
+      <pre v-if="previewText && !previewError" class="well !break-normal overflow-auto max-h-72">{{ previewText }}</pre>
+      <p v-else-if="!previewError" class="text-sm text-muted-color">Add a service with a start command or an image.</p>
     </section>
   </div>
 </template>

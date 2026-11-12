@@ -1,5 +1,6 @@
 import { rm, writeFile } from "node:fs/promises";
 import { stopIfCanceled } from "./operations.ts";
+import { readState, releasesInUse } from "./state.ts";
 import { parseManifest, routedServices, routingProblems, routingWarnings, type Domain, type DomainInput } from "@freighter/manifest";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
@@ -187,7 +188,7 @@ export async function deploy(d: Deps, opts: DeployOptions): Promise<DeployResult
       result.units = live.units;
       result.removed = live.retired;
       result.verified = !opts.skipVerify;
-      result.pruned = await pruneReleases(d, app, manifest.releases.keep, [releaseId, ...(previous ? [previous] : [])]);
+      result.pruned = await pruneReleases(d, app, manifest.releases.keep, [releaseId, ...(previous ? [previous] : []), ...releasesInUse(await readState(d, app))]);
       if (hasImages && result.pruned.length > 0) await pruneImages(d, app).catch(() => undefined);
       return result;
     }

@@ -113,11 +113,11 @@ export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: read
 }
 
 /** Write each service's credentials from connections, removing the file of a service that has none. */
-async function writeRefsEnvs(d: Deps, app: string, env: Record<string, ResolvedEnv>): Promise<void> {
+export async function writeRefsEnvs(d: Deps, app: string, env: Record<string, ResolvedEnv>): Promise<void> {
   for (const [service, e] of Object.entries(env)) await writeRefsEnv(d, app, service, e.secret);
 }
 
-function render(d: Deps, app: string, manifest: Manifest, env: Record<string, ResolvedEnv>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
+export function render(d: Deps, app: string, manifest: Manifest, env: Record<string, ResolvedEnv>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
   return renderUnit({
     containerPort: containerPorts[service],
     image: images[service],
@@ -265,7 +265,7 @@ export async function goLive(
     await log(`    HAProxy refused the change: ${reason}`);
     return failWith([{ service: "haproxy", reason, logs: "" }]);
   }
-  const state: AppState = { routed, assigned };
+  const state: AppState = { routed, assigned, at: Object.fromEntries(plan.filter((p) => !p.routed).map((p) => [p.service, id])) };
   await writeState(d, app, state);
   await activate(d, app, id);
   await writeResolvedHash(d, app, hashResolved(environment));

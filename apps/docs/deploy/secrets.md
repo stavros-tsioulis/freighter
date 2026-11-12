@@ -1,8 +1,8 @@
 # Environment and secrets
 
-Environment belongs to a service: each service gets only its own values. They come from three places, applied in this order (later ones win):
+Each service gets its own values, from these places, applied in this order (later ones win):
 
-1. **`environment:` under the service in `app.yaml`.** Plain values that are fine to commit.
+1. **`environment:` at the top of `app.yaml`**, for every service, and then **`environment:` under the service**. Plain values that are fine to commit. A service's own value wins over the app's.
 2. **Secrets**, from `/etc/freighter/apps/<app>/<service>.env` on the app's server.
 3. **`PORT`**, when the service has a port (allocated for routed services, `port:` otherwise). It always wins.
 
@@ -58,4 +58,4 @@ New values take effect when the service next starts: restart the service, or dep
 
 ## What builds see
 
-Nothing. Builds from Git run without the app's environment or secrets. If a build needs a token (a private package registry, for example), commit a config that reads it at runtime instead, or build in CI.
+Only what you give them: `build.environment` in `app.yaml` (the **Build environment** list in the Settings tab). Builds from Git run without the app's run-time environment and without any secrets. If a build needs a token (a private package registry, for example), commit a config that reads it at runtime instead, or build in CI.

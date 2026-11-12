@@ -28,15 +28,22 @@ async function writeEnvFile(d: Deps, app: string, path: string, lines: string[])
 }
 
 /** Credentials that connections resolved to for a service, in a root-only file its unit loads next to the secrets. Empty removes it. */
+/** What the credentials file of a service holds for these values; null when there are none (then there is no file). */
+export function refsEnvText(values: Record<string, string>): string | null {
+  const entries = Object.entries(values).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return null;
+  for (const [k, v] of entries) if (/[\r\n\0]/.test(v)) throw new Error(`illegal newline in ${k}`);
+  return entries.map(([k, v]) => envEntry(k, v)).join("\n") + "\n";
+}
+
 export async function writeRefsEnv(d: Deps, app: string, service: string, values: Record<string, string>): Promise<void> {
   const path = refsEnvPath(d, app, service);
-  const entries = Object.entries(values).sort(([a], [b]) => a.localeCompare(b));
-  if (entries.length === 0) {
+  const text = refsEnvText(values);
+  if (text === null) {
     await rm(path, { force: true });
     return;
   }
-  for (const [k, v] of entries) if (/[\r\n\0]/.test(v)) throw new Error(`illegal newline in ${k}`);
-  await writeEnvFile(d, app, path, entries.map(([k, v]) => envEntry(k, v)));
+  await writeEnvFile(d, app, path, text.split("\n").slice(0, -1));
 }
 
 const keyOf = (line: string) => /^([A-Z_][A-Z0-9_]*)=/.exec(line)?.[1];

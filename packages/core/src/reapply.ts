@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { reconfigure } from "./reconfigure.ts";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { loadReleaseManifest, liveTargets, resolveAppEnvironment, withVariables, type ResolvedEnv } from "./apply.ts";
 import { readConnections } from "./connections.ts";
@@ -63,11 +64,14 @@ export async function reapply(d: Deps, app: string, opts: { skipVerify?: boolean
   if (before === hash) return { changed: false, deploy: null };
 
   await log(`==> something ${app} connects to has changed; redeploying the current release (${release}) unchanged so its services pick it up`);
+  const meta = (await currentSource(d, app)) ?? undefined;
+  const fast = await reconfigure(d, app, await readFile(`${releaseDir(d, app, release)}/app.yaml`, "utf8"), { skipVerify: opts.skipVerify, log, signal: opts.signal, meta });
+  if (fast) return { changed: true, deploy: fast };
   const dir = releaseDir(d, app, release);
   const result = await deploy(d, {
     manifestText: await readFile(`${dir}/app.yaml`, "utf8"),
     source: dir,
-    meta: (await currentSource(d, app)) ?? undefined,
+    meta,
     skipVerify: opts.skipVerify,
     log,
     signal: opts.signal,

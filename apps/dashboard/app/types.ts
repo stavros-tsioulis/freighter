@@ -143,7 +143,9 @@ export type RemoteVolume =
   | { type: "nfs"; host: string; export: string; version?: string };
 /** The options of app.yaml except the name; used when a repository has no app.yaml. */
 export interface AppSettings {
-  build?: { commands: string[]; timeout?: string; memory?: string; cpu?: number };
+  build?: { commands: string[]; timeout?: string; memory?: string; cpu?: number; /** Plain values the build commands see. */ environment?: Record<string, string> };
+  /** Plain values for every service at run time; a service's own value wins. */
+  environment?: Record<string, string>;
   services: Record<
     string,
     {

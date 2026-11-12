@@ -188,9 +188,17 @@ describe("production build sandbox", () => {
     expect(args.filter((a) => a.startsWith("--setenv=")).join(" ")).not.toMatch(/TOKEN|SECRET|PASSWORD/i);
   });
 
+  it("sandboxArgs hands the build the app's build environment, but not where it keeps its files", async () => {
+    const { deps } = await makeDeps();
+    const args = sandboxArgs(deps, { app: "x", buildId: "abcdef12-0000-4000-8000-000000000000", dir: "/b/src", spec: { commands: ["true"], timeout: "5m", memory: "512M", cpu: 1, environment: { PUBLIC_API: "https://api.example.com", NODE_ENV: "production", HOME: "/root" } } });
+    expect(args).toContain("--setenv=PUBLIC_API=https://api.example.com");
+    expect(args).toContain("--setenv=NODE_ENV=production"); // a default the app may change
+    expect(args).toContain(`--setenv=HOME=${deps.config.git.buildDir}/cache/x/home`); // and one it may not
+    expect(args).not.toContain("--setenv=HOME=/root");
+  });
   it("sandboxArgs scales limits from the manifest", async () => {
     const { deps } = await makeDeps();
-    const args = sandboxArgs(deps, { app: "x", buildId: "abcdef12-0000-4000-8000-000000000000", dir: "/b/src", spec: { commands: ["true"], timeout: "5m", memory: "512M", cpu: 0.5 } });
+    const args = sandboxArgs(deps, { app: "x", buildId: "abcdef12-0000-4000-8000-000000000000", dir: "/b/src", spec: { commands: ["true"], timeout: "5m", memory: "512M", cpu: 0.5, environment: {} } });
     expect(args).toEqual(expect.arrayContaining(["--property=MemoryMax=512M", "--property=CPUQuota=50%", "--property=RuntimeMaxSec=300", "--unit=freighter-build-abcdef12"]));
   });
 });

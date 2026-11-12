@@ -108,3 +108,32 @@ describe("volumes", () => {
     expect(again.services[0]!.volumes).toEqual([{ name: "up", path: "/data/up" }]);
   });
 });
+
+describe("app-level environment", () => {
+  it("round-trips the app's environment and the build's, apart from the services' own", async () => {
+    const { fromSettings, toSettings } = await import("../app/utils/settings");
+    const settings = {
+      build: { commands: ["make"], environment: { PUBLIC_URL: "https://x.example.com" } },
+      environment: { REGION: "eu", API: "@api.url" },
+      services: { api: { command: "node a.js", environment: { LOG: "debug" } } },
+    };
+    const form = fromSettings(settings as never);
+    expect(form.env).toEqual([{ key: "REGION", value: "eu" }, { key: "API", value: "@api.url" }]);
+    expect(form.buildEnv).toEqual([{ key: "PUBLIC_URL", value: "https://x.example.com" }]);
+    expect(form.services[0]!.env).toEqual([{ key: "LOG", value: "debug" }]);
+    const back = toSettings(form);
+    expect(back.environment).toEqual({ REGION: "eu", API: "@api.url" });
+    expect(back.build?.environment).toEqual({ PUBLIC_URL: "https://x.example.com" });
+    expect(back.services.api!.environment).toEqual({ LOG: "debug" });
+  });
+  it("sends nothing for empty rows, and a build environment only with build commands", async () => {
+    const { emptyForm, toSettings, newService } = await import("../app/utils/settings");
+    const f = emptyForm();
+    f.services = [{ ...newService("web"), command: "x" }];
+    f.env = [{ key: "", value: "x" }];
+    f.buildEnv = [{ key: "A", value: "b" }];
+    const s = toSettings(f);
+    expect(s.environment).toBeUndefined();
+    expect(s.build).toBeUndefined(); // no commands, so no build to give variables to
+  });
+});

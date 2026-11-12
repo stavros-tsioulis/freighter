@@ -15,7 +15,12 @@ export interface AppState {
   routed: Record<string, RoutedService>;
   /** Ports given to services that set none and aren't routed; kept so they stay the same from one deploy to the next. */
   assigned?: Record<string, number>;
+  /** For services that are not routed: the release their unit was written for (it runs from that folder). Routed services say it in `routed`. */
+  at?: Record<string, string>;
 }
+
+/** Every release a running unit still runs from: these are never pruned. */
+export const releasesInUse = (s: AppState): string[] => [...new Set([...Object.values(s.routed).map((r) => r.release), ...Object.values(s.at ?? {})])];
 
 const statePath = (d: Deps, app: string) => `${appDir(d, app)}/state.json`;
 
