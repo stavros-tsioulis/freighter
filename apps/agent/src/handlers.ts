@@ -342,9 +342,9 @@ export function createHandlers(d: Deps): Handlers {
     async "git.check"({ app, repository, branch, auth }) {
       return { sha: await checkRemote(d, app, repository, branch, auth) };
     },
-    async "git.deploy"({ app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, auth }) {
+    async "git.deploy"({ app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, auth }) {
       const op = beginOperation(buildId);
-      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, skipVerify: d.dev, auth, signal: op.signal }).catch((e: unknown) => {
+      const r = await gitDeploy(d, { app, buildId, repository, branch, subpath, skipIfUnchanged, fallbackManifest, configText, skipVerify: d.dev, auth, signal: op.signal }).catch((e: unknown) => {
         throw op.settle(e);
       }).finally(op.end);
       return r.skipped

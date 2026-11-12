@@ -348,3 +348,30 @@ describe("deployment jobs", () => {
     expect(t.registry.deployments.get(r.json.id)).toMatchObject({ server: "vps-1", trigger: "manual", requestedBy: expect.stringMatching(/^tok_/) });
   });
 });
+
+describe("saving settings of an app built from Git", () => {
+  const withBuild = (cmd: string) => ({ build: { commands: [cmd] }, services: { web: { command: "node server.mjs" } } });
+  it("builds again with new build commands, saving the configuration first, and only redeploys for anything else", async () => {
+    const t = await makeApi();
+    t.registry.apps.upsert({ name: "shop", server: "local", manifestText: "name: shop\nbuild:\n  commands:\n    - npm ci\nservices:\n    web:\n      command: node server.mjs\n", currentRelease: "r1", previousRelease: null, status: "deployed" });
+    t.handlers["app.config.get"] = () => ({ manifestText: "name: shop\nbuild:\n  commands:\n    - npm ci\nservices:\n  web:\n    command: node server.mjs\n" });
+    expect((await link(t)).status).toBe(201);
+    const put = (settings: unknown) => t.request("/v1/apps/shop/config", { method: "PUT", token: t.tokens.admin, json: { settings } });
+
+    const rebuilt = await put(withBuild("npm ci && npm run build"));
+    expect(rebuilt.status).toBe(202);
+    expect(rebuilt.json.rebuild).toBe(true);
+    await t.api.jobs.idle();
+    const deploy = t.calls.find((c) => c.op === "git.deploy")!.args as { configText: string; skipIfUnchanged?: boolean };
+    expect(deploy.configText).toContain("npm run build");
+    expect(deploy.skipIfUnchanged).toBeFalsy();
+    expect(t.calls.some((c) => c.op === "app.config.set")).toBe(false);
+
+    t.calls.length = 0;
+    const same = await put({ build: { commands: ["npm ci"] }, services: { web: { command: "node other.mjs" } } });
+    expect(same.json.rebuild).toBe(false);
+    await t.api.jobs.idle();
+    expect(t.calls.some((c) => c.op === "git.deploy")).toBe(false);
+    expect(t.calls.some((c) => c.op === "app.config.set")).toBe(true);
+  });
+});

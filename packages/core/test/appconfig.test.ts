@@ -40,7 +40,7 @@ describe("app.yaml as an init file", () => {
     expect(units(h)).not.toContain("other.mjs");
   });
 
-  it("setConfig replaces the configuration and redeploys the current release with it, and keeps the old one if that fails", async () => {
+  it("setConfig replaces the configuration and redeploys the current release with it, and keeps what was entered even if that fails", async () => {
     const h = await makeDeps();
     const first = await deploy(h.deps, { manifestText: yaml(), source: await artifact() });
     const r = await setConfig(h.deps, "shop", yaml('    environment:\n      A: set\n'));
@@ -48,7 +48,10 @@ describe("app.yaml as an init file", () => {
     expect(units(h)).toContain('Environment="A=set"');
     expect(await getConfig(h.deps, "shop")).toContain("A: set");
 
+    // a deploy that fails does not lose what was entered: it is the configuration, whether or not it is running yet
     await expect(setConfig(h.deps, "shop", yaml("    secrets: [NOPE]\n"))).rejects.toThrow(/missing secrets/);
+    expect(await getConfig(h.deps, "shop")).toContain("NOPE");
+    await setConfig(h.deps, "shop", yaml('    environment:\n      A: set\n'));
     expect(await getConfig(h.deps, "shop")).toContain("A: set");
     await expect(setConfig(h.deps, "shop", yaml().replace("name: shop", "name: other"))).rejects.toThrow(/not "shop"/);
     await expect(setConfig(h.deps, "shop", "name: shop\nenvironment:\n  A: b\nservices:\n  web:\n    command: x\n")).rejects.toThrow(/belong to each service/);

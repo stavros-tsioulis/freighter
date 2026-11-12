@@ -8,7 +8,7 @@ import { deploy, type DeployResult } from "./deploy.ts";
 import { commitInfo, exportTree, fetchMirror, readFileAt, type CommitInfo, type GitAuth } from "./git.ts";
 import type { SourceMeta } from "./history.ts";
 import { currentLink } from "./releases.ts";
-import { readConfig } from "./appconfig.ts";
+import { readConfig, writeConfig } from "./appconfig.ts";
 
 export class BuildFailedError extends Error {
   constructor(
@@ -36,6 +36,8 @@ export interface GitDeployOptions {
   auth?: GitAuth;
   /** Fires when the deployment is canceled: the fetch and the build are killed, and the deploy stops at its next step. */
   signal?: AbortSignal;
+  /** A new configuration for the app, saved first: this deploy builds and runs with it. */
+  configText?: string;
 }
 
 export type GitDeployResult =
@@ -89,6 +91,10 @@ export async function gitDeploy(d: Deps, o: GitDeployOptions): Promise<GitDeploy
   await mkdir(d.config.git.buildDir, { recursive: true });
   await writeFile(logFile, "");
   const log = (line: string) => appendFile(logFile, `${line}\n`);
+  if (o.configText !== undefined) {
+    if (parseManifest(o.configText).name !== o.app) throw new Error(`this configuration is for another app than "${o.app}"`);
+    await writeConfig(d, o.app, o.configText);
+  }
   active.add(o.buildId);
   try {
     await pruneOldLogs(d);

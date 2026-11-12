@@ -319,6 +319,8 @@ export const ops = {
       skipIfUnchanged: z.boolean().optional(),
       /** The app.yaml to use when the repository has none (rendered from the settings entered in the UI). */
       fallbackManifest: z.string().max(262_144).optional(),
+      /** A new configuration for the app: saved first, then built and deployed with. */
+      configText: z.string().max(262_144).optional(),
     }),
     result: z.object({ skipped: z.boolean(), commit, buildSeconds: z.number(), deploy: deployResult.optional() }),
   },

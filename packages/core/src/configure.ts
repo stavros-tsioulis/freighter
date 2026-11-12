@@ -12,8 +12,8 @@ export interface SetConfigResult {
 }
 
 /**
- * Replace an app's configuration. A deployed app is redeployed with its current release and the new configuration (new
- * instances, health check, rollback on failure); the configuration is only kept if that works.
+ * Replace an app's configuration. It is saved first; a deployed app is then redeployed with its current release and the
+ * new configuration (new instances, health check, rollback to the running release on failure).
  */
 export async function setConfig(d: Deps, app: string, manifestText: string, opts: { skipVerify?: boolean; log?: DeployLog; signal?: AbortSignal } = {}): Promise<SetConfigResult> {
   const log = opts.log ?? noLog;
@@ -25,7 +25,10 @@ export async function setConfig(d: Deps, app: string, manifestText: string, opts
     await log("==> the app isn't deployed yet, so the configuration is saved and used by its first deploy");
     return { deploy: null };
   }
-  await log(`==> configuration of ${app} changed; redeploying the current release (${release}) with it`);
+  // Kept at once, not only if the deploy works: what you entered stays what you see and edit, whatever the deploy does.
+  // The running release keeps the app.yaml it started with (that is what a rollback goes back to).
+  await writeConfig(d, app, manifestText);
+  await log(`==> configuration of ${app} saved; redeploying the current release (${release}) with it`);
   const result = await deploy(d, {
     manifestText,
     source: releaseDir(d, app, release),

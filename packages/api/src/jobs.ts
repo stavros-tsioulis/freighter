@@ -20,6 +20,8 @@ export interface GitJob {
   sshKeyId?: string | null;
   /** app.yaml text rendered from the app's stored settings; the agent uses it only if the repository has none. */
   fallbackManifest?: string;
+  /** A new configuration for the app, saved on the server before this builds and deploys with it. */
+  configText?: string;
 }
 
 /** What the error of a canceled deployment starts with (they are recorded as failed, so older dashboards still understand them). */
@@ -362,7 +364,7 @@ export function createJobs(ctx: ApiContext): Jobs {
     enqueueGit(job) {
       queuedGitByApp.set(job.app, job.id);
       // A repository's own app.yaml wins over the settings of the form, and is not known until it is cloned.
-      const shows = job.fallbackManifest ? configOfNewApp(job.app, job.fallbackManifest) : undefined;
+      const shows = job.configText ?? (job.fallbackManifest ? configOfNewApp(job.app, job.fallbackManifest) : undefined);
       enqueue(job.server, job.app, async () => {
         if (queuedGitByApp.get(job.app) === job.id) queuedGitByApp.delete(job.app);
         ctx.registry.deployments.update(job.id, { status: "running", startedAt: now() });
@@ -377,7 +379,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           }
           const r = await agent.call(
             "git.deploy",
-            { app: job.app, buildId: job.id, repository: job.repository, branch: job.branch, subpath: job.subpath || undefined, skipIfUnchanged: job.skipIfUnchanged, fallbackManifest: job.fallbackManifest, auth: sshKey ? { sshKey } : undefined },
+            { app: job.app, buildId: job.id, repository: job.repository, branch: job.branch, subpath: job.subpath || undefined, skipIfUnchanged: job.skipIfUnchanged, fallbackManifest: job.fallbackManifest, configText: job.configText, auth: sshKey ? { sshKey } : undefined },
             { timeoutMs: 60 * 60_000 },
           );
           const commit = { commitSha: r.commit.sha, commitSubject: r.commit.subject, commitAuthor: r.commit.author };

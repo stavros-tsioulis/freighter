@@ -347,13 +347,32 @@ export function createApi(ctx: ApiContext): Api {
     checkSettings(name, settings);
     const text = renderManifest(name, settings as never);
     const server = serverOf(event, name);
-    // The redeploy runs in the background; the deployment follows it (and holds its log).
+    // The deploy runs in the background; the deployment follows it (and holds its log).
     const id = randomUUID();
     ctx.registry.deployments.create({ id, app: name, server, action: "deploy", requestedBy: who.id, trigger: "manual" });
-    audit(who, "config.set", name, { server, deployment: id });
-    jobs.enqueueConfig({ id, app: name, server, manifestText: text });
+    // New build commands only mean something when the code is built again, so an app that is built from Git is built
+    // again with them (a new release from the branch head). Anything else changes the configuration of the release
+    // that is running.
+    const link = ctx.registry.gitLinks.get(name);
+    let rebuild = false;
+    if (link) {
+      let before: string | null = ctx.registry.apps.get(name)?.manifestText ?? null;
+      try {
+        before = (await ctx.agents.forServer(server).call("app.config.get", { app: name })).manifestText ?? before;
+      } catch {
+        /* an agent from before configuration was kept separately */
+      }
+      const buildOf = (t: string | null) => JSON.stringify((t ? parseManifest(t, { legacy: true }).build : undefined) ?? null);
+      rebuild = buildOf(before) !== buildOf(text);
+    }
+    audit(who, "config.set", name, { server, deployment: id, rebuild });
+    if (link && rebuild) {
+      jobs.enqueueGit({ id, app: name, server, repository: link.repository, branch: link.branch, subpath: link.subpath, skipIfUnchanged: false, trigger: "manual", sshKeyId: link.sshKeyId, configText: text });
+    } else {
+      jobs.enqueueConfig({ id, app: name, server, manifestText: text });
+    }
     setResponseStatus(event, 202);
-    return { ok: true, id, status: "queued" };
+    return { ok: true, id, status: "queued", rebuild };
   }));
 
   // Remote volumes of the app (declared in its configuration): what is mounted, and whether an SMB password is set.
