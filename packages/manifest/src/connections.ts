@@ -7,7 +7,7 @@ export const appFactsSchema = z.object({
   /** The server it runs on; `internal` only works between apps on the same one. */
   server: z.string().optional(),
   services: z.array(z.string().regex(IDENT_RE)),
-  /** The services that run as containers: from inside one, the server is `host.containers.internal`, not `127.0.0.1`. */
+  /** The services that run as containers: from inside one, the server is 10.0.2.2, not `127.0.0.1`. */
   containers: z.array(z.string().regex(IDENT_RE)).optional(),
   domains: z.array(domainSchema),
   ports: z.record(z.string(), z.number().int().positive().optional()),

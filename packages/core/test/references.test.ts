@@ -58,7 +58,7 @@ describe("resolveEnvironment", () => {
   it("gives a container the server's address, and a command service the loopback", () => {
     const f = facts({ name: "a", services: ["web", "db", "app"], containers: ["db", "app"], ports: { web: 20001, db: 24814, app: 26694 }, environment: { web: { H: "@db.host", I: "@db.internal" }, app: { H: "@db.host", I: "@db.internal", P: "@db.host:@db.port" } } });
     expect(resolveEnvironment(f, "web")).toMatchObject({ H: "127.0.0.1", I: "http://127.0.0.1:24814" });
-    expect(resolveEnvironment(f, "app")).toMatchObject({ H: "host.containers.internal", I: "http://host.containers.internal:24814", P: "host.containers.internal:24814" });
+    expect(resolveEnvironment(f, "app")).toMatchObject({ H: "10.0.2.2", I: "http://10.0.2.2:24814", P: "10.0.2.2:24814" });
   });
   it("refuses host across servers, like internal", () => {
     const peers = { b: facts({ name: "b", server: "s2", ports: { api: 25000 } }) };

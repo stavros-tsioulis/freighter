@@ -7,6 +7,11 @@
  * is a reference wherever it stands, so it can sit against other text: `redis://${self.USER}:${self.PASS}@${self.HOST}`.
  * Braces that hold anything else (`${HOME}`) are left alone, and `$${` is a literal `${`.
  */
+/**
+ * The server's loopback as a container sees it: the gateway of its slirp4netns network (`allow_host_loopback`). Not
+ * `host.containers.internal`, which Podman points at the server's public address, where nothing is published.
+ */
+export const CONTAINER_HOST = "10.0.2.2";
 export const REFERENCE_ATTRS = ["domain", "url", "internal", "port", "host"] as const;
 export type ReferenceAttr = (typeof REFERENCE_ATTRS)[number];
 

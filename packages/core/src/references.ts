@@ -1,4 +1,4 @@
-import { SECRET_STORAGE_ATTRS, findReferences, isEnvAttr, substituteReferences, type AppFacts, type Reference, type StorageFacts } from "@freighter/manifest";
+import { CONTAINER_HOST, SECRET_STORAGE_ATTRS, findReferences, isEnvAttr, substituteReferences, type AppFacts, type Reference, type StorageFacts } from "@freighter/manifest";
 
 export type { AppFacts, Connections, StorageFacts } from "@freighter/manifest";
 
@@ -100,7 +100,7 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
             throw new ReferenceError(`${ref.text}: ${owner.name} runs on server "${owner.server}", not "${from.server}", so it has no internal address here; use .url instead`);
           }
           // the server's loopback, as the service that asks reaches it: a container is in a network of its own
-          const host = from.containers?.includes(svc) ? "host.containers.internal" : "127.0.0.1";
+          const host = from.containers?.includes(svc) ? CONTAINER_HOST : "127.0.0.1";
           return plain(ref.attr === "host" ? host : `http://${host}:${port}`);
         }
         return plain(String(port));
