@@ -47,7 +47,7 @@ export async function makeDeps(opts: { isRoot?: boolean; config?: unknown } = {}
     if (cmd === "useradd") created.add(args.at(-1)!);
     if (cmd === "id") return created.has(args.at(-1)!) ? { stdout: "1001\n", code: 0 } : { stdout: "", code: 1 }; // the app user exists once useradd ran
     if (cmd === "/usr/bin/podman") return ctl.podman.installed ? { stdout: "podman version 5.0.0\n", code: 0 } : { stdout: "", code: 127 };
-    if (cmd === "runuser") {
+    if (cmd === "systemd-run" && args.includes("/usr/bin/podman")) {
       const args2 = args.slice(args.indexOf("/usr/bin/podman") + 1).filter((a) => !a.startsWith("--cgroup-manager"));
       if (args2[0] === "pull") return ctl.podman.failPull ? { stdout: "", stderr: "manifest unknown\n", code: 125 } : { stdout: "", code: 0 };
       if (args2[0] === "image" && args2[1] === "inspect" && args2.some((a) => a.includes("ExposedPorts"))) {

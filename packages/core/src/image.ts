@@ -1,7 +1,9 @@
+import { randomBytes } from "node:crypto";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { stopIfCanceled } from "./operations.ts";
 import { containerHome, containerRuntimeDir, volumeDir, PODMAN } from "@freighter/systemd";
 import { imageServices, type Manifest } from "@freighter/manifest";
+import { chownShared } from "./app.ts";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
 import { listReleaseIds, releaseDir } from "./releases.ts";
@@ -48,13 +50,34 @@ export async function containersAvailable(d: Deps): Promise<{ available: boolean
 export const NO_CONTAINERS_MESSAGE =
   "this server cannot run images: Podman is not installed (re-run the installer with FREIGHTER_WITH_CONTAINERS=1, or install podman, uidmap and passt)";
 
-/** Run podman as the app's user (rootless), with its own HOME and runtime directory. */
+/**
+ * Run podman as the app's user (rootless), with its own HOME and runtime directory. It runs in a transient unit of its
+ * own rather than as a child of the agent: the first rootless podman of a user leaves a helper process behind that
+ * holds its namespaces, and containers started later join it. Started from the agent, that would be the agent's sandbox
+ * (a private /tmp), and the containers' network helper could not mount its own /tmp in it. The unit ends with the command,
+ * and takes the helper with it.
+ */
 async function podman(d: Deps, app: string, args: string[], timeoutMs?: number, signal?: AbortSignal) {
-  return d.run(
-    "runuser",
-    ["-u", app, "--", "env", `HOME=${containerHome(d.layout, app)}`, `TMPDIR=${containerHome(d.layout, app)}/tmp`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, PODMAN, "--cgroup-manager=cgroupfs", ...args],
-    { timeoutMs, signal },
-  );
+  const home = containerHome(d.layout, app);
+  const unit = `freighter-podman-${app}-${randomBytes(4).toString("hex")}`;
+  const env = [`HOME=${home}`, `TMPDIR=${home}/tmp`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`];
+  const stop = () => void d.run("systemctl", ["stop", `${unit}.service`]).catch(() => undefined);
+  signal?.addEventListener("abort", stop, { once: true });
+  try {
+    return await d.run(
+      "systemd-run",
+      [
+        "--quiet", "--wait", "--pipe", "--collect",
+        `--unit=${unit}`, `--uid=${app}`, `--gid=${app}`, `--working-directory=${home}`,
+        ...(timeoutMs ? [`--property=RuntimeMaxSec=${Math.ceil(timeoutMs / 1000)}`] : []),
+        ...env.map((e) => `--setenv=${e}`),
+        PODMAN, "--cgroup-manager=cgroupfs", ...args,
+      ],
+      { timeoutMs: timeoutMs ? timeoutMs + 30_000 : undefined, signal },
+    );
+  } finally {
+    signal?.removeEventListener("abort", stop);
+  }
 }
 
 async function nextFreeSubidStart(file: string): Promise<number> {
@@ -91,7 +114,9 @@ export async function ensureContainerRuntime(d: Deps, app: string, manifest: Pic
   }
   // Owned by the app's user and private to it, like the directory the units create (see containerRuntimeDir).
   await d.run("install", ["-d", "-o", app, "-g", app, "-m", "0700", containerRuntimeDir(app)]);
-  await d.run("chown", ["-R", `${app}:${app}`, home, `${d.layout.appsRoot}/${app}/shared`]);
+  // Not recursive in the home: its image store holds files owned by the mapped ids of the images, which a chown would undo.
+  await d.run("chown", [`${app}:${app}`, home, `${home}/tmp`]);
+  await chownShared(d, app);
 }
 
 const PORTS_FILE = ".freighter-container-ports.json";

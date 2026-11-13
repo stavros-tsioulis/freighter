@@ -32,13 +32,26 @@ describe("image deploys", () => {
     expect(unit).toContain(` -e DB_URL `);
     expect(unit.split("\n").find((l) => l.startsWith("ExecStart="))).toMatch(new RegExp(`${pinned}$`));
 
-    expect(calls.some((c) => c[0] === "runuser" && c.includes("pull") && c.at(-1) === "ghcr.io/org/shop:1")).toBe(true);
+    expect(calls.some((c) => c[0] === "systemd-run" && c.includes("pull") && c.at(-1) === "ghcr.io/org/shop:1")).toBe(true);
     // no login session (linger / systemd-logind) is involved: the runtime directory is made directly
     expect(calls.some((c) => c[0] === "loginctl")).toBe(false);
     expect(calls).toContainEqual(["install", "-d", "-o", "shop", "-g", "shop", "-m", "0700", "/run/freighter-shop"]);
     expect(unitText("freighter-shop--web.service")).toContain("Environment=XDG_RUNTIME_DIR=/run/freighter-shop");
-    expect(calls.find((c) => c[0] === "runuser" && c.includes("pull"))).toContain("XDG_RUNTIME_DIR=/run/freighter-shop");
+    expect(calls.find((c) => c[0] === "systemd-run" && c.includes("pull"))).toContain("--setenv=XDG_RUNTIME_DIR=/run/freighter-shop");
     expect((await readdir(`${deps.layout.appsRoot}/shop/current`)).sort()).toEqual([".freighter-images.json", "app.yaml"]);
+  });
+
+  it("runs podman for the app in a unit of its own, and never chowns what a container keeps in its volumes or image store", async () => {
+    const { deps, calls } = await makeDeps();
+    const { setEnv } = await import("../src/index.ts");
+    await setEnv(deps, "shop", "web", "DB_URL", "x");
+    await deploy(deps, { manifestText: IMG("1") + "    volumes:\n      data: /var/lib/data\n" });
+    const pull = calls.find((c) => c[0] === "systemd-run" && c.includes("pull"))!;
+    expect(pull).toEqual(expect.arrayContaining(["--wait", "--pipe", "--collect", "--uid=shop", "--gid=shop", "--property=RuntimeMaxSec=900"]));
+    expect(calls.some((c) => c[0] === "runuser")).toBe(false); // not as a child of the agent, whose private /tmp the containers would inherit
+    const recursive = calls.filter((c) => c[0] === "chown" && c.includes("-R")).map((c) => c.at(-1)!);
+    expect(recursive.some((p) => p.includes("/volumes") || p.endsWith("/container") || p.endsWith("/shared"))).toBe(false);
+    expect(calls).toContainEqual(["chown", "shop:shop", `${deps.layout.appsRoot}/shop/shared/volumes`]);
   });
 
   describe("the port inside the container", () => {
@@ -125,7 +138,7 @@ describe("image deploys", () => {
     await setEnv(deps, "shop", "web", "DB_URL", "x");
     await deploy(deps, { manifestText: IMG("1") });
     await deleteApp(deps, "shop");
-    expect(calls.some((c) => c[0] === "runuser" && c.includes("system") && c.includes("reset"))).toBe(true);
+    expect(calls.some((c) => c[0] === "systemd-run" && c.includes("system") && c.includes("reset"))).toBe(true);
     expect(calls).toContainEqual(["rm", "-rf", "/run/freighter-shop"]);
   });
 });
