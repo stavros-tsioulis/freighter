@@ -91,7 +91,8 @@ export async function consolePlan(d: Deps, app: string, service: string): Promis
       cwd: "/",
       shell: "bash or sh in the container",
       env,
-      argv: ["runuser", "-u", user, "--", PODMAN, "--cgroup-manager=cgroupfs", "exec", "-it", "-e", "TERM", "-e", "COLORTERM", container, "/bin/sh", "-c", SHELL_SCRIPT],
+      // `runuser` puts the user's passwd home (which a system user does not have) in HOME, so it is set again after it
+      argv: ["runuser", "-u", user, "--", "env", `HOME=${home}`, `XDG_RUNTIME_DIR=${containerRuntimeDir(app)}`, `TMPDIR=${home}/tmp`, PODMAN, "--cgroup-manager=cgroupfs", "exec", "-it", "-e", "TERM", "-e", "COLORTERM", container, "/bin/sh", "-c", SHELL_SCRIPT],
     };
   }
 
@@ -102,7 +103,10 @@ export async function consolePlan(d: Deps, app: string, service: string): Promis
   const cwd = parsed.workingDirectory ?? sharedDir(d.layout, app);
   const env = { PATH: d.dev ? (process.env.PATH ?? SAFE_PATH) : SAFE_PATH, HOME: sharedDir(d.layout, app), USER: user, LOGNAME: user, ...parsed.env, ...fromFiles, ...term };
   const base = ["/bin/sh", "-c", SHELL_SCRIPT];
-  return { kind: "host", user, cwd, shell: "bash or sh", env, argv: d.dev ? base : ["runuser", "-u", user, "--", ...base] };
+  // runuser resets HOME, USER and LOGNAME (and nothing else), so those are set again after it. They hold no secrets,
+  // which must never be on a command line: the rest of the environment, secrets included, passes through runuser as it is.
+  const argv = d.dev ? base : ["runuser", "-u", user, "--", "env", `HOME=${env.HOME}`, `USER=${user}`, `LOGNAME=${user}`, ...base];
+  return { kind: "host", user, cwd, shell: "bash or sh", env, argv };
 }
 
 async function findPython(): Promise<string> {

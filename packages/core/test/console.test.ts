@@ -72,6 +72,9 @@ describe("the plan for a console", () => {
     const plan = await consolePlan(h.deps, "shop", "web");
     expect(plan).toMatchObject({ kind: "host", user: "shop" });
     expect(plan.argv.slice(0, 4)).toEqual(["runuser", "-u", "shop", "--"]);
+    // runuser resets HOME to the user's passwd home, which a system user does not have: it is set again after it, without a secret on the command line
+    expect(plan.argv.slice(4, 8)).toEqual(["env", `HOME=${h.deps.layout.appsRoot}/shop/shared`, "USER=shop", "LOGNAME=shop"]);
+    expect(plan.argv.join(" ")).not.toContain("s3cret");
     expect(plan.cwd).toContain("/srv/apps/shop/");
     expect(plan.env).toMatchObject({ MODE: "prod", TOKEN: "s3cret", TERM: "xterm-256color", USER: "shop", HOME: `${h.deps.layout.appsRoot}/shop/shared` });
     expect(plan.env.PATH).toBeTruthy();
@@ -88,6 +91,8 @@ describe("the plan for a console", () => {
     expect(plan.argv).toEqual(expect.arrayContaining(["runuser", "-u", "img", "--", "/usr/bin/podman", "--cgroup-manager=cgroupfs", "exec", "-it"]));
     expect(plan.argv).toContain("freighter-img--web"); // the container is named like its unit
     expect(plan.env.XDG_RUNTIME_DIR).toBe("/run/freighter-img");
+    const after = plan.argv.slice(plan.argv.indexOf("env") + 1, plan.argv.indexOf("/usr/bin/podman"));
+    expect(after).toEqual([`HOME=${h.deps.layout.appsRoot}/img/container`, "XDG_RUNTIME_DIR=/run/freighter-img", `TMPDIR=${h.deps.layout.appsRoot}/img/container/tmp`]); // as for every other podman call
     expect(JSON.stringify(plan)).not.toContain('"v"'); // the container has its own environment: nothing is copied in
   });
 
