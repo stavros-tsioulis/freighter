@@ -39,7 +39,7 @@ services:
       - DATABASE_URL
 ```
 
-- The service's `environment`, its secrets and `PORT` are passed into the container. Secrets never appear on a command line.
+- The service's `environment`, its secrets and `PORT` are passed into the container. `PORT` is the port inside the container (the one the image declares, or `containerPort`), so an image that obeys `$PORT` listens where Freighter's port leads. `HOST` is not set: bind to all addresses. Secrets never appear on a command line.
 - `resources` limit the whole container.
 - `volumes` are directories under `/srv/apps/<app>/shared/volumes/<name>`. They survive releases and are removed with the app. See [volumes](/deploy/volumes) for command services and for SMB and NFS shares.
 - Add a [domain](/deploy/domains) to route traffic to the service. Routed services get a fresh port per release, and traffic moves over once the new container is healthy.

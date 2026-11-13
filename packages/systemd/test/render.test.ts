@@ -105,12 +105,12 @@ describe("renderUnit for image services", () => {
     const digest = `ghcr.io/org/shop@sha256:${"b".repeat(64)}`;
     const out = run({ image: digest, instance: "r1" });
     expect(out).toContain(
-      `ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web--r1 --pull=never --cgroups=no-conmon --log-driver=journald --network=slirp4netns:allow_host_loopback=true -p 127.0.0.1:21000:8080 -e DB_URL -e HOST -e NODE_ENV -e PORT -v /srv/apps/shop/shared/volumes/uploads:/var/uploads:Z ${digest}`,
+      `ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web--r1 --pull=never --cgroups=no-conmon --log-driver=journald --network=slirp4netns:allow_host_loopback=true -p 127.0.0.1:21000:8080 -e DB_URL -e NODE_ENV -e PORT -v /srv/apps/shop/shared/volumes/uploads:/var/uploads:Z ${digest}`,
     );
     expect(out).toContain("ExecStop=/usr/bin/podman --cgroup-manager=cgroupfs stop --ignore --time 10 freighter-shop--web--r1");
     expect(out).toContain("ExecStopPost=-/usr/bin/podman --cgroup-manager=cgroupfs rm --force --ignore freighter-shop--web--r1");
-    expect(out).toContain("Environment=PORT=21000");
-    expect(out).toContain("Environment=HOST=127.0.0.1");
+    expect(out).toContain("Environment=PORT=8080"); // the port inside the container, where an app that obeys $PORT must listen
+    expect(out).not.toContain("HOST="); // a container is reached on its own address, not its loopback
     expect(out).toContain("MemoryMax=512M");
     expect(out).toContain("CPUQuota=100%");
     expect(out).toContain("Delegate=yes");
@@ -119,6 +119,7 @@ describe("renderUnit for image services", () => {
     expect(run({ def: { ...img.services.web!, containerPort: undefined }, containerPort: 3000 })).toContain("-p 127.0.0.1:21000:3000 ");
     expect(run({ containerPort: 3000 })).toContain("-p 127.0.0.1:21000:8080 "); // containerPort: 8080 in app.yaml wins
     expect(run({ def: { ...img.services.web!, containerPort: undefined } })).toContain("-p 127.0.0.1:21000:21000 ");
+    expect(run({ def: { ...img.services.web!, containerPort: undefined }, containerPort: 3000 })).toContain("Environment=PORT=3000");
   });
   it("never puts values on the command line", () => {
     expect(run()).not.toMatch(/ExecStart=.*production/);

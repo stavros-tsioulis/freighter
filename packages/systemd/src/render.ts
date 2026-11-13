@@ -19,7 +19,7 @@ export interface RenderInput {
   /** Static, non-secret environment from the manifest. */
   environment?: Record<string, string>;
   /**
-   * The service is reached by HAProxy at 127.0.0.1:PORT. Sets `HOST=127.0.0.1` (below the manifest's own environment and
+   * Host commands only. The service is reached by HAProxy at 127.0.0.1:PORT. Sets `HOST=127.0.0.1` (below the manifest's own environment and
    * the secrets file, so either can override it), so apps that bind to `$HOST` don't end up on `localhost`, which can mean
    * only the IPv6 loopback that HAProxy never connects to.
    */
@@ -68,7 +68,6 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? input.containerPort ?? port}`);
   // Values come from the unit's environment (static env, secrets file, PORT), so they never appear on a command line.
   const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...(input.refSecrets ?? []), ...Object.keys(input.environment ?? {})]);
-  if (input.loopback && port !== undefined) keys.add("HOST");
   if (port === undefined) keys.delete("PORT");
   for (const k of [...keys].sort()) {
     if (!ENV_KEY.test(k)) throw new Error(`invalid environment key "${k}"`);
@@ -124,14 +123,16 @@ function renderImageUnit(input: RenderInput): string {
     // A container that survived its process (a kill, a crash) keeps its name; take it away so the next start is clean.
     line("ExecStopPost", `-${PODMAN} --cgroup-manager=cgroupfs rm --force --ignore ${name}`),
   ];
-  if (input.loopback && port !== undefined) svc.push(line("Environment", "HOST=127.0.0.1"));
+  // No HOST=127.0.0.1 here (that is for host commands): inside the container the published port is reached on its own
+  // network address, so an app that bound to the container's loopback would never be reachable.
   for (const [k, v] of Object.entries(input.environment ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
     if (!ENV_KEY.test(k)) throw new Error(`invalid environment key "${k}"`);
     svc.push(line("Environment", `"${k}=${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`));
   }
   svc.push(line("EnvironmentFile", `-${envFile(layout, app, service)}`));
   if (input.refSecrets?.length) svc.push(line("EnvironmentFile", `-${refsEnvFile(layout, app, service)}`));
-  if (port !== undefined) svc.push(line("Environment", `PORT=${port}`));
+  // PORT is the port inside the container, where an app that obeys it listens and where the published port leads.
+  if (port !== undefined) svc.push(line("Environment", `PORT=${def.containerPort ?? input.containerPort ?? port}`));
   svc.push(line("Restart", def.restart), line("RestartSec", 3), line("TimeoutStopSec", 20));
   svc.push(line("CPUAccounting", "true"), line("MemoryAccounting", "true"));
   if (def.resources?.memory) svc.push(line("MemoryMax", def.resources.memory));
