@@ -61,7 +61,10 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   if (image === undefined) throw new Error(`service ${service} has no image`);
   if (!/^[^\s"'\\;$%]+$/.test(image)) throw new Error(`illegal image reference "${image}"`);
   // cgroupfs rather than systemd: the app's user has no systemd user bus, and the unit's own cgroup is delegated to it.
-  const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--replace", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald"];
+  const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--replace", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald",
+    // User networking, with the server's loopback reachable from inside (10.0.2.2, also host.containers.internal): how a
+    // container gets to the published port of another service. slirp4netns is installed with Podman; the default stack varies by release.
+    "--network=slirp4netns:allow_host_loopback=true"];
   if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? input.containerPort ?? port}`);
   // Values come from the unit's environment (static env, secrets file, PORT), so they never appear on a command line.
   const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...(input.refSecrets ?? []), ...Object.keys(input.environment ?? {})]);

@@ -115,6 +115,6 @@ Over the API, `POST /apps/:app/image-deployments` takes `{"manifest": "<app.yaml
 
 - Podman only; there is no Docker support. Images must be pullable by Podman (`linux/amd64` or `linux/arm64`, matching the server).
 - One container per service and one instance per service, like other services.
-- Containers are rootless and use user networking, so they can't bind ports below 1024 or reach services bound to the host's loopback by `127.0.0.1`. Use the host's address, or run the dependency as another Freighter service.
+- Containers are rootless and use user networking, so they can't bind ports below 1024. Inside a container `127.0.0.1` is the container itself; the server's loopback is `host.containers.internal` (`10.0.2.2`). That is how a container reaches another service's published port, for example `host.containers.internal:24814`. It also means a container can reach anything listening on the server's loopback, including other apps' ports, so run only images you trust.
 - Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy → Container image** or `freighter push`.
 - The dashboard's **Container image** form needs every service to be an image. To mix in command services, upload an archive.

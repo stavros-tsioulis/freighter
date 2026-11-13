@@ -105,7 +105,7 @@ describe("renderUnit for image services", () => {
     const digest = `ghcr.io/org/shop@sha256:${"b".repeat(64)}`;
     const out = run({ image: digest, instance: "r1" });
     expect(out).toContain(
-      `ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web--r1 --pull=never --cgroups=no-conmon --log-driver=journald -p 127.0.0.1:21000:8080 -e DB_URL -e HOST -e NODE_ENV -e PORT -v /srv/apps/shop/shared/volumes/uploads:/var/uploads:Z ${digest}`,
+      `ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web--r1 --pull=never --cgroups=no-conmon --log-driver=journald --network=slirp4netns:allow_host_loopback=true -p 127.0.0.1:21000:8080 -e DB_URL -e HOST -e NODE_ENV -e PORT -v /srv/apps/shop/shared/volumes/uploads:/var/uploads:Z ${digest}`,
     );
     expect(out).toContain("ExecStop=/usr/bin/podman --cgroup-manager=cgroupfs stop --ignore --time 10 freighter-shop--web--r1");
     expect(out).toContain("ExecStopPost=-/usr/bin/podman --cgroup-manager=cgroupfs rm --force --ignore freighter-shop--web--r1");

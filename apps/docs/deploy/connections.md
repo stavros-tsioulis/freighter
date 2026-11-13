@@ -24,8 +24,9 @@ The syntax is `@service.attribute`, or `@app/service.attribute` for another app.
 | --- | --- |
 | `domain` | the service's first domain |
 | `url` | the domain with its scheme: `https://…`, or `http://…` when the domain is HTTP only |
-| `internal` | `http://127.0.0.1:<port>`, for calls that stay on the server |
-| `port` | the service's port |
+| `internal` | `http://127.0.0.1:<port>`, for calls that stay on the server (`http://host.containers.internal:<port>` when the service that asks runs as a container) |
+| `port` | the service's port (the one Freighter assigns, not the port inside a container) |
+| `host` | the server's address as the service that asks reaches it: `127.0.0.1`, or `host.containers.internal` for a container. For building an address by hand: `@db.host:@db.port` |
 | *any `environment:` name* | that value from the service's own `environment:`, with its own connections resolved |
 
 Values are filled in when the app goes live (a deploy, rollback or domain change), using the ports and domains in force then. A service with no domain gives an empty string for `.domain` and `.url`. Any other connection that can't be resolved fails the deploy before anything is touched, and says which one and why: no port, no such service. Secrets can't be referenced, because they are write-only.

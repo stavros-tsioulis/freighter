@@ -51,17 +51,17 @@ describe("suggest", () => {
     const self = (q: string, o: { publicOnly?: boolean } = {}) => suggest(q, src, { self: ["DB_HOST", "DB_PORT"], ...o });
     expect(self("")[0]).toMatchObject({ insert: "self.", label: "self", more: true });
     expect(self("sel")[0]!.label).toBe("self");
-    expect(self("self.").map((x) => x.label)).toEqual(["DB_HOST", "DB_PORT", "domain", "url", "internal", "port"]);
+    expect(self("self.").map((x) => x.label)).toEqual(["DB_HOST", "DB_PORT", "domain", "url", "internal", "port", "host"]);
     expect(self("self.DB_P")[0]).toMatchObject({ insert: "self.DB_PORT", more: false });
     expect(self("", { publicOnly: true }).map((x) => x.label)).not.toContain("self"); // a build has no service of its own
   });
   it("continues with the attributes of the chosen service, including its variables", () => {
     expect(suggest("api", src)[0]).toMatchObject({ insert: "api.", more: true });
-    expect(labels("api.")).toEqual(["domain", "url", "internal", "port", "REGION", "MODE"]);
+    expect(labels("api.")).toEqual(["domain", "url", "internal", "port", "host", "REGION", "MODE"]);
     expect(labels("api.u")).toEqual(["url"]);
     expect(labels("api.reg")).toEqual(["REGION"]);
     expect(suggest("api.u", src)[0]).toMatchObject({ insert: "api.url", more: false });
-    expect(labels("billing/api.")).toEqual(["domain", "url", "internal", "port"]);
+    expect(labels("billing/api.")).toEqual(["domain", "url", "internal", "port", "host"]);
   });
   it("offers the shared directory and the app's volumes, then their path", () => {
     expect(labels("vol")).toEqual(["volume:shared", "volume:media"]);

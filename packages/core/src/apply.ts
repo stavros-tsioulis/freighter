@@ -104,6 +104,7 @@ export function resolveAppEnvironment(d: Deps, manifest: Manifest, domains: read
     name: manifest.name,
     server: conn.server,
     services: Object.keys(manifest.services),
+    containers: Object.entries(manifest.services).filter(([, def]) => def.image !== undefined).map(([s]) => s),
     domains: [...domains],
     ports: Object.fromEntries(Object.entries(targets).map(([s, t]) => [s, t.port])),
     environment: Object.fromEntries(Object.entries(manifest.services).map(([s, def]) => [s, def.environment])),

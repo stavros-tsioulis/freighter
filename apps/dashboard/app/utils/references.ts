@@ -4,6 +4,7 @@ export const SERVICE_ATTRS: Record<string, string> = {
   url: "https://domain",
   internal: "http://127.0.0.1:port",
   port: "the service's port",
+  host: "the server's address, as this service reaches it",
 };
 export const STORAGE_ATTRS: Record<string, string> = {
   url: "https://domain, or the local address",

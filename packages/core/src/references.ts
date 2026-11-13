@@ -90,15 +90,18 @@ export function resolveEnvironmentEach(self: AppFacts, service: string, peers: R
         return plain(ref.attr === "domain" ? dom.hostname : `${dom.tls === "auto" ? "https" : "http"}://${dom.hostname}`);
       }
       case "internal":
+      case "host":
       case "port":
       case "PORT": {
         const port = owner.ports[ref.service];
-        if (port === undefined) throw new ReferenceError(`${ref.text}: service "${ref.service}"${where} has no port (give it a domain or a port)`);
-        if (ref.attr === "internal") {
+        if (ref.attr !== "host" && port === undefined) throw new ReferenceError(`${ref.text}: service "${ref.service}"${where} has no port (give it a domain or a port)`);
+        if (ref.attr === "internal" || ref.attr === "host") {
           if (owner.server !== undefined && from.server !== undefined && owner.server !== from.server) {
             throw new ReferenceError(`${ref.text}: ${owner.name} runs on server "${owner.server}", not "${from.server}", so it has no internal address here; use .url instead`);
           }
-          return plain(`http://127.0.0.1:${port}`);
+          // the server's loopback, as the service that asks reaches it: a container is in a network of its own
+          const host = from.containers?.includes(svc) ? "host.containers.internal" : "127.0.0.1";
+          return plain(ref.attr === "host" ? host : `http://${host}:${port}`);
         }
         return plain(String(port));
       }

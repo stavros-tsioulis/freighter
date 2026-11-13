@@ -55,6 +55,16 @@ describe("resolveEnvironment", () => {
     expect(r.URL).toBe("redis://u:p@h:6379");
     expect(r.ESC).toBe("${web.U}");
   });
+  it("gives a container the server's address, and a command service the loopback", () => {
+    const f = facts({ name: "a", services: ["web", "db", "app"], containers: ["db", "app"], ports: { web: 20001, db: 24814, app: 26694 }, environment: { web: { H: "@db.host", I: "@db.internal" }, app: { H: "@db.host", I: "@db.internal", P: "@db.host:@db.port" } } });
+    expect(resolveEnvironment(f, "web")).toMatchObject({ H: "127.0.0.1", I: "http://127.0.0.1:24814" });
+    expect(resolveEnvironment(f, "app")).toMatchObject({ H: "host.containers.internal", I: "http://host.containers.internal:24814", P: "host.containers.internal:24814" });
+  });
+  it("refuses host across servers, like internal", () => {
+    const peers = { b: facts({ name: "b", server: "s2", ports: { api: 25000 } }) };
+    const f = facts({ name: "a", server: "s1", environment: { web: { H: "@b/api.host" } } });
+    expect(() => resolveEnvironment(f, "web", peers)).toThrow(/runs on server "s2", not "s1"/);
+  });
   it("detects loops", () => {
     expect(() => resolveEnvironment(facts({ name: "a", environment: { web: { A: "@api.B" }, api: { B: "@web.A" } } }), "web")).toThrow(/loop: a\/web\.A -> a\/api\.B -> a\/web\.A/);
   });

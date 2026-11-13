@@ -40,6 +40,7 @@ export async function buildConnections(ctx: ApiContext, app: string, server: str
           name: peer.name,
           server: peer.server,
           services: Object.keys(manifest.services),
+          containers: Object.entries(manifest.services).filter(([, def]) => def.image !== undefined).map(([s]) => s),
           domains,
           ports: Object.fromEntries(ctx.registry.services.list(peer.name).map((s) => [s.name, s.port ?? undefined])),
           environment: withStored(manifest, await storedVariables(ctx, peer.server, peer.name)),
@@ -91,6 +92,7 @@ export async function ownFacts(ctx: ApiContext, app: string, configText?: string
     name: app,
     server: row.server,
     services: Object.keys(manifest.services),
+    containers: Object.entries(manifest.services).filter(([, def]) => def.image !== undefined).map(([s]) => s),
     domains,
     ports: Object.fromEntries(ctx.registry.services.list(app).map((s) => [s.name, s.port ?? undefined])),
     // the default layout: this is only for showing what a value resolves to

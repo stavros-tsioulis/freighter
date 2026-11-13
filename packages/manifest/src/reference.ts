@@ -1,13 +1,13 @@
 /**
  * Connections: an environment value may point at another service, such as `API_URL: "@api.url"`.
  *
- * Syntax: `@[app/]service.attr`, anywhere in a value. `attr` is `domain`, `url`, `internal`, `port`, or the name of an
+ * Syntax: `@[app/]service.attr`, anywhere in a value. `attr` is `domain`, `url`, `internal`, `port`, `host`, or the name of an
  * `environment:` entry of that service (`UPPER_SNAKE_CASE`; `PORT` is the same as `port`). `@@` is a literal `@`.
  * An `@` right after a word character (an email address, say) is never a reference. The braced form `${[app/]service.attr}`
  * is a reference wherever it stands, so it can sit against other text: `redis://${self.USER}:${self.PASS}@${self.HOST}`.
  * Braces that hold anything else (`${HOME}`) are left alone, and `$${` is a literal `${`.
  */
-export const REFERENCE_ATTRS = ["domain", "url", "internal", "port"] as const;
+export const REFERENCE_ATTRS = ["domain", "url", "internal", "port", "host"] as const;
 export type ReferenceAttr = (typeof REFERENCE_ATTRS)[number];
 
 export const STORAGE_ATTRS = ["url", "domain", "internal", "publicUrl", "region", "accessKey", "secretKey"] as const;
@@ -58,7 +58,7 @@ const IDENT = "[a-z][a-z0-9]*(?:-[a-z0-9]+)*";
 const INNER =
   `(?:storage:(?<st>${IDENT})\\.(?<sattr>${STORAGE_ATTRS.join("|")})` +
   `|volume:(?<vol>${IDENT})\\.(?<vattr>${VOLUME_ATTRS.join("|")})` +
-  `|(?:(?<app>${IDENT})/)?(?<svc>${IDENT})\\.(?<attr>domain|url|internal|port|[A-Z_][A-Z0-9_]*))(?![A-Za-z0-9_])`;
+  `|(?:(?<app>${IDENT})/)?(?<svc>${IDENT})\\.(?<attr>domain|url|internal|port|host|[A-Z_][A-Z0-9_]*))(?![A-Za-z0-9_])`;
 // `@@` | `$${` | `${` anything `}` | `@` reference
 const PATTERN = `@@|\\$\\$\\{|\\$\\{(?<br>[^{}]*)\\}|@${INNER}`;
 const BRACED = new RegExp(`^${INNER}$`);

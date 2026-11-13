@@ -182,7 +182,7 @@ export async function pullImages(d: Deps, app: string, manifest: Pick<Manifest, 
     const ports = exposed.get(ref)!;
     if (ports.length === 1) {
       containerPorts[service] = ports[0]!;
-      await log(`    ${service} listens on ${ports[0]} (the port the image declares; set containerPort to override)`);
+      await log(`    ${service}: the image listens on ${ports[0]} inside the container; Freighter's port for the service is mapped to it (set containerPort to override)`);
     } else if (ports.length > 1) {
       await log(`    warning: the image of ${service} declares ports ${ports.join(", ")}; set containerPort to say which one to publish (using $PORT for now)`);
     } else if (!d.dev) {

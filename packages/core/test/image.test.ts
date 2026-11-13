@@ -69,7 +69,7 @@ describe("image deploys", () => {
     it("uses the one port the image declares when containerPort is not set (Grafana listens on 3000, ignoring $PORT)", async () => {
       const t = await deployWith([8080]);
       expect(publish(t.unitText("freighter-shop--web.service"))).toBe("127.0.0.1:3000:8080");
-      expect(t.logs.join("\n")).toMatch(/web listens on 8080/);
+      expect(t.logs.join("\n")).toMatch(/web: the image listens on 8080 inside the container/);
       expect(JSON.parse(await readFile(`${t.deps.layout.appsRoot}/shop/current/.freighter-container-ports.json`, "utf8"))).toEqual({ web: 8080 });
     });
     it("lets containerPort win over the image", async () => {
