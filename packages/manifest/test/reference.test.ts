@@ -18,6 +18,17 @@ describe("findReferences", () => {
 });
 
 describe("substituteReferences", () => {
+  it("reads the braced form anywhere, so it can sit against other text", () => {
+    expect(findReferences("redis://${self.USER}:${self.PASS}@${self.HOST}").map((r) => r.text)).toEqual(["${self.USER}", "${self.PASS}", "${self.HOST}"]);
+    expect(findReferences("x${api.url}y${billing/api.PORT}${storage:up.url}${volume:media.path}").map((r) => r.text)).toEqual(["${api.url}", "${billing/api.PORT}", "${storage:up.url}", "${volume:media.path}"]);
+    expect(findReferences("${HOME} ${PORT} ${api.nope} ${a.B")).toEqual([]); // not references: left as they are
+    expect(substituteReferences("redis://${a.U}:${a.P}@${a.H} $${a.U} @@x", (r) => `<${r.attr}>`)).toBe("redis://<U>:<P>@<H> ${a.U} @x");
+  });
+  it("puts a literal @ in front of a reference with @@, as in user:pass@host", () => {
+    expect(findReferences("redis://@self.USER:@self.PASS@@@self.HOST").map((r) => r.text)).toEqual(["@self.USER", "@self.PASS", "@self.HOST"]);
+    expect(substituteReferences("redis://@a.U:@a.P@@@a.H", (r) => `<${r.attr}>`)).toBe("redis://<U>:<P>@<H>");
+    expect(findReferences("bob@api.url")).toEqual([]);
+  });
   it("replaces references and unescapes @@", () => {
     expect(substituteReferences("https://@api.domain/x @@api.domain", (r) => `<${r.service}>`)).toBe("https://<api>/x @api.domain");
   });

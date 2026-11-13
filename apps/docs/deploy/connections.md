@@ -18,7 +18,7 @@ services:
 
 In the dashboard, typing `@` in a value lists the services, other apps' services and storages you can point at, filtered as you type; after the dot it lists the attributes and the service's variables.
 
-The syntax is `@service.attribute`, or `@app/service.attribute` for another app. It can sit anywhere in a value (`"@api.url/v1"`). Write `@@` for a literal `@`; an `@` straight after a letter or digit, as in an email address, is left alone.
+The syntax is `@service.attribute`, or `@app/service.attribute` for another app. It can sit anywhere in a value (`"@api.url/v1"`). Write `@@` for a literal `@`; an `@` straight after a letter or digit, as in an email address, is left alone. The braced form `${service.attribute}` (or `${app/service.attribute}`) is the same reference and works right against other text; a literal `${` is written `$${`. Braces around anything else, such as `${HOME}`, are left as they are.
 
 | Attribute | Value |
 | --- | --- |
@@ -29,6 +29,21 @@ The syntax is `@service.attribute`, or `@app/service.attribute` for another app.
 | *any `environment:` name* | that value from the service's own `environment:`, with its own connections resolved |
 
 Values are filled in when the app goes live (a deploy, rollback or domain change), using the ports and domains in force then. A service with no domain gives an empty string for `.domain` and `.url`. Any other connection that can't be resolved fails the deploy before anything is touched, and says which one and why: no port, no such service. Secrets can't be referenced, because they are write-only.
+
+## A service's own variables
+
+`@self.NAME` (or `${self.NAME}`) is that value from the same service, so one value can be built from others without repeating them:
+
+```yaml
+environment:
+  DB_HOST: db.internal
+  DB_PORT: "5432"
+  DATABASE_URL: "postgres://@self.DB_HOST:@self.DB_PORT/app"
+```
+
+In a URL, use the braced form, so the `@` between the password and the host stays a plain `@`: `redis://${self.REDIS_USER}:${self.REDIS_PASSWORD}@${self.REDIS_HOST}` gives `redis://user:secret@host`. Only plain variables can be used: a [secret](/deploy/secrets) can't be referenced.
+
+It is the same as writing the service's own name (`@web.DB_HOST` in the service `web`), and values can build on values that themselves use `@self`. A value that leads back to itself, directly or through others, is refused with the chain (`web.A -> web.B -> web.A`). `@self` works in a service's own `environment:`, not in the app-level one. A service that is itself called `self` keeps `@self` for itself.
 
 ## When something changes
 

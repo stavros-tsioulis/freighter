@@ -107,7 +107,7 @@ function save() {
         </div>
         <div class="flex flex-col gap-1">
           <label for="var-value" class="text-sm font-medium">Value</label>
-          <ReferenceInput id="var-value" v-model="varValue" :app="appName" />
+          <ReferenceInput id="var-value" v-model="varValue" :app="appName" :own-env="variables.map((v) => v.key).filter((k) => k !== varKey)" />
         </div>
         <button type="submit" class="hidden" />
       </form>

@@ -1,5 +1,6 @@
 import { parse } from "yaml";
 import { manifestSchema, type Manifest } from "./schema.ts";
+import { rewriteReferences } from "./reference.ts";
 
 export interface ParseOptions {
   /** Releases written before domains moved out of app.yaml may still contain them; ignore them instead of failing. */
@@ -40,6 +41,42 @@ function withAppEnvironment(m: Manifest): Manifest {
   return { ...m, services: Object.fromEntries(Object.entries(m.services).map(([name, svc]) => [name, { ...svc, environment: { ...m.environment, ...svc.environment } }])) };
 }
 
+/**
+ * `@self.KEY` (or `${self.KEY}`) in a service's environment means a value of that same service. It is written out as the service's name
+ * before the manifest is checked, so everything downstream (validation, the loop guard, the graph) sees an ordinary
+ * reference. A service that is itself called `self` keeps the plain meaning. Returns what was rewritten, to put back.
+ */
+function resolveSelf(raw: unknown): Map<string, string> {
+  const changed = new Map<string, string>();
+  const services = raw && typeof raw === "object" ? (raw as { services?: unknown }).services : undefined;
+  if (!services || typeof services !== "object" || "self" in services) return changed;
+  for (const [name, svc] of Object.entries(services as Record<string, unknown>)) {
+    const env = svc && typeof svc === "object" ? (svc as { environment?: unknown }).environment : undefined;
+    if (!env || typeof env !== "object") continue;
+    for (const [key, value] of Object.entries(env as Record<string, unknown>)) {
+      if (typeof value !== "string" || !value.includes("self.")) continue;
+      const out = rewriteReferences(value, (r) => (r.service === "self" && r.app === undefined && r.storage === undefined && r.volume === undefined ? r.text.replace("self.", `${name}.`) : null));
+      if (out === value) continue;
+      changed.set(`${name}\0${key}`, value);
+      (env as Record<string, unknown>)[key] = out;
+    }
+  }
+  return changed;
+}
+
+/** Parse and check, with `@self` expanded; `raw` output (for showing and editing) keeps it as written. */
+function check(raw: unknown, opts: ParseOptions): Manifest {
+  const changed = resolveSelf(raw);
+  const m = manifestSchema.parse(raw);
+  if (opts.raw && changed.size > 0) {
+    for (const [id, written] of changed) {
+      const [service, key] = id.split("\0") as [string, string];
+      m.services[service]!.environment[key] = written;
+    }
+  }
+  return m;
+}
+
 export function parseManifest(source: string, opts: ParseOptions = {}): Manifest {
   const raw = parse(source);
   if (raw && typeof raw === "object" && "domains" in raw) {
@@ -52,9 +89,9 @@ export function parseManifest(source: string, opts: ParseOptions = {}): Manifest
     if (!opts.legacy) {
       throw new Error('"secrets" belong to each service: put them under the service they are for');
     }
-    const m = manifestSchema.parse(foldSharedEnvironment(raw));
+    const m = check(foldSharedEnvironment(raw), opts);
     return opts.raw ? m : withAppEnvironment(m);
   }
-  const m = manifestSchema.parse(raw);
+  const m = check(raw, opts);
   return opts.raw ? m : withAppEnvironment(m);
 }

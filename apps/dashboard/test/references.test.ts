@@ -10,11 +10,24 @@ const src: ReferenceSources = {
 };
 
 describe("referenceAt", () => {
+  it("completes inside ${...}, which can sit against other text", () => {
+    const v = "redis://${self.USER}:${self.PASS}@${se";
+    expect(referenceAt(v, v.length)).toEqual({ start: v.length - 2, query: "se", braced: true });
+    expect(referenceAt("${self.USER}@se", 15)).toEqual({ start: 13, query: "se", braced: false }); // the brace is closed: an @ after it starts a reference
+    expect(referenceAt("$${se", 5)).toBeNull(); // $${ is a literal
+    expect(referenceAt("${HOME}x ${", 11)).toEqual({ start: 11, query: "", braced: true });
+  });
+  it("completes after a literal @ written as @@, as in user:pass@@@host, and not inside the escape", () => {
+    const v = "redis://@self.USER:@self.PASS@@@se";
+    expect(referenceAt(v, v.length)).toEqual({ start: v.length - 2, query: "se", braced: false });
+    expect(referenceAt("me@se", 5)).toBeNull(); // an email address
+    expect(referenceAt("@@se", 4)).toBeNull(); // the escape itself
+  });
   it("finds the reference being typed", () => {
-    expect(referenceAt("@", 1)).toEqual({ start: 1, query: "" });
-    expect(referenceAt("https://@ap", 11)).toEqual({ start: 9, query: "ap" });
-    expect(referenceAt("x=@api.u and more", 8)).toEqual({ start: 3, query: "api.u" });
-    expect(referenceAt("@billing/api.", 13)).toEqual({ start: 1, query: "billing/api." });
+    expect(referenceAt("@", 1)).toEqual({ start: 1, query: "", braced: false });
+    expect(referenceAt("https://@ap", 11)).toEqual({ start: 9, query: "ap", braced: false });
+    expect(referenceAt("x=@api.u and more", 8)).toEqual({ start: 3, query: "api.u", braced: false });
+    expect(referenceAt("@billing/api.", 13)).toEqual({ start: 1, query: "billing/api.", braced: false });
   });
   it("ignores email addresses, the @@ escape and finished text", () => {
     expect(referenceAt("me@exam", 7)).toBeNull();
@@ -32,6 +45,15 @@ describe("suggest", () => {
     expect(labels("led")).toEqual(["billing/ledger"]);
     expect(labels("stor")).toEqual(["storage:uploads"]);
     expect(labels("zzz")).toEqual([]);
+  });
+  it("offers @self for the variables of the service being edited, when it is given", () => {
+    expect(labels("")).not.toContain("self");
+    const self = (q: string, o: { publicOnly?: boolean } = {}) => suggest(q, src, { self: ["DB_HOST", "DB_PORT"], ...o });
+    expect(self("")[0]).toMatchObject({ insert: "self.", label: "self", more: true });
+    expect(self("sel")[0]!.label).toBe("self");
+    expect(self("self.").map((x) => x.label)).toEqual(["DB_HOST", "DB_PORT", "domain", "url", "internal", "port"]);
+    expect(self("self.DB_P")[0]).toMatchObject({ insert: "self.DB_PORT", more: false });
+    expect(self("", { publicOnly: true }).map((x) => x.label)).not.toContain("self"); // a build has no service of its own
   });
   it("continues with the attributes of the chosen service, including its variables", () => {
     expect(suggest("api", src)[0]).toMatchObject({ insert: "api.", more: true });

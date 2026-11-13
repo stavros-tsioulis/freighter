@@ -39,15 +39,26 @@ export interface Suggestion {
   more: boolean;
 }
 
-/** The reference being typed at `caret`: where its text after the `@` starts, and what is typed so far. Null outside one. */
-export function referenceAt(value: string, caret: number): { start: number; query: string } | null {
+/**
+ * The reference being typed at `caret`: where its text after the `@` (or inside a `${`) starts, and what is typed so far.
+ * Null outside one. `braced` says it is inside `${...}`, which the choice has to close.
+ */
+export function referenceAt(value: string, caret: number): { start: number; query: string; braced: boolean } | null {
   const before = value.slice(0, caret);
+  const open = before.lastIndexOf("${");
   const at = before.lastIndexOf("@");
+  if (open >= 0 && open + 1 > at && !before.slice(open).includes("}")) {
+    const query = before.slice(open + 2);
+    if (before[open - 1] === "$" || !/^[A-Za-z0-9:/._-]*$/.test(query)) return null; // `$${` is a literal
+    return { start: open + 2, query, braced: true };
+  }
   if (at < 0) return null;
   const query = before.slice(at + 1);
   if (!/^[A-Za-z0-9:/._-]*$/.test(query)) return null;
-  if (at > 0 && /[A-Za-z0-9_.+@-]/.test(before[at - 1]!)) return null; // an email address, or the `@@` escape
-  return { start: at + 1, query };
+  if (at > 0 && /[A-Za-z0-9_.+-]/.test(before[at - 1]!)) return null; // an email address
+  // `@@` is a literal @: this one starts a reference only if the @s in front of it pair up (`@@@se` is an escape, then `@se`)
+  if (/@*$/.exec(before.slice(0, at))![0].length % 2 === 1) return null;
+  return { start: at + 1, query, braced: false };
 }
 
 const rank = <T extends { label: string }>(items: T[], q: string, extra: (i: T) => string = () => ""): T[] => {
@@ -62,10 +73,11 @@ const rank = <T extends { label: string }>(items: T[], q: string, extra: (i: T) 
 };
 
 /** The options for what is typed after an `@`, filtered by it: first the service or storage, then (after the dot) its attribute. */
-export function suggest(query: string, src: ReferenceSources, opts: { publicOnly?: boolean } = {}): Suggestion[] {
+export function suggest(query: string, src: ReferenceSources, opts: { publicOnly?: boolean; /** The other variables of the service being edited: offers `@self.NAME`. */ self?: string[] } = {}): Suggestion[] {
   const dot = query.indexOf(".");
   if (dot < 0) {
     const targets: (Suggestion & { name: string })[] = [
+      ...(opts.self && !opts.publicOnly && !src.services.includes("self") ? [{ insert: "self.", label: "self", name: "self", detail: "this service's own variables", more: true }] : []),
       ...src.services.map((s) => ({ insert: `${s}.`, label: s, name: s, detail: "service", more: true })),
       ...src.peers.flatMap((p) => p.services.map((s) => ({ insert: `${p.app}/${s}.`, label: `${p.app}/${s}`, name: s, detail: "service of another app", more: true }))),
       ...(opts.publicOnly
@@ -80,7 +92,9 @@ export function suggest(query: string, src: ReferenceSources, opts: { publicOnly
   }
   const target = query.slice(0, dot);
   const typed = query.slice(dot + 1);
-  const attrs: { attr: string; detail: string }[] = target.startsWith("storage:")
+  const attrs: { attr: string; detail: string }[] = target === "self" && opts.self && !opts.publicOnly && !src.services.includes("self")
+    ? [...opts.self.map((attr) => ({ attr, detail: "variable" })), ...Object.entries(SERVICE_ATTRS).map(([attr, detail]) => ({ attr, detail }))]
+    : target.startsWith("storage:")
     ? Object.entries(STORAGE_ATTRS).map(([attr, detail]) => ({ attr, detail }))
     : target.startsWith("volume:")
       ? Object.entries(VOLUME_ATTRS).map(([attr, detail]) => ({ attr, detail }))

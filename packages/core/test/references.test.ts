@@ -39,6 +39,22 @@ describe("resolveEnvironment", () => {
     expect(() => resolveEnvironment(me, "web", {})).toThrow(/no app "billing"/);
     expect(() => resolveEnvironment(me, "web", { billing: { ...peer, server: "s2" } })).toThrow(/use .url instead/);
   });
+  it("resolves a service's own values, in a chain, and stops a value that leads back to itself", () => {
+    const f = (environment: Record<string, string>) => facts({ name: "a", environment: { web: environment } });
+    expect(resolveEnvironment(f({ HOST: "db", PORT_: "5432", ADDR: "@web.HOST:@web.PORT_", URL: "pg://@web.ADDR" }), "web").URL).toBe("pg://db:5432");
+    expect(() => resolveEnvironment(f({ A: "@web.B", B: "x/@web.A" }), "web")).toThrow(/loop: a\/web\.A -> a\/web\.B -> a\/web\.A/);
+    expect(() => resolveEnvironment(f({ A: "@web.A" }), "web")).toThrow(/loop: a\/web\.A -> a\/web\.A/);
+  });
+  it("fills in a URL built from a service's own values", () => {
+    const env = { REDISUSER: "u", REDISPASSWORD: "p", REDISHOST: "h:6379", URL: "redis://@web.REDISUSER:@web.REDISPASSWORD@@@web.REDISHOST" };
+    expect(resolveEnvironment(facts({ name: "a", environment: { web: env } }), "web").URL).toBe("redis://u:p@h:6379");
+  });
+  it("fills in the braced form, with the @ between password and host written as it is", () => {
+    const env = { U: "u", P: "p", H: "h:6379", URL: "redis://${web.U}:${web.P}@${web.H}", ESC: "$${web.U}" };
+    const r = resolveEnvironment(facts({ name: "a", environment: { web: env } }), "web");
+    expect(r.URL).toBe("redis://u:p@h:6379");
+    expect(r.ESC).toBe("${web.U}");
+  });
   it("detects loops", () => {
     expect(() => resolveEnvironment(facts({ name: "a", environment: { web: { A: "@api.B" }, api: { B: "@web.A" } } }), "web")).toThrow(/loop: a\/web\.A -> a\/api\.B -> a\/web\.A/);
   });

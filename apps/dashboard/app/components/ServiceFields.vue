@@ -71,7 +71,7 @@ const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid 
     </div>
     <div v-for="(e, j) in s.env" :key="j" class="grid grid-cols-[14rem_1fr_auto] gap-2 items-center">
       <InputText v-model="e.key" placeholder="NODE_ENV" autocomplete="off" class="font-mono" :aria-label="`Variable ${j + 1} name`" />
-      <ReferenceInput v-model="e.value" :app="appName" :own-services="ownServices" :own-volumes="ownVolumes" placeholder="production" :aria-label="`Variable ${j + 1} value`" />
+      <ReferenceInput v-model="e.value" :app="appName" :own-services="ownServices" :own-volumes="ownVolumes" :own-env="s.env.map((x) => x.key.trim()).filter((k) => k && k !== e.key.trim())" placeholder="production" :aria-label="`Variable ${j + 1} value`" />
       <Button icon="pi pi-trash" severity="danger" text rounded aria-label="Remove variable" @click="s.env.splice(j, 1)" />
     </div>
     <div class="flex flex-col gap-1">

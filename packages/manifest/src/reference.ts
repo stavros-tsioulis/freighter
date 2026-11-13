@@ -3,7 +3,9 @@
  *
  * Syntax: `@[app/]service.attr`, anywhere in a value. `attr` is `domain`, `url`, `internal`, `port`, or the name of an
  * `environment:` entry of that service (`UPPER_SNAKE_CASE`; `PORT` is the same as `port`). `@@` is a literal `@`.
- * An `@` right after a word character (an email address, say) is never a reference.
+ * An `@` right after a word character (an email address, say) is never a reference. The braced form `${[app/]service.attr}`
+ * is a reference wherever it stands, so it can sit against other text: `redis://${self.USER}:${self.PASS}@${self.HOST}`.
+ * Braces that hold anything else (`${HOME}`) are left alone, and `$${` is a literal `${`.
  */
 export const REFERENCE_ATTRS = ["domain", "url", "internal", "port"] as const;
 export type ReferenceAttr = (typeof REFERENCE_ATTRS)[number];
@@ -52,11 +54,14 @@ export interface VolumeReference {
 export type Reference = ServiceReference | StorageReference | VolumeReference;
 
 const IDENT = "[a-z][a-z0-9]*(?:-[a-z0-9]+)*";
-// `@@` | `@` (`storage:` name `.` attr | [app `/`] service `.` attr). The attr must end the identifier, so `@api.url_x` is not `@api.url`.
-const PATTERN =
-  `@@|(?<![A-Za-z0-9_.+-])@(?:storage:(?<st>${IDENT})\\.(?<sattr>${STORAGE_ATTRS.join("|")})` +
+// `storage:` name `.` attr | `volume:` name `.` attr | [app `/`] service `.` attr. The attr must end the identifier, so `api.url_x` is not `api.url`.
+const INNER =
+  `(?:storage:(?<st>${IDENT})\\.(?<sattr>${STORAGE_ATTRS.join("|")})` +
   `|volume:(?<vol>${IDENT})\\.(?<vattr>${VOLUME_ATTRS.join("|")})` +
   `|(?:(?<app>${IDENT})/)?(?<svc>${IDENT})\\.(?<attr>domain|url|internal|port|[A-Z_][A-Z0-9_]*))(?![A-Za-z0-9_])`;
+// `@@` | `$${` | `${` anything `}` | `@` reference
+const PATTERN = `@@|\\$\\$\\{|\\$\\{(?<br>[^{}]*)\\}|@${INNER}`;
+const BRACED = new RegExp(`^${INNER}$`);
 
 export const isEnvAttr = (attr: string): boolean => !(REFERENCE_ATTRS as readonly string[]).includes(attr) && attr !== "PORT";
 
@@ -67,20 +72,57 @@ function toReference(m: { 0: string; groups?: Record<string, string | undefined>
   return { app: g.app, service: g.svc!, attr: g.attr!, text: m[0] };
 }
 
+const WORD_BEFORE = /[A-Za-z0-9_.+-]/;
+
+/**
+ * Walk a value: its escapes (`@@`, `$${`) and references, with where each is. An `@` that follows a word character is
+ * text (an email address); a braced reference is one anywhere.
+ */
+function* scan(value: string): Generator<{ index: number; text: string; ref: Reference | null; literal?: string }> {
+  for (const m of value.matchAll(new RegExp(PATTERN, "g"))) {
+    const index = m.index!;
+    if (m[0] === "@@") yield { index, text: m[0], ref: null, literal: "@" };
+    else if (m[0] === "$${") yield { index, text: m[0], ref: null, literal: "${" };
+    else if (m.groups!.br !== undefined) {
+      const inner = BRACED.exec(m.groups!.br);
+      if (inner) yield { index, text: m[0], ref: toReference({ 0: m[0], groups: inner.groups }) };
+    } else {
+      if (index > 0 && WORD_BEFORE.test(value[index - 1]!)) continue;
+      yield { index, text: m[0], ref: toReference(m) };
+    }
+  }
+}
+
 /** The references in a value, in order. */
 export function findReferences(value: string): Reference[] {
   const out: Reference[] = [];
-  for (const m of value.matchAll(new RegExp(PATTERN, "g"))) if (m[0] !== "@@") out.push(toReference(m));
+  for (const s of scan(value)) if (s.ref) out.push(s.ref);
   return out;
 }
 
-/** Replace every reference with `resolve(ref)` and `@@` with `@`. */
+/** Replace the references with `change(ref)` (kept as written when it returns null); escapes stay as they are. */
+export function rewriteReferences(value: string, change: (ref: Reference) => string | null): string {
+  let out = "";
+  let at = 0;
+  for (const s of scan(value)) {
+    if (!s.ref) continue;
+    const to = change(s.ref);
+    if (to === null) continue;
+    out += value.slice(at, s.index) + to;
+    at = s.index + s.text.length;
+  }
+  return out + value.slice(at);
+}
+
+/** Replace every reference with `resolve(ref)`, `@@` with `@` and `$${` with `${`. */
 export function substituteReferences(value: string, resolve: (ref: Reference) => string): string {
-  return value.replace(new RegExp(PATTERN, "g"), (...args) => {
-    const text = args[0] as string;
-    if (text === "@@") return "@";
-    return resolve(toReference({ 0: text, groups: args.at(-1) as Record<string, string | undefined> }));
-  });
+  let out = "";
+  let at = 0;
+  for (const s of scan(value)) {
+    out += value.slice(at, s.index) + (s.ref ? resolve(s.ref) : s.literal!);
+    at = s.index + s.text.length;
+  }
+  return out + value.slice(at);
 }
 
 /** One service connecting to another, as the environment of its app says. */

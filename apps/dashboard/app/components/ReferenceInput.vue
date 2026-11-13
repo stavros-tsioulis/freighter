@@ -2,7 +2,7 @@
 import { referenceAt, suggest, type Suggestion } from "~/utils/references";
 
 /** A text input for an environment value. Typing `@` lists what it can connect to, filtered by what follows. */
-const props = defineProps<{ app: string; ownServices?: string[]; ownVolumes?: string[]; id?: string; placeholder?: string; ariaLabel?: string; /** Only the public addresses of services (`domain`, `url`): what a build can read. */ publicOnly?: boolean }>();
+const props = defineProps<{ app: string; ownServices?: string[]; ownVolumes?: string[]; /** The other variables of the service this value belongs to, for `@self.NAME`. */ ownEnv?: string[]; id?: string; placeholder?: string; ariaLabel?: string; /** Only the public addresses of services (`domain`, `url`): what a build can read. */ publicOnly?: boolean }>();
 const model = defineModel<string>({ required: true });
 
 const sources = useReferenceSources(computed(() => props.app), computed(() => props.ownServices), computed(() => props.ownVolumes));
@@ -11,6 +11,7 @@ const el = () => input.value?.$el;
 
 const open = ref(false);
 const start = ref(0);
+const braced = ref(false);
 const caret = ref(0);
 const items = ref<Suggestion[]>([]);
 const active = ref(0);
@@ -22,12 +23,13 @@ function refresh() {
   if (!e) return;
   caret.value = e.selectionStart ?? model.value.length;
   const at = referenceAt(model.value, caret.value);
-  const found = at ? suggest(at.query, sources.value, { publicOnly: props.publicOnly }) : [];
+  const found = at ? suggest(at.query, sources.value, { publicOnly: props.publicOnly, self: props.ownEnv }) : [];
   if (!at || !found.length) {
     open.value = false;
     return;
   }
   start.value = at.start;
+  braced.value = at.braced;
   items.value = found;
   active.value = Math.min(active.value, found.length - 1);
   const r = e.getBoundingClientRect();
@@ -36,10 +38,11 @@ function refresh() {
 }
 
 async function choose(s: Suggestion) {
-  model.value = model.value.slice(0, start.value) + s.insert + model.value.slice(caret.value);
+  const close = braced.value && !s.more && model.value[caret.value] !== "}" ? "}" : "";
+  model.value = model.value.slice(0, start.value) + s.insert + close + model.value.slice(caret.value);
   active.value = 0;
   await nextTick();
-  const end = start.value + s.insert.length;
+  const end = start.value + s.insert.length + close.length;
   el()?.setSelectionRange(end, end);
   if (s.more) refresh();
   else open.value = false;

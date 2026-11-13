@@ -174,3 +174,29 @@ describe("image services", () => {
     expect(() => parseManifest(svc("    image: nginx\n    volumes:\n      d: relative\n"))).toThrow(/absolute/);
   });
 });
+
+describe("@self", () => {
+  const text = (env: string, extra = "") => `name: shop\nservices:\n  web:\n    command: node web.mjs\n    environment:\n${env}${extra}`;
+  it("refers to the service's own variables, and shows as written when it is listed for editing", () => {
+    const yaml = text('      DB_HOST: db\n      DB_URL: "postgres://@self.DB_HOST/app"\n      LIT: "@@self.DB_HOST"\n');
+    expect(parseManifest(yaml).services.web!.environment.DB_URL).toBe("postgres://@web.DB_HOST/app");
+    expect(parseManifest(yaml).services.web!.environment.LIT).toBe("@@self.DB_HOST"); // an escaped @ stays literal
+    expect(parseManifest(yaml, { raw: true }).services.web!.environment.DB_URL).toBe("postgres://@self.DB_HOST/app");
+  });
+  it("works inside a URL; the @ between the password and the host is written @@@", () => {
+    const yaml = text('      U: u\n      P: p\n      H: h\n      URL: "redis://@self.U:@self.P@@@self.H"\n');
+    expect(parseManifest(yaml).services.web!.environment.URL).toBe("redis://@web.U:@web.P@@@web.H");
+  });
+  it("also takes the braced form, which can sit against any text", () => {
+    const yaml = text('      U: u\n      P: p\n      H: h\n      URL: "redis://${self.U}:${self.P}@${self.H}"\n');
+    expect(parseManifest(yaml).services.web!.environment.URL).toBe("redis://${web.U}:${web.P}@${web.H}");
+    expect(parseManifest(yaml, { raw: true }).services.web!.environment.URL).toBe("redis://${self.U}:${self.P}@${self.H}");
+  });
+  it("must name something the service sets", () => {
+    expect(() => parseManifest(text('      A: "@self.NOPE"\n'))).toThrow(/NOPE is not set in the environment of web/);
+  });
+  it("is an ordinary reference to a service that is itself called self", () => {
+    const yaml = "name: shop\nservices:\n  self:\n    command: x\n    environment:\n      B: '1'\n  web:\n    command: y\n    environment:\n      A: '@self.B'\n";
+    expect(parseManifest(yaml).services.web!.environment.A).toBe("@self.B");
+  });
+});
