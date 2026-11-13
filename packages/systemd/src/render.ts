@@ -61,7 +61,7 @@ export function podmanRunArgv(input: RenderInput, port: number | undefined): str
   if (image === undefined) throw new Error(`service ${service} has no image`);
   if (!/^[^\s"'\\;$%]+$/.test(image)) throw new Error(`illegal image reference "${image}"`);
   // cgroupfs rather than systemd: the app's user has no systemd user bus, and the unit's own cgroup is delegated to it.
-  const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald"];
+  const argv = [PODMAN, "--cgroup-manager=cgroupfs", "run", "--rm", "--replace", "--name", containerName(app, service, instance), "--pull=never", "--cgroups=no-conmon", "--log-driver=journald"];
   if (port !== undefined) argv.push("-p", `127.0.0.1:${port}:${def.containerPort ?? input.containerPort ?? port}`);
   // Values come from the unit's environment (static env, secrets file, PORT), so they never appear on a command line.
   const keys = new Set<string>(["PORT", ...(input.secrets ?? []), ...(input.refSecrets ?? []), ...Object.keys(input.environment ?? {})]);
@@ -118,6 +118,8 @@ function renderImageUnit(input: RenderInput): string {
     line("Delegate", "yes"),
     line("ExecStart", toExecStart(podmanRunArgv(input, port))),
     line("ExecStop", `${PODMAN} --cgroup-manager=cgroupfs stop --ignore --time 10 ${name}`),
+    // A container that survived its process (a kill, a crash) keeps its name; take it away so the next start is clean.
+    line("ExecStopPost", `-${PODMAN} --cgroup-manager=cgroupfs rm --force --ignore ${name}`),
   ];
   if (input.loopback && port !== undefined) svc.push(line("Environment", "HOST=127.0.0.1"));
   for (const [k, v] of Object.entries(input.environment ?? {}).sort(([a], [b]) => a.localeCompare(b))) {

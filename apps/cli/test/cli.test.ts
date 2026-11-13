@@ -125,7 +125,7 @@ describe("freighter cli", () => {
     const file = join(dir, "app.yaml");
     writeFileSync(file, "name: shop\nservices:\n  web:\n    image: ghcr.io/org/shop:1\n    port: 3000\n    containerPort: 8080\n");
     const unit = run("unit", "web", "-f", file).stdout;
-    expect(unit).toContain("ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --name freighter-shop--web");
+    expect(unit).toContain("ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web");
     expect(unit).toContain("-p 127.0.0.1:3000:8080");
     const d = run("deploy", "-f", file, "--prefix", prefix);
     expect(d.status).toBe(0);

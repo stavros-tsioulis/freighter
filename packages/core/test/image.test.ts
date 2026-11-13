@@ -28,7 +28,7 @@ describe("image deploys", () => {
     const pinned = `ghcr.io/org/shop@sha256:${ctl.podman.digest}`;
     expect(await readImages(deps, "shop", r.releaseId)).toEqual({ web: pinned });
     const unit = unitText("freighter-shop--web.service");
-    expect(unit).toContain(`ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --name freighter-shop--web `);
+    expect(unit).toContain(`ExecStart=/usr/bin/podman --cgroup-manager=cgroupfs run --rm --replace --name freighter-shop--web `);
     expect(unit).toContain(` -e DB_URL `);
     expect(unit.split("\n").find((l) => l.startsWith("ExecStart="))).toMatch(new RegExp(`${pinned}$`));
 
