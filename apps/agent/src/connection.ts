@@ -5,9 +5,9 @@ import { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 import type { Duplex } from "node:stream";
 import type { Deps } from "@freighter/core";
-import { LineReader, ops, request, type Reply, type WireError } from "@freighter/protocol";
+import { FRAME, LineReader, encodeFrame, ops, request, type Reply, type WireError } from "@freighter/protocol";
 import { classify, dispatch, explorer, type Handlers } from "./handlers.ts";
-import { createStorageUpload, createUpload, openForDownload, openStorageDownload, zipStream } from "@freighter/core";
+import { ConsoleError, consolePlan, createStorageUpload, createUpload, openForDownload, openStorageDownload, spawnConsole, zipStream } from "@freighter/core";
 
 const reply = (socket: Duplex, r: Reply) => {
   if (!socket.destroyed) socket.write(JSON.stringify(r) + "\n");
@@ -131,6 +131,75 @@ function handleFsStream(d: Deps, socket: Duplex, id: string, op: "fs.read" | "fs
   })();
 }
 
+let consoles = 0;
+
+/**
+ * `console.open`: a shell for a service. The reply line is followed by frames both ways: the client's go to the PTY
+ * helper as they are (it speaks the same format), and its output comes back the same way. The helper ends the shell
+ * when its input closes, so a dropped connection never leaves one behind.
+ */
+function handleConsole(d: Deps, socket: Duplex, reader: LineReader, id: string, rawArgs: unknown) {
+  const parsed = ops["console.open"].args.safeParse(rawArgs);
+  if (!parsed.success) return rejectAndClose(socket, id, { code: "bad_request", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
+  const { app, service, cols, rows } = parsed.data;
+  const { enabled, idleMinutes, maxSessions } = d.config.agent.console;
+  void (async () => {
+    let counted = false;
+    try {
+      if (!enabled) throw new ConsoleError("bad_request", "the console is turned off on this server (agent.console.enabled in its config.yaml)");
+      if (consoles >= maxSessions) throw new ConsoleError("conflict", `${maxSessions} consoles are already open on this server`);
+      const plan = await consolePlan(d, app, service);
+      const child = await spawnConsole(plan, { cols, rows });
+      consoles++;
+      counted = true;
+      let ended = false;
+      const end = (message?: string) => {
+        if (ended) return;
+        ended = true;
+        clearTimeout(idle);
+        if (message && !socket.destroyed) socket.write(encodeFrame(FRAME.error, message));
+        child.stdin?.end();
+        setTimeout(() => child.kill("SIGKILL"), 3000).unref();
+      };
+      let idle: NodeJS.Timeout = setTimeout(() => end(`closed after ${idleMinutes} minutes without input`), idleMinutes * 60_000);
+      const touch = () => {
+        clearTimeout(idle);
+        idle = setTimeout(() => end(`closed after ${idleMinutes} minutes without input`), idleMinutes * 60_000);
+      };
+      let stderr = "";
+      child.stderr?.on("data", (c: Buffer) => void (stderr = (stderr + c.toString()).slice(-2000)));
+      child.stdin?.on("error", () => {});
+      child.stdout?.on("data", (chunk: Buffer) => {
+        if (socket.destroyed) return;
+        if (!socket.write(chunk)) {
+          child.stdout?.pause();
+          socket.once("drain", () => child.stdout?.resume());
+        }
+      });
+      child.once("close", (code) => {
+        ended = true;
+        clearTimeout(idle);
+        if (!socket.destroyed) {
+          // the helper sends the exit frame itself; only a helper that failed to run says why here
+          if (code !== 0 && stderr.trim()) socket.write(encodeFrame(FRAME.error, stderr.trim()));
+          socket.end();
+        }
+        if (counted) consoles--;
+        counted = false;
+      });
+      socket.once("close", () => end());
+      socket.write(JSON.stringify({ id, ok: true, result: { kind: plan.kind, user: plan.user, cwd: plan.cwd, shell: plan.shell } } satisfies Reply) + "\n");
+      reader.takeover((chunk) => {
+        touch();
+        child.stdin?.write(chunk);
+      });
+    } catch (e) {
+      if (counted) consoles--;
+      rejectAndClose(socket, id, classify(e));
+    }
+  })();
+}
+
 /** Serve one client connection (unix or TLS): JSON request lines in, JSON replies out. */
 export function serveConnection(socket: Duplex, d: Deps, handlers: Handlers): void {
   socket.on("error", () => {});
@@ -144,6 +213,7 @@ export function serveConnection(socket: Duplex, d: Deps, handlers: Handlers): vo
         if (req.op === "artifact.put") return handlePut(d, socket, reader, id, req.args);
         if (req.op === "fs.write") return handleFsWrite(d, socket, reader, id, req.args);
         if (req.op === "fs.read" || req.op === "fs.archive") return handleFsStream(d, socket, id, req.op, req.args);
+        if (req.op === "console.open") return handleConsole(d, socket, reader, id, req.args);
       } catch {
         /* fall through: dispatch() produces the proper error reply */
       }

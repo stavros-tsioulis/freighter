@@ -46,6 +46,10 @@ agent:
   firewall:
     enabled: true
     readOnly: false
+  console:
+    enabled: true
+    idleMinutes: 30
+    maxSessions: 8
   remote:
     enabled: false
     listen: 0.0.0.0

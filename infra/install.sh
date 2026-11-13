@@ -168,7 +168,7 @@ port_in_use() {
 install_packages() {
 	step "Installing system packages"
 	pkgs="git tar gzip curl ca-certificates openssl xz-utils"
-	[ "$HAS_AGENT" = 0 ] || pkgs="$pkgs openssh-client haproxy certbot"
+	[ "$HAS_AGENT" = 0 ] || pkgs="$pkgs openssh-client haproxy certbot python3"  # python3: the console's terminal helper
 	# Rootless Podman for image services: it needs the setuid newuidmap/newgidmap helpers (uidmap), a user-level network
 	# stack, and a login manager that keeps /run/user/<uid> alive for the app's user (dbus-user-session).
 	if [ "$HAS_AGENT" = 1 ] && [ "$WITH_CONTAINERS" = 1 ]; then

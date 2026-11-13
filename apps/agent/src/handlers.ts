@@ -48,6 +48,7 @@ import {
   deleteRule,
   disableFirewall,
   enableFirewall,
+  ConsoleError,
   FirewallError,
   firewallInstalled,
   firewallStatus,
@@ -89,7 +90,7 @@ import type { z } from "zod";
 import { ZodError } from "zod";
 
 /** Operations followed (or answered) by raw bytes are served by the connection itself. */
-export type RawOp = "artifact.put" | "fs.write" | "fs.read" | "fs.archive";
+export type RawOp = "artifact.put" | "fs.write" | "fs.read" | "fs.archive" | "console.open";
 export type Handlers = { [N in Exclude<OpName, RawOp>]: (args: z.output<(typeof ops)[N]["args"]>) => Promise<OpResult<N>> };
 
 /** Resolve an artifact path and make sure it is a regular file inside the spool directory. */
@@ -156,7 +157,7 @@ export function createHandlers(d: Deps): Handlers {
         version: commit ?? "0.0.0",
         time: d.now().toISOString(),
         hostname: hostname(),
-        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "archives.install", "firewall.install", "volumes", "connections", "variables", "reapply", "app.config", ...(d.config.agent.files.enabled ? ["files"] : []), ...((await storageAvailable(d)).available ? ["storage"] : [])],
+        capabilities: ["artifact.put", "host.status", "git", "config", "upgrade", "images", "containers.install", "storage.install", "mounts.install", "archives.install", "firewall.install", "volumes", "connections", "variables", "reapply", "app.config", ...(d.config.agent.console.enabled ? ["console"] : []), ...(d.config.agent.files.enabled ? ["files"] : []), ...((await storageAvailable(d)).available ? ["storage"] : [])],
         upgrade: upgrade?.state === "verifying" ? upgrade.state : undefined,
       };
     },
@@ -181,7 +182,7 @@ export function createHandlers(d: Deps): Handlers {
       } catch {
         /* leave unknown */
       }
-      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), archives: await archiveSupport(), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files, processes: d.config.agent.processes, firewall: { installed: await firewallInstalled(d), ...d.config.agent.firewall } };
+      return { hostname: hostname(), uptimeSeconds: Math.round(uptime()), load1: loadavg()[0] ?? 0, memTotal: totalmem(), memFree: freemem(), diskTotalBytes: disk.total, diskFreeBytes: disk.free, containers: await containersAvailable(d), storage: await storageAvailable(d), mounts: await mountSupport(d), archives: await archiveSupport(), cpus: cpus().length, os: `${type()} ${release()} ${arch()}`, files: d.config.agent.files, processes: d.config.agent.processes, firewall: { installed: await firewallInstalled(d), ...d.config.agent.firewall }, console: { enabled: d.config.agent.console.enabled } };
     },
     async "artifact.delete"({ id }) {
       await rm(`${d.config.agent.artifactsDir}/${id}.tar.gz`, { force: true });
@@ -468,6 +469,7 @@ export function classify(e: unknown): WireError {
   }
   if (e instanceof BuildFailedError) return { code: "build_failed", message: e.message, logTail: e.logTail };
   if (e instanceof FileError) return { code: e.code, message: e.message };
+  if (e instanceof ConsoleError) return { code: e.code, message: e.message };
   if (e instanceof FirewallError) return { code: e.code === "unavailable" ? "bad_request" : e.code, message: e.message };
   if (e instanceof ProcessError) return { code: e.code, message: e.message };
   if (e instanceof CanceledError) return { code: "conflict", message: e.message };

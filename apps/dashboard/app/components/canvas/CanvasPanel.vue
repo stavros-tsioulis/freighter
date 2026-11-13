@@ -61,6 +61,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
         <Tab value="logs">Logs</Tab>
         <Tab value="domains">Domains</Tab>
         <Tab value="env">Variables</Tab>
+        <Tab v-if="can('admin') && selection.service" value="console">Console</Tab>
         <Tab value="deployments">Deployments</Tab>
       </TabList>
       <TabPanels class="flex-1 min-h-0 overflow-y-auto !px-5 !py-4">
@@ -123,6 +124,7 @@ const selectEnd = (e: { app: string; service: string }) => emit("select", { app:
         <TabPanel value="logs"><AppLogsTab v-if="app" :app="app" /></TabPanel>
         <TabPanel value="domains"><AppDomainsTab v-if="app" :app="app" /></TabPanel>
         <TabPanel value="env"><AppEnvTab v-if="app" :app="app" :service="selection.service" /></TabPanel>
+        <TabPanel v-if="can('admin') && selection.service" value="console"><AppConsoleTab v-if="app" :app="app" :service="selection.service" /></TabPanel>
         <TabPanel value="deployments"><AppDeploymentsTab v-if="app" :app="app" /></TabPanel>
       </TabPanels>
     </Tabs>

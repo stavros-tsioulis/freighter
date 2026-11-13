@@ -34,7 +34,8 @@ export default defineNuxtConfig({
   // The dashboard sits behind a login and talks to /api, so it is a plain SPA.
   ssr: false,
   // The app shell at "/" is written out as a file, so the service worker can keep it for offline start-up.
-  nitro: { prerender: { routes: ["/"] } },
+  // The console of a service is a WebSocket (server/routes/_console.ts).
+  nitro: { prerender: { routes: ["/"] }, experimental: { websocket: true } },
   devtools: { enabled: false },
   modules: ["@primevue/nuxt-module", "@vite-pwa/nuxt"],
   css: ["primeicons/primeicons.css", "~/assets/css/main.css"],

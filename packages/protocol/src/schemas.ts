@@ -151,6 +151,8 @@ export const ops = {
       files: z.object({ enabled: z.boolean(), readOnly: z.boolean() }).optional(),
       /** Whether ufw is installed, and what this server allows of the firewall tab (readOnly: looking only). */
       firewall: z.object({ installed: z.boolean(), enabled: z.boolean(), readOnly: z.boolean() }).optional(),
+      /** Whether this agent offers a console (absent on agents that predate it). */
+      console: z.object({ enabled: z.boolean() }).optional(),
       /** Likewise for the process list (readOnly: no signals). */
       processes: z.object({ enabled: z.boolean(), readOnly: z.boolean() }).optional(),
     }),
@@ -437,6 +439,14 @@ export const ops = {
   "storage.mkdir": { args: z.object({ name: storageRef, path: fsPath }), result: z.object({}) },
   "storage.rename": { args: z.object({ name: storageRef, path: fsPath, newName: z.string().min(1).max(1024) }), result: z.object({ path: z.string() }) },
   "storage.rm": { args: z.object({ name: storageRef, paths: fsPaths }), result: fsBulk },
+  /**
+   * An interactive shell for a service: in its home, as its user (inside the container for an image). The reply line is
+   * followed by frames in both directions until the shell ends or the connection closes (see console.ts).
+   */
+  "console.open": {
+    args: z.object({ app: ident, service: ident, cols: z.number().int().min(1).max(1000).default(80), rows: z.number().int().min(1).max(1000).default(24) }),
+    result: z.object({ kind: z.enum(["host", "container"]), user: z.string(), cwd: z.string(), shell: z.string() }),
+  },
   /** The reply line is followed by a ZIP of the paths, until the connection closes. */
   "fs.archive": { args: z.object({ paths: fsPaths }), result: z.object({}) },
   /** The remote volumes an app's configuration declares: what is mounted, and whether an SMB password is set. Agents with "volumes" only. */
@@ -541,4 +551,4 @@ export type Reply = { id: string; ok: true; result: unknown } | { id: string; ok
 export const MAX_LINE_BYTES = 1_048_576;
 
 /** Operations that carry a raw byte stream after the header line; the generic dispatcher must not run them. */
-export const RAW_OPS: ReadonlySet<string> = new Set(["artifact.put", "fs.write", "fs.read", "fs.archive"]);
+export const RAW_OPS: ReadonlySet<string> = new Set(["artifact.put", "fs.write", "fs.read", "fs.archive", "console.open"]);

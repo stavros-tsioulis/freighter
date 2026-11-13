@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentError, type AgentClient, type OpArgs, type OpName, type OpResult } from "@freighter/protocol";
+import { AgentError, FRAME, encodeFrame, exitFrame, type AgentClient, type ConsoleSession, type Frame, type OpArgs, type OpName, type OpResult } from "@freighter/protocol";
 import { PkiStore } from "@freighter/pki";
 import { openRegistry, type Role } from "@freighter/registry";
 import { toWebHandler } from "h3";
@@ -110,6 +110,37 @@ export function fakeAgent() {
       uploads.push({ args, bytes });
       if (uploadError) throw uploadError;
     },
+    async openConsole(args) {
+      calls.push({ op: "console.open", args });
+      if (consoleError) throw consoleError;
+      const frames: ((f: Frame) => void)[] = [];
+      const closers: (() => void)[] = [];
+      const session = {
+        args,
+        written: [] as string[],
+        resized: [] as [number, number][],
+        closed: false,
+        say: (text: string) => frames.forEach((cb) => cb({ type: FRAME.data, payload: Buffer.from(text) })),
+        end: (code: number) => frames.forEach((cb) => cb({ type: FRAME.exit, payload: exitFrame(code).subarray(5) })),
+        warn: (text: string) => frames.forEach((cb) => cb({ type: FRAME.error, payload: Buffer.from(text) })),
+        drop: () => closers.forEach((cb) => cb()),
+        result: { kind: "host" as const, user: args.app, cwd: "/srv/apps/shop/shared", shell: "bash or sh" },
+        write(d: Uint8Array | string) {
+          session.written.push(Buffer.from(d).toString());
+        },
+        resize(c: number, r: number) {
+          session.resized.push([c, r]);
+        },
+        onFrame: (cb: (f: Frame) => void) => void frames.push(cb),
+        onClose: (cb: () => void) => void closers.push(cb),
+        close() {
+          session.closed = true;
+          closers.forEach((cb) => cb());
+        },
+      };
+      consoles.push(session);
+      return session as ConsoleSession;
+    },
     async openStream(op, args) {
       calls.push({ op, args });
       const h = streams[op];
@@ -117,6 +148,9 @@ export function fakeAgent() {
       return h(args) as never;
     },
   };
+  /** The consoles opened on this agent, and an error for the next one to fail with. */
+  const consoles: any[] = [];
+  let consoleError: Error | null = null;
   /** What `fs.write` received, and an error for it to fail with. */
   const uploads: { args: unknown; bytes: Buffer }[] = [];
   let uploadError: Error | null = null;
@@ -124,7 +158,7 @@ export function fakeAgent() {
     "fs.read": () => ({ result: { size: 5, mtimeMs: 1 }, body: Readable.from([Buffer.from("hello")]) }),
     "fs.archive": () => ({ result: {}, body: Readable.from([Buffer.from("PK-zip")]) }),
   };
-  return { agent, calls, handlers, streams, uploads, failUploads: (e: Error | null) => void (uploadError = e) };
+  return { agent, calls, handlers, streams, uploads, consoles, failConsole: (e: Error | null) => void (consoleError = e), failUploads: (e: Error | null) => void (uploadError = e) };
 }
 
 export async function makeApi(opts: { maxUploadBytes?: number; publicIps?: string[] } = {}) {

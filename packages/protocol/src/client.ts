@@ -5,6 +5,7 @@ import { PassThrough, type Readable } from "node:stream";
 import { connect as netConnect, isIP, type Socket } from "node:net";
 import { checkServerIdentity, connect as tlsConnect } from "node:tls";
 import { LineReader } from "./framing.ts";
+import { FRAME, FrameDecoder, encodeFrame, resizeFrame, type Frame } from "./console.ts";
 import { MAX_LINE_BYTES, ops, type ErrorCode, type ErrorExtra, type OpArgs, type OpName, type OpResult, type Reply } from "./schemas.ts";
 
 export class AgentError extends Error {
@@ -18,6 +19,19 @@ export class AgentError extends Error {
   }
 }
 
+/** A running `console.open`: write keystrokes, hear the shell. */
+export interface ConsoleSession {
+  result: OpResult<"console.open">;
+  /** Keystrokes (or pasted text) for the shell. */
+  write(data: Uint8Array | string): void;
+  resize(cols: number, rows: number): void;
+  /** Every frame the agent sends: `data` (output), then `exit` or `error`. */
+  onFrame(cb: (frame: Frame) => void): void;
+  /** The connection ended, whichever way. */
+  onClose(cb: () => void): void;
+  close(): void;
+}
+
 export type AgentTarget =
   | { kind: "unix"; path: string }
   | { kind: "tls"; host: string; port: number; ca: string; cert: string; key: string; pinnedFingerprint?: string };
@@ -28,6 +42,8 @@ export interface AgentClient {
   putArtifact(id: string, filePath: string, opts?: { timeoutMs?: number }): Promise<{ path: string }>;
   /** `fs.write`: send `size` bytes from `body`; resolves once the agent has put the file in place. */
   writeFile(args: OpArgs<"fs.write">, body: Readable, opts?: { timeoutMs?: number }): Promise<void>;
+  /** `console.open`: a shell on the server, for as long as the session is held open. */
+  openConsole(args: OpArgs<"console.open">, opts?: { timeoutMs?: number }): Promise<ConsoleSession>;
   /** `fs.read` or `fs.archive`: the reply, and the bytes that follow it. Destroy `body` to stop early. */
   openStream<N extends "fs.read" | "fs.archive">(op: N, args: OpArgs<N>, opts?: { timeoutMs?: number }): Promise<{ result: OpResult<N>; body: Readable }>;
 }
@@ -164,6 +180,72 @@ export function createAgentClient(target: string | AgentTarget, defaults: { time
         };
         socket.on("data", onData);
         socket.write(JSON.stringify({ id, op, args }) + "\n");
+      });
+    },
+    openConsole(args, opts) {
+      const id = `${process.pid}-${++counter}`;
+      return new Promise((resolve, reject) => {
+        const { socket, where } = open(t);
+        let settled = false;
+        let buf: Buffer = Buffer.alloc(0);
+        const frameCbs: ((f: Frame) => void)[] = [];
+        const closeCbs: (() => void)[] = [];
+        const fail = (e: AgentError) => {
+          if (settled) return;
+          settled = true;
+          socket.destroy();
+          reject(e);
+        };
+        const timer = setTimeout(() => fail(new AgentError("timeout", "agent did not open the console in time")), opts?.timeoutMs ?? 30_000);
+        socket.once("error", (e: NodeJS.ErrnoException) => fail(new AgentError("unavailable", `cannot reach agent at ${where}: ${e.code ?? e.message}`)));
+        const onData = (chunk: Buffer) => {
+          buf = Buffer.concat([buf, chunk]);
+          const i = buf.indexOf(0x0a);
+          if (i === -1) {
+            if (buf.length > MAX_LINE_BYTES) fail(new AgentError("internal", `agent reply exceeded ${MAX_LINE_BYTES} bytes`));
+            return;
+          }
+          socket.off("data", onData);
+          clearTimeout(timer);
+          let reply: Reply;
+          try {
+            reply = JSON.parse(buf.subarray(0, i).toString("utf8")) as Reply;
+          } catch {
+            return fail(new AgentError("internal", "agent sent invalid JSON"));
+          }
+          if (!reply.ok) return fail(new AgentError(reply.error.code, reply.error.message, reply.error));
+          const parsed = ops["console.open"].result.safeParse(reply.result);
+          if (!parsed.success) return fail(new AgentError("internal", "agent reply for console.open did not match the protocol"));
+          settled = true;
+          const decoder = new FrameDecoder();
+          const feed = (chunk: Buffer) => {
+            try {
+              for (const f of decoder.push(chunk)) for (const cb of frameCbs) cb(f);
+            } catch {
+              socket.destroy();
+            }
+          };
+          socket.on("data", feed);
+          socket.once("close", () => closeCbs.forEach((cb) => cb()));
+          socket.on("error", () => {});
+          const rest = buf.subarray(i + 1);
+          resolve({
+            result: parsed.data,
+            write: (data) => void (socket.destroyed || socket.write(encodeFrame(FRAME.data, data))),
+            resize: (cols, rows) => void (socket.destroyed || socket.write(resizeFrame(cols, rows))),
+            onFrame: (cb) => {
+              frameCbs.push(cb);
+            },
+            onClose: (cb) => {
+              if (socket.destroyed) queueMicrotask(cb);
+              else closeCbs.push(cb);
+            },
+            close: () => socket.destroy(),
+          });
+          if (rest.length > 0) queueMicrotask(() => feed(rest));
+        };
+        socket.on("data", onData);
+        socket.write(JSON.stringify({ id, op: "console.open", args }) + "\n");
       });
     },
     async putArtifact(id, filePath, opts) {

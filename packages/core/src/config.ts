@@ -58,6 +58,8 @@ export const hostConfigSchema = z.object({
       processes: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
       /** The firewall tab (ufw): rules for this server. `readOnly` allows looking only. */
       firewall: z.object({ enabled: z.boolean().default(true), readOnly: z.boolean().default(false) }).default({}),
+      /** The console: an interactive shell in a service, from the dashboard. Idle sessions end after `idleMinutes`. */
+      console: z.object({ enabled: z.boolean().default(true), idleMinutes: z.number().int().min(1).max(1440).default(30), maxSessions: z.number().int().min(1).max(64).default(8) }).default({}),
       /** Optional mutual-TLS listener so a control plane on another host can manage this one. */
       remote: z
         .object({

@@ -197,6 +197,10 @@ The deployment fails with a reason if the server has no Podman or its agent pred
 | `GET /tokens`, `POST /tokens`, `DELETE /tokens/:id` | list, create (`{name, role}`, returned once), revoke | admin |
 | `GET /audit` | the audit log | admin |
 
+## Console
+
+`GET /_console?app=&service=&cols=&rows=` on the dashboard's own address is a WebSocket (not under `/api`), for the [console](/operate/console). Admin only, with a bearer token or the dashboard's session cookie; a browser has to come from the dashboard's own origin. Messages are binary: a byte for the kind, then the content. Both ways, `0` is terminal bytes. The client also sends `1` (a resize: `cols` and `rows` as two big-endian 16-bit numbers) and `5` (keep-alive). The server sends `4` (the shell is open: JSON with `kind`, `user`, `cwd`, `shell`), `2` (the shell ended: its exit code as a big-endian 32-bit integer) and `3` (a reason, as text), then closes. Opening and closing are in the audit log as `console.open` and `console.close`.
+
 ## Browser sessions
 
 The dashboard uses `POST /session {token}`, which sets an `HttpOnly; SameSite=Strict` cookie valid for 7 days (`Secure` over HTTPS). `GET /session` returns who you are, and `DELETE /session` signs out. Writes authenticated with the cookie must send `X-Requested-With: freighter`. Bearer-token clients don't need it.

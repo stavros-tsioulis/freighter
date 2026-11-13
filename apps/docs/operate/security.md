@@ -49,6 +49,8 @@ There's no revocation list. The control server decides which agents it talks to,
 
 ## The process list
 
+The [console](/operate/console) is a shell in a service, as the app's user or inside its container. It is admin-only, checks the page it is opened from (so another site cannot use your session), puts every session in the audit log, ends idle sessions, caps how many are open, and can be turned off per server with `agent.console`. It is never root. Anyone who can open it can read the service's secrets, as they are in its environment.
+
 The [process list](/operate/processes) shows every process on a server with its full command line, which can include secrets passed as arguments, and lets an admin signal them. It is admin-only, signals are audited by name and PID, and it can be turned off or made read-only per server with `agent.processes` in that server's `config.yaml`. It never signals PID 1, kernel threads, the agent or Freighter's own services.
 
 ## The file explorer

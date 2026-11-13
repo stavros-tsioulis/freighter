@@ -10,6 +10,7 @@ export class LineReader {
   private buf: Buffer = Buffer.alloc(0);
   private dead = false;
   private raw: { remaining: number; dest: Writable; done: () => void; fail: (e: Error) => void } | null = null;
+  private tap: ((chunk: Buffer) => void) | null = null;
 
   constructor(
     private readonly socket: Duplex,
@@ -17,11 +18,23 @@ export class LineReader {
     private readonly onOverflow: () => void,
   ) {
     socket.on("data", (chunk: Buffer) => {
+      if (this.tap) return this.tap(chunk);
       if (this.dead) return;
       this.buf = this.buf.length === 0 ? chunk : Buffer.concat([this.buf, chunk]);
       this.drain();
     });
     socket.on("close", () => this.raw?.fail(new Error("connection closed during upload")));
+  }
+
+  /**
+   * Stop reading lines: everything that arrives from now on goes to `tap`, starting with what is already buffered. For
+   * operations that turn the connection into a byte stream (a console).
+   */
+  takeover(tap: (chunk: Buffer) => void): void {
+    this.tap = tap;
+    const rest = this.buf;
+    this.buf = Buffer.alloc(0);
+    if (rest.length > 0) queueMicrotask(() => tap(rest));
   }
 
   /** Consume the next `size` bytes (starting with anything already buffered) into `dest`. */
