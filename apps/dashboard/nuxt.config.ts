@@ -35,7 +35,8 @@ export default defineNuxtConfig({
   ssr: false,
   // The app shell at "/" is written out as a file, so the service worker can keep it for offline start-up.
   // The console of a service is a WebSocket (server/routes/_console.ts).
-  nitro: { prerender: { routes: ["/"] }, experimental: { websocket: true } },
+  // The skills for agents (/skill/cli, /skill/mcp) are the repository's, bundled into the server (not the other skills installed there).
+  nitro: { prerender: { routes: ["/"] }, experimental: { websocket: true }, serverAssets: [{ baseName: "skills", dir: "../../.agents/skills", ignore: ["doc-coauthoring/**", "frontend-design/**", "mcp-builder/**", "skill-creator/**"] }] },
   devtools: { enabled: false },
   modules: ["@primevue/nuxt-module", "@vite-pwa/nuxt"],
   css: ["primeicons/primeicons.css", "~/assets/css/main.css"],
@@ -94,7 +95,7 @@ export default defineNuxtConfig({
     workbox: {
       globPatterns: ["**/*.{js,css,html,png,svg,ico,woff,woff2}"],
       navigateFallback: "/",
-      navigateFallbackDenylist: [/^\/api\//, /^\/ui-license$/],
+      navigateFallbackDenylist: [/^\/api\//, /^\/ui-license$/, /^\/skill\//, /^\/install-cli$/, /^\/cli\//],
       cleanupOutdatedCaches: true,
     },
     client: { installPrompt: false },

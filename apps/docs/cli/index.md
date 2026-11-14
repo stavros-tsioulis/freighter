@@ -22,6 +22,17 @@ A newer freighter is available (a1b2c3d -> e4f5a6b). Run: freighter upgrade
 
 It never slows a command down, and it stays quiet in CI, in scripts (`--json`, `-q`) and when the output isn't a terminal. `FREIGHTER_NO_UPDATE_CHECK=1` turns it off.
 
+## For agents
+
+Your Freighter also serves the skills that teach a coding agent to use the CLI and the MCP server, as Markdown:
+
+```sh
+mkdir -p ~/.claude/skills/freighter-cli
+curl -fsSL https://freighter.example.com/skill/cli -o ~/.claude/skills/freighter-cli/SKILL.md
+```
+
+`/skill/cli` is the CLI's, `/skill/mcp` the MCP server's; their reference files are under `/skill/<name>/references/`.
+
 ## Sign in
 
 ```sh
