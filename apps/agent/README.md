@@ -3,9 +3,14 @@
 The privileged half of the control plane. It runs as root, listens on a unix socket (default `/run/freighter/agent.sock`, mode `0660`, group `freighter`) and answers a fixed set of operations defined in `@freighter/protocol`: list/inspect apps, deploy an uploaded artifact, roll back, start/stop/restart, read logs, set/list secret *names*, certificate status/renewal, host stats, metrics, and artifact upload/delete. Nothing else is reachable: no shell, no arbitrary file reads (`app.deploy` only accepts artifacts that live inside `agent.artifactsDir`), and secret values never come back out.
 
 ```sh
-freighter-agent                  # on a server, as root (see infra/systemd/freighter-agent.service)
-pnpm --filter @freighter/agent dev --prefix /tmp/fr   # local development, no root needed
+freighter-agent                  # on a server, as root (same as `freighter-agent serve`)
+freighter-agent serve --prefix /tmp/fr   # local development, no root needed
+freighter-agent version
+freighter-agent completion bash
+pnpm --filter @freighter/agent dev --prefix /tmp/fr   # from a checkout
 ```
+
+Run `freighter-agent --help` or `freighter-agent <command> --help` for the full usage.
 
 ## Managing remote servers (phase 7)
 The same protocol can be served over **mutual TLS** so a control plane on another host can manage this one. It is off by default.

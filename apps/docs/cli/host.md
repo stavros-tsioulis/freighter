@@ -52,10 +52,14 @@ Not a host command: it checks an `app.yaml` anywhere, with no server and no sign
 `freighter-agent` is the agent itself, started by `freighter-agent.service`.
 
 ```sh
+freighter-agent                                      # run the agent (same as `serve`)
+freighter-agent serve [--prefix <dir>]               # run the agent explicitly
 freighter-agent enroll --control <url> --token <token> --ca-fingerprint SHA256:… [--port 7443]
+freighter-agent version
+freighter-agent completion bash|zsh|fish
 ```
 
-`enroll` connects a remote server to a control server. See [Add a remote server](/install/remote-server).
+`enroll` connects a remote server to a control server. See [Add a remote server](/install/remote-server). `--help`, `--version` and shell completion work like they do for `freighter`.
 
 ## From the old commands
 

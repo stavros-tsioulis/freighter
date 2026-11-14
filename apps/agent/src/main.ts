@@ -1,46 +1,60 @@
 #!/usr/bin/env node
-import { resolve } from "node:path";
-import { HOST_CONFIG_PATH, defaultDeps, loadConfig } from "@freighter/core";
-import { enroll } from "./enroll.ts";
-import { startAgent } from "./server.ts";
+import { pathToFileURL } from "node:url";
+import { defineCommand, parseArgs, runCommand, runMain } from "citty";
+import { completion, type Tree } from "./commands/completion.ts";
+import { enroll } from "./commands/enroll.ts";
+import { runAgent, serve } from "./commands/serve.ts";
+import { version } from "./commands/version.ts";
+import { CLI_VERSION, EXIT, fail, isUsageError } from "./lib/cli.ts";
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(name);
-  return i === -1 ? undefined : process.argv[i + 1];
-}
-const prefix = arg("--prefix");
+const completionTree: Tree = { serve: {}, enroll: {}, version: {}, completion: {} };
+const rootArguments = {
+  prefix: { type: "string", description: "Dev mode: relocate all paths under this dir and skip systemctl/useradd" },
+} as const;
+const subCommands = {
+  serve,
+  enroll,
+  version,
+  completion: completion(completionTree),
+};
 
-if (process.argv[2] === "enroll") {
-  const control = arg("--control");
-  const token = arg("--token");
-  const caFingerprint = arg("--ca-fingerprint");
-  if (!control || !token || !caFingerprint) {
-    console.error("usage: freighter-agent enroll --control https://HOST --token TOKEN --ca-fingerprint SHA256:… [--port 7443] [--prefix DIR]");
-    process.exit(2);
-  }
+export const main = defineCommand({
+  meta: {
+    name: "freighter-agent",
+    version: CLI_VERSION,
+    description: "Freighter's privileged helper: serve this server's host API and enroll it with a control plane",
+  },
+  args: rootArguments,
+  subCommands,
+});
+
+async function cli(rawArgs: string[]): Promise<void> {
   try {
-    const config = await loadConfig(prefix);
-    const root = prefix ? resolve(prefix) : "";
-    const r = await enroll({
-      control, token, caFingerprint,
-      certDir: config.agent.remote.certDir,
-      configPath: root + HOST_CONFIG_PATH,
-      port: arg("--port") ? Number(arg("--port")) : undefined,
-    });
-    console.log(`enrolled as "${r.name}" (CA ${r.caFingerprint}).\nThe agent will listen on port ${r.port}; restart it: systemctl restart freighter-agent`);
-  } catch (e) {
-    console.error(`error: ${e instanceof Error ? e.message : e}`);
-    process.exit(1);
-  }
-} else {
-  const deps = await defaultDeps({ prefix });
-  if (!deps.isRoot) {
-    console.error("freighter-agent must run as root (or with --prefix for local development)");
-    process.exit(1);
-  }
-  const agent = await startAgent(deps);
-  console.log(`freighter-agent listening on ${agent.socketPath}${agent.remote ? ` and ${agent.remote.host}:${agent.remote.port} (mTLS)` : ""}`);
-  for (const sig of ["SIGINT", "SIGTERM"] as const) {
-    process.on(sig, () => void agent.close().then(() => process.exit(0)));
+    if (rawArgs.includes("--help") || rawArgs.includes("-h") || rawArgs[0] === "help") {
+      const helpArgs = rawArgs[0] === "help" ? [...rawArgs.slice(1), "--help"] : rawArgs;
+      await runMain(main, { rawArgs: helpArgs });
+      return;
+    }
+    if (rawArgs.length === 1 && (rawArgs[0] === "--version" || rawArgs[0] === "-v")) {
+      console.log(CLI_VERSION);
+      return;
+    }
+    const root = parseArgs<typeof rootArguments>(rawArgs, rootArguments);
+    if (root._.length === 0) {
+      await runAgent(root.prefix);
+      return;
+    }
+    await runCommand(main, { rawArgs });
+  } catch (error) {
+    if (isUsageError(error)) {
+      process.stderr.write(`error: ${error.message}\n`);
+      const words = rawArgs.filter((arg) => !arg.startsWith("-")).slice(0, 2).join(" ");
+      process.stderr.write(`try \`freighter-agent ${words} --help\`\n`);
+      process.exit(EXIT.usage);
+    }
+    fail(error);
   }
 }
+
+const invokedDirectly = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (invokedDirectly) await cli(process.argv.slice(2));

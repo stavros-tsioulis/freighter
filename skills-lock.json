@@ -1,6 +1,48 @@
 {
   "version": 2,
   "skills": {
+    "boy-scout": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/boy-scout/SKILL.md",
+      "computedHash": "90f7f8556c10a07677220c381666ba63a986c76058cdb8b490544e2e7d5b3ca3"
+    },
+    "clean-comments": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/clean-comments/SKILL.md",
+      "computedHash": "bec9954ca1932d7c42f2b18024e0ca2b737a54c6baa8ec4c51411392c7eebbf3"
+    },
+    "clean-functions": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/clean-functions/SKILL.md",
+      "computedHash": "8e9bff9c14cd667681dbf2a59f8de7e9f4ee6a073ed7402350a056465fa8efed"
+    },
+    "clean-general": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/clean-general/SKILL.md",
+      "computedHash": "51788bb3e6d6bee22b4531b4a08cbabc9e4e3b51cb927bfef229e18a8a2ea066"
+    },
+    "clean-names": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/clean-names/SKILL.md",
+      "computedHash": "23dd9409f2ceadea6cecdcf0ca25f222dc4bcc9f6489d41a5765e71ab2fac0fa"
+    },
+    "clean-tests": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/clean-tests/SKILL.md",
+      "computedHash": "8fcee226aa61ba08bb66e4c7136d10c0dd0ca2ddf558a431ff8ef4b0b1bd3d68"
+    },
     "doc-coauthoring": {
       "source": "anthropics/skills",
       "sourceType": "github",
@@ -24,6 +66,13 @@
       "sourceType": "github",
       "skillPath": "skills/skill-creator/SKILL.md",
       "computedHash": "2d7f889e6ae93c6c27d699856942c336b5b8644537496987d5571043d059b1dc"
+    },
+    "typescript-clean-code": {
+      "source": "ertugrul-dmr/clean-code-skills",
+      "ref": "main",
+      "sourceType": "github",
+      "skillPath": "skills/typescript/typescript-clean-code/SKILL.md",
+      "computedHash": "17b2ca19391864bff75dff197590623d82d4786462721ee563d941afe1a05b02"
     }
   }
 }
