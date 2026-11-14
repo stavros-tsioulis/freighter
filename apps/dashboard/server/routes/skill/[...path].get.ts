@@ -1,3 +1,4 @@
+import { useStorage } from "nitropack/runtime";
 // The skills that teach an agent to use this Freighter: `/skill/cli` (the `freighter` CLI) and `/skill/mcp` (the MCP
 // server), as Markdown, each with its reference files under `/skill/<name>/references/<file>`. They are the repository's
 // own (.agents/skills), bundled into the server, so an agent can fetch them from the Freighter it will operate:
