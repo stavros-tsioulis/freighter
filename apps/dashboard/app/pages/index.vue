@@ -22,22 +22,11 @@ const apps = computed(() =>
     .map((x) => x.a),
 );
 
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const summary = computed(() => {
-  const list = allApps.value ?? [];
-  if (!list.length) return "";
-  const where = multi.value ? ` on ${plural(servers.value!.length, "server")}` : "";
-  const bad = list.filter(troubled).map((a) => a.name);
-  const state =
-    bad.length === 0 ? "Everything is running." : bad.length === 1 ? `${bad[0]} needs attention.` : `${bad.length} need attention: ${bad.join(", ")}.`;
-  return `${plural(list.length, "app")}${where}. ${state}`;
-});
 </script>
 
 <template>
   <div class="flex flex-col gap-10">
     <PageHeader title="Overview">
-      {{ summary || "Apps you deploy show up here." }}
       <template #actions>
         <Select v-if="multi" v-model="serverFilter" :options="servers" option-label="name" option-value="name" placeholder="All servers" show-clear size="small" class="w-44" aria-label="Filter by server" />
         <Button v-if="can('admin')" label="Sync" icon="pi pi-sync" severity="secondary" text size="small" title="Re-read app state from every server" :loading="sync.isPending.value" @click="sync.mutate()" />

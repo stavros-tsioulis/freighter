@@ -18,7 +18,6 @@ const remaining = (days: number | null) => `${Math.max(0, Math.min(100, ((days ?
 <template>
   <div class="flex flex-col gap-8">
     <PageHeader title="Certificates">
-      HTTPS certificates for domains with automatic HTTPS. Each renews on its own within 30 days of expiry.
       <template #actions>
         <Button v-if="can('admin')" label="Renew due certificates" icon="pi pi-refresh" size="small" severity="secondary" outlined :loading="renew.isPending.value" @click="renew.mutate(false)" />
       </template>

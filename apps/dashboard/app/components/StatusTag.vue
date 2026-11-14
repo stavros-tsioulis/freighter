@@ -3,7 +3,7 @@
  * A status lamp: a coloured dot and a plain word. Colour does the alerting, so healthy states stay quiet and
  * only failures colour their text. States in progress pulse.
  */
-const props = defineProps<{ state: string | null | undefined; label?: string; /** systemd's finer state: "auto-restart" with `activating` is a crashed service about to be started again. */ sub?: string | null }>();
+const props = defineProps<{ state: string | null | undefined; label?: string; /** Wrap the lamp in a pill (the server cards). */ pill?: boolean; /** systemd's finer state: "auto-restart" with `activating` is a crashed service about to be started again. */ sub?: string | null }>();
 
 type Tone = "ok" | "bad" | "warn" | "busy" | "idle";
 const STATES: Record<string, [Tone, string]> = {
@@ -41,7 +41,7 @@ const entry = computed(() => STATES[props.state === "activating" && props.sub ==
 </script>
 
 <template>
-  <span class="lamp" :data-tone="entry[0]"><span class="dot" aria-hidden="true" />{{ label ?? entry[1] }}</span>
+  <span class="lamp" :class="{ pill }" :data-tone="entry[0]"><span class="dot" aria-hidden="true" />{{ label ?? entry[1] }}</span>
 </template>
 
 <style scoped>
@@ -60,6 +60,19 @@ const entry = computed(() => STATES[props.state === "activating" && props.sub ==
   border-radius: 999px;
   flex: none;
   background: var(--tone);
+}
+.pill {
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tone) 38%, transparent);
+  background: color-mix(in srgb, var(--tone) 13%, transparent);
+  color: var(--tone);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.pill .dot {
+  width: 0.38rem;
+  height: 0.38rem;
 }
 [data-tone="ok"] { --tone: var(--p-green-500); }
 [data-tone="bad"] { --tone: var(--p-red-500); color: var(--p-red-600); }

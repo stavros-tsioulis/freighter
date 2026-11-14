@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Enrollment, ServerRow } from "~/types";
 import { IDENT_RE } from "~/utils/validation";
-import { daysUntil, formatBytes, formatDuration, timeAgo } from "~/utils/format";
 
 const { can } = useSession();
 const { data: servers, isLoading } = useServers();
@@ -57,81 +56,36 @@ function askRemove(s: ServerRow) {
 }
 
 useHead({ title: "Servers - Freighter" });
-const certDays = (s: ServerRow) => daysUntil(s.certExpiresAt);
-const memUsed = (s: ServerRow) => (s.host ? formatBytes(s.host.memTotal - s.host.memFree) : "–");
-const memPct = (s: ServerRow) => (s.host && s.host.memTotal ? Math.round(((s.host.memTotal - s.host.memFree) / s.host.memTotal) * 100) : null);
-const certText = (s: ServerRow) => {
-  const d = certDays(s);
-  return d === null ? "None" : d < 0 ? "Expired" : `${d} days left`;
-};
-const certTone = (s: ServerRow) => {
-  const d = certDays(s);
-  return d === null || d < 7 ? "text-red-600 dark:text-red-400" : d < 30 ? "text-amber-600 dark:text-amber-400" : "";
-};
-const online = computed(() => (servers.value ?? []).filter((s) => s.status === "online").length);
-const summary = computed(() => {
-  const list = servers.value ?? [];
-  if (!list.length) return "";
-  const down = list.filter((s) => s.status === "offline" || s.status === "error").map((s) => s.name);
-  return down.length ? `${online.value} of ${list.length} online. Can't reach ${down.join(", ")}.` : `${list.length === 1 ? "The server is" : `All ${list.length} servers are`} online.`;
-});
 </script>
 
 <template>
   <div class="flex flex-col gap-8">
     <PageHeader title="Servers">
-      {{ summary || "Machines that run your apps." }}
       <template #actions>
         <Button v-if="can('admin')" label="Add server" icon="pi pi-plus" size="small" @click="openAdd" />
       </template>
     </PageHeader>
 
-    <Skeleton v-if="isLoading" height="10rem" />
-    <ul v-else class="flex flex-col gap-5">
-      <li v-for="s in servers" :key="s.name" class="flex flex-col gap-3">
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <h2 class="font-display font-semibold text-[1.5rem] leading-tight">
-            <NuxtLink :to="`/servers/${s.name}`" class="hover:underline" :aria-label="`${s.name}: details and controls`">{{ s.name }}</NuxtLink>
-          </h2>
-          <StatusTag :state="s.status" />
-          <span class="text-sm text-muted-color truncate">{{ s.address ?? "This machine" }}</span>
-          <div class="ml-auto flex gap-1">
-            <Button as="router-link" :to="`/servers/${s.name}`" label="Details" icon="pi pi-angle-right" icon-pos="right" text size="small" severity="secondary" />
-          </div>
-          <div v-if="can('admin')" class="flex gap-1">
-            <Button label="Check now" icon="pi pi-refresh" text size="small" severity="secondary" :loading="check.isPending.value && check.variables.value === s.name" @click="check.mutate(s.name)" />
-            <template v-if="s.kind === 'remote'">
-              <Button v-if="s.status === 'online'" :label="behind(s) ? 'Upgrade' : 'Upgrade…'" icon="pi pi-arrow-up" :text="!behind(s)" size="small" :severity="behind(s) ? undefined : 'secondary'" title="Upgrade this server's agent" @click="upgrading = s.name" />
-              <Button label="Re-enroll" icon="pi pi-key" text size="small" severity="secondary" title="Create a new enrollment command" @click="newToken(s)" />
-              <Button icon="pi pi-trash" text rounded size="small" severity="danger" aria-label="Remove server" :title="s.appCount > 0 ? 'Move or delete its apps first' : 'Remove server'" :disabled="s.appCount > 0" @click="askRemove(s)" />
-            </template>
-          </div>
-        </div>
+    <Skeleton v-if="isLoading" height="12rem" />
+    <p v-else-if="!servers?.length" class="text-muted-color">No servers yet. Add one to start deploying.</p>
+    <ul v-else class="flex flex-col gap-6">
+      <li v-for="s in servers" :key="s.name" class="flex flex-col gap-2.5">
+        <ServerCard
+          :server="s"
+          :to="`/servers/${s.name}`"
+          :behind="behind(s)"
+          :admin="can('admin')"
+          :checking="check.isPending.value && check.variables.value === s.name"
+          @check="check.mutate(s.name)"
+          @upgrade="upgrading = s.name"
+          @reenroll="newToken(s)"
+          @remove="askRemove(s)"
+        />
         <Message v-if="s.status === 'pending'" severity="warn" size="small">
           <template v-if="s.enrollmentPending">Run the enrollment command on the server to connect it.</template>
           <template v-else>Enrolled. Start the agent on the server with <code>systemctl restart freighter-agent</code>.</template>
         </Message>
         <Message v-else-if="s.lastError" severity="error" size="small"><span class="line-clamp-2" :title="s.lastError">{{ s.lastError }}</span></Message>
-
-        <Facts>
-          <template v-if="s.host">
-            <Fact label="Hostname" :title="s.hostname ?? ''">{{ s.hostname }}</Fact>
-            <Fact label="Up for">{{ formatDuration(s.host.uptimeSeconds * 1000) }}</Fact>
-            <Fact label="Load (1 min)">{{ s.host.load1.toFixed(2) }}</Fact>
-            <Fact label="Memory used" :title="`${memUsed(s)} of ${formatBytes(s.host.memTotal)}`">
-              {{ memUsed(s) }}<span class="text-muted-color font-normal"> of {{ formatBytes(s.host.memTotal) }}</span>
-              <span class="meter" :style="{ '--v': `${memPct(s) ?? 0}%` }" aria-hidden="true" />
-            </Fact>
-            <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
-          </template>
-          <Fact label="Apps">{{ s.appCount }}</Fact>
-          <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
-          <Fact label="Agent" :title="behind(s) ? `This dashboard runs ${controlCommit}` : ''">
-            {{ s.agentVersion ?? "–" }}
-            <span v-if="behind(s) && can('admin')" class="text-amber-600 dark:text-amber-400 font-normal text-sm"> · update available</span>
-          </Fact>
-          <Fact v-if="s.kind === 'remote'" label="Agent certificate"><span :class="certTone(s)">{{ certText(s) }}</span></Fact>
-        </Facts>
       </li>
     </ul>
 
@@ -165,12 +119,3 @@ const summary = computed(() => {
   </div>
 </template>
 
-<style scoped>
-.meter {
-  display: block;
-  height: 3px;
-  margin-top: 0.4rem;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--p-primary-color) var(--v), var(--fr-line) var(--v));
-}
-</style>

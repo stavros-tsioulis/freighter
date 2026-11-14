@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ServerRow } from "~/types";
 import { upgradeActive } from "~/composables/queries";
-import { daysUntil, formatBytes, formatDuration, timeAgo } from "~/utils/format";
+import { daysUntil, timeAgo } from "~/utils/format";
 
 const route = useRoute();
 const router = useRouter();
@@ -103,48 +103,31 @@ const s = computed(() => server.value);
 const certDays = computed(() => daysUntil(s.value?.certExpiresAt));
 const certText = computed(() => (certDays.value === null ? "None" : certDays.value < 0 ? "Expired" : `${certDays.value} days left`));
 const certTone = computed(() => (certDays.value === null || certDays.value < 7 ? "text-red-600 dark:text-red-400" : certDays.value < 30 ? "text-amber-600 dark:text-amber-400" : ""));
-const memUsed = computed(() => (s.value?.host ? formatBytes(s.value.host.memTotal - s.value.host.memFree) : "–"));
-const pctOf = (used: number, total: number | null | undefined) => (total ? used / total : 0);
-const tone = (f: number) => (f > 0.9 ? "bad" : f > 0.75 ? "warn" : "ok");
-const meters = computed(() => {
-  const h = s.value?.host;
-  if (!h) return [];
-  const memF = pctOf(h.memTotal - h.memFree, h.memTotal);
-  const diskUsed = h.diskTotalBytes != null && h.diskFreeBytes != null ? h.diskTotalBytes - h.diskFreeBytes : null;
-  const diskF = diskUsed != null ? pctOf(diskUsed, h.diskTotalBytes) : 0;
-  const loadF = h.cpus ? h.load1 / h.cpus : Math.min(1, h.load1);
-  return [
-    { label: "Load", value: h.load1.toFixed(2), fraction: loadF, tone: tone(loadF), detail: h.cpus ? `${h.cpus} CPUs` : "1 minute" },
-    { label: "Memory", value: `${Math.round(memF * 100)}%`, fraction: memF, tone: tone(memF), detail: `${formatBytes(h.memTotal - h.memFree)} of ${formatBytes(h.memTotal)}` },
-    { label: "Disk", value: diskUsed != null ? `${Math.round(diskF * 100)}%` : "–", fraction: diskF, tone: tone(diskF), detail: diskUsed != null ? `${formatBytes(diskUsed)} of ${formatBytes(h.diskTotalBytes)}` : "unknown" },
-  ];
-});
 const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 </script>
 
 <template>
   <div class="flex flex-col gap-8">
-    <PageHeader :title="name">
-      <template #before>
-        <NuxtLink to="/servers" class="inline-flex items-center gap-1.5 text-sm text-muted-color hover:text-color mb-1.5">
-          <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Servers
-        </NuxtLink>
-      </template>
-      <template v-if="s" #beside>
-        <StatusTag :state="s.status" />
-        <span class="text-sm text-muted-color">{{ s.kind === "local" ? "This machine" : s.address }}</span>
-      </template>
-      <template v-if="s && isAdmin" #actions>
-        <Button label="Check now" icon="pi pi-refresh" text size="small" severity="secondary" :loading="checkNow.isPending.value" @click="checkNow.mutate(name)" />
-        <Button v-if="remote && s.status === 'online'" :label="behind ? 'Upgrade' : 'Upgrade…'" icon="pi pi-arrow-up" size="small" :text="!behind" :severity="behind ? undefined : 'secondary'" @click="showUpgrade = true" />
-        <Button v-if="s.status === 'online'" label="Restart agent" icon="pi pi-power-off" text size="small" severity="secondary" :loading="restart.isPending.value" @click="askRestart" />
-      </template>
-    </PageHeader>
+    <NuxtLink to="/servers" class="back-link">
+      <i class="pi pi-arrow-left text-[0.7rem]" aria-hidden="true" />Servers
+    </NuxtLink>
 
     <Skeleton v-if="isLoading" height="12rem" />
     <Message v-else-if="!s" severity="error">No server called “{{ name }}”.</Message>
 
     <template v-else>
+      <ServerCard
+        :server="s"
+        :behind="behind"
+        :admin="isAdmin"
+        :show-restart="true"
+        :checking="checkNow.isPending.value"
+        @check="checkNow.mutate(name)"
+        @upgrade="showUpgrade = true"
+        @restart="askRestart"
+        @reenroll="newToken"
+        @remove="askRemove"
+      />
       <Message v-if="s.status === 'pending'" severity="warn" size="small">
         <template v-if="s.enrollmentPending">Run the enrollment command on the server to connect it.</template>
         <template v-else>Enrolled. Start the agent on the server with <code>systemctl restart freighter-agent</code>.</template>
@@ -165,31 +148,6 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
           <TabPanel value="overview">
             <div class="flex flex-col gap-8">
       <section class="flex flex-col gap-3">
-        <div v-if="s.host" class="grid gap-3 sm:grid-cols-3" aria-label="Resources">
-          <div v-for="m in meters" :key="m.label" class="meter">
-            <div class="flex items-baseline justify-between gap-2"><span class="text-[0.8rem] text-muted-color">{{ m.label }}</span><span class="num font-semibold">{{ m.value }}</span></div>
-            <div class="bar" role="meter" :aria-label="m.label" :aria-valuenow="Math.round(m.fraction * 100)" aria-valuemin="0" aria-valuemax="100"><span :class="m.tone" :style="{ width: `${Math.round(Math.min(1, m.fraction) * 100)}%` }" /></div>
-            <span class="text-xs text-muted-color">{{ m.detail }}</span>
-          </div>
-        </div>
-        <Facts>
-          <Fact label="Hostname" :title="s.hostname ?? ''">{{ s.hostname ?? "–" }}</Fact>
-          <template v-if="s.host">
-            <Fact label="Up for">{{ formatDuration(s.host.uptimeSeconds * 1000) }}</Fact>
-            <Fact label="Load (1 min)">{{ s.host.load1.toFixed(2) }}</Fact>
-            <Fact label="Memory used" :title="`${memUsed} of ${formatBytes(s.host.memTotal)}`">{{ memUsed }}<span class="text-muted-color font-normal"> of {{ formatBytes(s.host.memTotal) }}</span></Fact>
-            <Fact label="Disk free">{{ formatBytes(s.host.diskFreeBytes) }}</Fact>
-            <Fact label="Container images" :title="s.host.containers?.available ? `Podman ${s.host.containers.version ?? ''}` : 'Install with --with-containers to deploy images here'">{{ !s.host.containers ? "Agent too old" : s.host.containers.available ? `Podman ${s.host.containers.version ?? ""}`.trim() : "Podman not installed" }}</Fact>
-            <Fact label="S3 storage" :title="s.host.storage?.available ? `rclone ${s.host.storage.version ?? ''}` : 'Install with --with-storage to serve storages here'">{{ !s.host.storage ? "Agent too old" : s.host.storage.available ? `rclone ${s.host.storage.version ?? ""}`.trim() : "rclone not installed" }}</Fact>
-            <Fact label="Remote volumes" :title="s.host.mounts ? 'Install with --with-mounts to mount SMB and NFS here' : ''">{{ !s.host.mounts ? "Agent too old" : s.host.mounts.smb && s.host.mounts.nfs ? "SMB and NFS" : s.host.mounts.smb ? "SMB only" : s.host.mounts.nfs ? "NFS only" : "Not installed" }}</Fact>
-          </template>
-          <Fact label="Last seen" :title="s.lastSeenAt ?? ''">{{ timeAgo(s.lastSeenAt) }}</Fact>
-          <Fact label="Added">{{ date(s.createdAt) }}</Fact>
-        </Facts>
-      </section>
-
-
-      <section class="flex flex-col gap-3">
         <h2 class="font-display font-semibold text-[1.2rem]">Apps on this server</h2>
         <p v-if="!hosted.length" class="text-muted-color text-sm">None yet.</p>
         <ul v-else class="flex flex-col rounded-[var(--p-border-radius-lg)] border border-[var(--fr-line)] bg-[var(--fr-panel)] divide-y divide-[var(--fr-line)]">
@@ -201,7 +159,17 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
         </ul>
       </section>
 
-
+      <section class="flex flex-col gap-3">
+        <h2 class="font-display font-semibold text-[1.2rem]">System capabilities</h2>
+        <Facts>
+          <template v-if="s.host">
+            <Fact label="Container images" :title="s.host.containers?.available ? `Podman ${s.host.containers.version ?? ''}` : 'Install with --with-containers to deploy images here'">{{ !s.host.containers ? "Agent too old" : s.host.containers.available ? `Podman ${s.host.containers.version ?? ""}`.trim() : "Podman not installed" }}</Fact>
+            <Fact label="S3 storage" :title="s.host.storage?.available ? `rclone ${s.host.storage.version ?? ''}` : 'Install with --with-storage to serve storages here'">{{ !s.host.storage ? "Agent too old" : s.host.storage.available ? `rclone ${s.host.storage.version ?? ""}`.trim() : "rclone not installed" }}</Fact>
+            <Fact label="Remote volumes" :title="s.host.mounts ? 'Install with --with-mounts to mount SMB and NFS here' : ''">{{ !s.host.mounts ? "Agent too old" : s.host.mounts.smb && s.host.mounts.nfs ? "SMB and NFS" : s.host.mounts.smb ? "SMB only" : s.host.mounts.nfs ? "NFS only" : "Not installed" }}</Fact>
+          </template>
+          <Fact label="Added">{{ date(s.createdAt) }}</Fact>
+        </Facts>
+      </section>
             </div>
           </TabPanel>
           <TabPanel v-if="usable" value="monitoring"><ServerMonitoringTab :server="s" /></TabPanel>
@@ -410,10 +378,15 @@ const date = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year
 </template>
 
 <style scoped>
-.meter { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.7rem 0.95rem; background: var(--fr-panel); border: 1px solid var(--fr-line); border-radius: var(--p-border-radius-lg); }
-.bar { height: 6px; border-radius: 999px; background: var(--fr-line); overflow: hidden; }
-.bar span { display: block; height: 100%; border-radius: 999px; transition: width 0.4s; }
-.bar .ok { background: var(--p-primary-color); }
-.bar .warn { background: #d97706; }
-.bar .bad { background: #dc2626; }
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+  font-size: 0.85rem;
+  color: var(--p-text-muted-color);
+}
+.back-link:hover {
+  color: var(--p-text-color);
+}
 </style>

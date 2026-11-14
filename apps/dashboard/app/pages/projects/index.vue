@@ -25,8 +25,6 @@ const cards = computed(() => {
   if (loose.length) out.push(card("none", "No project", "Apps that are not in a project.", loose));
   return out;
 });
-const total = computed(() => allApps.value?.length ?? 0);
-
 const editing = ref<Project | undefined>();
 const showDialog = ref(false);
 const openNew = () => {
@@ -48,7 +46,6 @@ async function confirmRemove() {
 <template>
   <div class="flex flex-col gap-8">
     <PageHeader title="Projects">
-      {{ total ? `${plural(total, "app")} in ${plural(projects?.length ?? 0, "project")}.` : "Group related apps, such as a web app, its API and its workers, and see how they connect." }}
       <template #actions>
         <Button v-if="can('admin')" label="New project" icon="pi pi-folder-plus" severity="secondary" size="small" @click="openNew" />
         <DeployMenu size="small" />

@@ -35,6 +35,14 @@
 a, button, [role="button"], [role="tab"], [role="menuitem"], summary, label, input, select, textarea, .p-button, .p-select, .p-datatable-sortable-column {
   touch-action: manipulation;
 }
+button:not(:disabled):not([aria-disabled="true"]),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
 html {
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
