@@ -206,3 +206,24 @@ export interface StorageRow {
   createdAt: string;
   updatedAt: string;
 }
+
+/** A browser that wants web push notifications. The keys it encrypts to are never listed; `pushSubscriptions.targets` hands them to the sender. */
+export interface PushSubscriptionRow {
+  /** A hash of the endpoint: what the dashboard calls the device. */
+  id: string;
+  tokenId: string;
+  label: string;
+  /** The event kinds it wants. */
+  events: string[];
+  createdAt: string;
+  lastDeliveredAt: string | null;
+  lastError: string | null;
+}
+/** Everything needed to send to one subscription. */
+export interface PushTarget extends PushSubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  /** The address of the dashboard it subscribed from. */
+  origin: string | null;
+}

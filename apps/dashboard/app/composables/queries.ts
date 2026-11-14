@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/vue-query";
-import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, ProjectGraph, RegistryLogin, StorageBackend, StorageCreated, StorageRow, StorageSecrets, StorageTest, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
+import type { ConfigField, ConfigSaved, AppRow, AppSettings, AuditRow, BranchList, CertRow, DeployFromGit, DeploymentRow, Enrollment, GitLink, GitSetup, Inspect, MetricPoint, Principal, Project, ProjectGraph, PushInfo, PushSubscriptionRow, RegistryLogin, StorageBackend, StorageCreated, StorageRow, StorageSecrets, StorageTest, ReleaseInfo, Role, ServerRow, SshKey, TokenRow } from "~/types";
 import { ApiRequestError, api, errorMessage } from "./api";
 
 const ROLE_RANK: Record<Role, number> = { viewer: 0, deployer: 1, admin: 2 };
@@ -448,6 +448,50 @@ export function useRevokeToken() {
       void qc.invalidateQueries({ queryKey: ["tokens"] });
     },
     onError: (e) => notify.fail("Could not revoke token", e),
+  });
+}
+
+export const usePushInfo = () => useQuery({ queryKey: ["push"], queryFn: () => api<PushInfo>("/push") });
+
+export function useSavePushSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { endpoint: string; keys: { p256dh: string; auth: string }; label: string; events?: string[] }) => api<PushSubscriptionRow>("/push/subscriptions", { method: "POST", body: v }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["push"] }),
+  });
+}
+
+export function useSetPushEvents() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { id: string; events: string[] }) => api(`/push/subscriptions/${v.id}`, { method: "PATCH", body: { events: v.events } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["push"] }),
+    onError: (e) => notify.fail("Could not save", e),
+  });
+}
+
+export function useRemovePushSubscription() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (id: string) => api(`/push/subscriptions/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["push"] }),
+    onError: (e) => notify.fail("Could not remove the device", e),
+  });
+}
+
+export function useTestPush() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean; error: string | null }>(`/push/subscriptions/${id}/test`, { method: "POST", body: {} }),
+    onSuccess: (r) => {
+      if (r.ok) notify.ok("Test sent", "It should arrive in a moment.");
+      else notify.fail("The test did not go through", r.error);
+      void qc.invalidateQueries({ queryKey: ["push"] });
+    },
+    onError: (e) => notify.fail("The test did not go through", e),
   });
 }
 

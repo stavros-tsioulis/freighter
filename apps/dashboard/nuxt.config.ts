@@ -97,6 +97,8 @@ export default defineNuxtConfig({
       navigateFallback: "/",
       navigateFallbackDenylist: [/^\/api\//, /^\/ui-license$/, /^\/skill\//, /^\/install-cli$/, /^\/cli\//],
       cleanupOutdatedCaches: true,
+      // the push and click handlers for notifications
+      importScripts: ["/push-sw.js"],
     },
     client: { installPrompt: false },
     devOptions: { enabled: false },

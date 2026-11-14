@@ -13,11 +13,11 @@ describe("registry", () => {
   it("migrates once and is reopenable", async () => {
     const path = join(await mkdtemp(join(tmpdir(), "freighter-db-")), "sub", "r.db");
     const a = openRegistry(path);
-    expect(a.schemaVersion()).toBe(16);
+    expect(a.schemaVersion()).toBe(17);
     a.tokens.create({ name: "x", role: "admin" });
     a.close();
     const b = openRegistry(path);
-    expect(b.schemaVersion()).toBe(16);
+    expect(b.schemaVersion()).toBe(17);
     expect(b.tokens.list()).toHaveLength(1);
   });
 
@@ -97,7 +97,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.apps.get("shop")?.status).toBe("deployed");
     r.metrics.add([{ app: "shop", service: "web", unit: "u", active: "active", memoryBytes: 1, cpuNanos: 2, restarts: 0 }]);
     expect(r.metrics.series("shop", "")).toHaveLength(1);
@@ -128,7 +128,7 @@ describe("registry", () => {
     old.exec("INSERT INTO apps (name, status, updated_at) VALUES ('shop', 'deployed', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.apps.get("shop")?.server).toBe("local");
     expect(r.servers.list().map((s) => [s.name, s.kind, s.status, s.appCount])).toEqual([["local", "local", "online", 1]]);
   });
@@ -213,7 +213,7 @@ describe("registry", () => {
     old.exec("INSERT INTO deployments (id, app, action, status, source, created_at) VALUES ('d1', 'shop', 'deploy', 'success', 'api', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.deployments.get("d1")).toMatchObject({ trigger: "upload", commitSha: null });
   });
 
@@ -256,7 +256,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.gitLinks.get("shop")).toMatchObject({ repository: "git@github.com:a/b.git", sshKeyId: null });
   });
 
@@ -314,7 +314,7 @@ describe("registry", () => {
     old.exec("INSERT INTO git_links (app, provider, repository, branch, webhook_secret, public_key, created_at) VALUES ('shop', 'github', 'git@github.com:a/b.git', 'main', 's', 'k', 'x')");
     old.close();
     const r = openRegistry(path);
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.gitLinks.get("shop")).toMatchObject({ branch: "main", sshKeyId: null });
     expect(r.sshKeys.list()).toEqual([]);
   });
@@ -436,7 +436,7 @@ describe("registry credentials", () => {
     old.prepare("INSERT INTO registry_credentials VALUES (?, ?, ?, NULL, 'x', 'x')").run("ghcr.io", "me", secrets.seal("legacy-pw"));
     old.close();
     const r = openRegistry(path, { secrets });
-    expect(r.schemaVersion()).toBe(16);
+    expect(r.schemaVersion()).toBe(17);
     expect(r.registryCredentials.secret("ghcr.io", "me")).toEqual({ username: "me", password: "legacy-pw" });
     expect(r.registryCredentials.resolve("shop", "ghcr.io")).toEqual({ username: "me", password: "legacy-pw" });
   });
@@ -521,5 +521,59 @@ describe("host samples", () => {
     expect(r.hostSamples.series("a", "2026-11-10T00:00:00.000Z")).toMatchObject([{ load1: 1, cpus: 4, memUsed: 100, diskTotal: 50 }, { load1: 2 }]);
     expect(r.hostSamples.prune("2026-11-10T10:00:30.000Z")).toBe(1);
     expect(r.hostSamples.series("a", "2026-11-10T00:00:00.000Z")).toHaveLength(1);
+  });
+});
+
+describe("push subscriptions", () => {
+  const sub = (endpoint: string, tokenId = "tok_a") => ({ endpoint, p256dh: "key", auth: "auth", tokenId, label: "Chrome", events: ["deploy.failed"] });
+
+  it("subscribes a browser once, however often it asks, and lists it without its keys", () => {
+    const r = mem();
+    const first = r.pushSubscriptions.upsert(sub("https://push.example/1"));
+    const again = r.pushSubscriptions.upsert({ ...sub("https://push.example/1"), events: ["server.offline"], label: "Chrome 2" });
+    expect(again.id).toBe(first.id);
+    expect(r.pushSubscriptions.list()).toMatchObject([{ id: first.id, label: "Chrome 2", events: ["server.offline"] }]);
+    expect(JSON.stringify(r.pushSubscriptions.list())).not.toContain("auth");
+    expect(r.pushSubscriptions.targets()[0]).toMatchObject({ endpoint: "https://push.example/1", p256dh: "key", auth: "auth" });
+  });
+
+  it("lists one token's subscriptions, and forgets them with the token", () => {
+    const r = mem();
+    r.pushSubscriptions.upsert(sub("https://push.example/1", "tok_a"));
+    r.pushSubscriptions.upsert(sub("https://push.example/2", "tok_a"));
+    r.pushSubscriptions.upsert(sub("https://push.example/3", "tok_b"));
+    expect(r.pushSubscriptions.list("tok_a")).toHaveLength(2);
+    expect(r.pushSubscriptions.removeForToken("tok_a")).toBe(2);
+    expect(r.pushSubscriptions.list().map((s) => s.tokenId)).toEqual(["tok_b"]);
+  });
+
+  it("records the outcome of a push, and a success clears the last error", () => {
+    const r = mem();
+    const { id } = r.pushSubscriptions.upsert(sub("https://push.example/1"));
+    r.pushSubscriptions.markResult(id, "500: down");
+    expect(r.pushSubscriptions.get(id)).toMatchObject({ lastError: "500: down", lastDeliveredAt: null });
+    r.pushSubscriptions.markResult(id, null);
+    expect(r.pushSubscriptions.get(id)).toMatchObject({ lastError: null, lastDeliveredAt: expect.any(String) });
+  });
+
+  it("changes and removes a subscription", () => {
+    const r = mem();
+    const { id } = r.pushSubscriptions.upsert(sub("https://push.example/1"));
+    expect(r.pushSubscriptions.setEvents(id, [])).toBe(true);
+    expect(r.pushSubscriptions.get(id)?.events).toEqual([]);
+    expect(r.pushSubscriptions.setEvents("nope", [])).toBe(false);
+    expect(r.pushSubscriptions.remove(id)).toBe(true);
+    expect(r.pushSubscriptions.remove(id)).toBe(false);
+  });
+
+  it("keeps the private signing key sealed in the database", async () => {
+    const path = join(await mkdtemp(join(tmpdir(), "freighter-db-")), "r.db");
+    const r = openRegistry(path);
+    expect(r.pushSubscriptions.keys()).toBeUndefined();
+    r.pushSubscriptions.setKeys({ publicKey: "pub", privateKey: "very-private-key" });
+    expect(r.pushSubscriptions.keys()).toEqual({ publicKey: "pub", privateKey: "very-private-key" });
+    r.close();
+    expect(readFileSync(path).includes("very-private-key")).toBe(false);
+    expect(openRegistry(path).pushSubscriptions.keys()?.privateKey).toBe("very-private-key");
   });
 });

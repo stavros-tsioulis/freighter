@@ -5,6 +5,7 @@ import { AgentError } from "@freighter/protocol";
 import { pushConnections } from "./connections.ts";
 import { dependantsOf } from "./dependants.ts";
 import type { ApiContext } from "./context.ts";
+import { deploymentEvent } from "./notify.ts";
 import { syncApp } from "./sync.ts";
 
 export interface GitJob {
@@ -92,6 +93,8 @@ export function createJobs(ctx: ApiContext): Jobs {
         // What this app offers (domains, ports, keys) may have moved: the apps that connect to it follow.
         // A job that turned out to have nothing to do (its deployment was removed) changed nothing for anyone.
         const done = jobId ? ctx.registry.deployments.get(jobId) : ctx.registry.deployments.list({ app, limit: 1 })[0];
+        const event = jobId && done ? deploymentEvent(done, CANCELED) : null;
+        if (event) void ctx.notifier?.emit(event);
         if (done?.status === "success") await cascade({ app }, depth).catch(() => {});
         pending--;
       }

@@ -16,6 +16,8 @@ import {
   type HostStatus,
   type ServerRow,
   type PendingDomainRow,
+  type PushSubscriptionRow,
+  type PushTarget,
   type RegistryCredentialRow,
   type SshKeyRow,
   type MetricSampleRow,
@@ -146,6 +148,16 @@ const tokenFrom = (r: Row): TokenRow => ({
   createdAt: r.created_at as string,
   lastUsedAt: r.last_used_at as string | null,
   revokedAt: r.revoked_at as string | null,
+});
+
+const pushFrom = (r: Row): PushSubscriptionRow => ({
+  id: r.id as string,
+  tokenId: r.token_id as string,
+  label: r.label as string,
+  events: JSON.parse(r.events_json as string) as string[],
+  createdAt: r.created_at as string,
+  lastDeliveredAt: r.last_delivered_at as string | null,
+  lastError: r.last_error as string | null,
 });
 
 const serverFrom = (r: Row): ServerRow => ({
@@ -344,6 +356,24 @@ export interface Registry {
     /** A server's readings at or after `sinceIso`, oldest first. */
     series(server: string, sinceIso: string): HostSampleRow[];
     prune(beforeIso: string): number;
+  };
+  /** Browsers subscribed to web push, and the VAPID key pair the pushes are signed with (the private key is sealed). */
+  pushSubscriptions: {
+    /** Subscribe a browser, or update the one already subscribed with this endpoint (it keeps its id). */
+    upsert(s: { endpoint: string; p256dh: string; auth: string; tokenId: string; label: string; origin?: string | null; events: string[] }): PushSubscriptionRow;
+    get(id: string): PushSubscriptionRow | undefined;
+    list(tokenId?: string): PushSubscriptionRow[];
+    /** Whom to push to, with what is needed to encrypt to them. */
+    targets(): PushTarget[];
+    setEvents(id: string, events: string[]): boolean;
+    /** Record the outcome of a push: delivered (null error) or why not. */
+    markResult(id: string, error: string | null): void;
+    remove(id: string): boolean;
+    /** Forget every subscription of a token (it was revoked). */
+    removeForToken(tokenId: string): number;
+    /** The VAPID key pair, made on first use. */
+    keys(): { publicKey: string; privateKey: string } | undefined;
+    setKeys(k: { publicKey: string; privateKey: string }): void;
   };
   audit: {
     add(e: { tokenId?: string | null; action: string; app?: string | null; detail?: Record<string, unknown> }): void;
@@ -832,6 +862,43 @@ export function openRegistry(path: string, opts: { now?: () => Date; secrets?: S
           (r): HostSampleRow => ({ at: r.at as string, load1: r.load1 as number, cpus: r.cpus as number | null, memUsed: r.mem_used as number, memTotal: r.mem_total as number, diskUsed: r.disk_used as number | null, diskTotal: r.disk_total as number | null }),
         ),
       prune: (beforeIso) => Number(run("DELETE FROM host_samples WHERE at < ?", beforeIso).changes),
+    },
+
+    pushSubscriptions: {
+      upsert(s) {
+        const id = createHash("sha256").update(s.endpoint).digest("hex").slice(0, 32);
+        run(
+          `INSERT INTO push_subscriptions (id, endpoint, p256dh, auth, token_id, label, origin, events_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, token_id = excluded.token_id, label = excluded.label,
+             origin = excluded.origin, events_json = excluded.events_json, last_error = NULL`,
+          id, s.endpoint, s.p256dh, s.auth, s.tokenId, s.label, s.origin ?? null, JSON.stringify(s.events), now(),
+        );
+        return pushFrom(one("SELECT * FROM push_subscriptions WHERE id = ?", id)!);
+      },
+      get: (id) => {
+        const r = one("SELECT * FROM push_subscriptions WHERE id = ?", id);
+        return r ? pushFrom(r) : undefined;
+      },
+      list: (tokenId) => (tokenId === undefined ? all("SELECT * FROM push_subscriptions ORDER BY created_at, rowid") : all("SELECT * FROM push_subscriptions WHERE token_id = ? ORDER BY created_at, rowid", tokenId)).map(pushFrom),
+      targets: () =>
+        all("SELECT * FROM push_subscriptions ORDER BY created_at, rowid").map((r): PushTarget => ({ ...pushFrom(r), endpoint: r.endpoint as string, p256dh: r.p256dh as string, auth: r.auth as string, origin: r.origin as string | null })),
+      setEvents: (id, events) => Number(run("UPDATE push_subscriptions SET events_json = ? WHERE id = ?", JSON.stringify(events), id).changes) > 0,
+      markResult(id, error) {
+        if (error === null) run("UPDATE push_subscriptions SET last_delivered_at = ?, last_error = NULL WHERE id = ?", now(), id);
+        else run("UPDATE push_subscriptions SET last_error = ? WHERE id = ?", error.slice(0, 500), id);
+      },
+      remove: (id) => Number(run("DELETE FROM push_subscriptions WHERE id = ?", id).changes) > 0,
+      removeForToken: (tokenId) => Number(run("DELETE FROM push_subscriptions WHERE token_id = ?", tokenId).changes),
+      keys() {
+        const r = one("SELECT public_key, private_key_enc FROM push_keys WHERE id = 1");
+        return r ? { publicKey: r.public_key as string, privateKey: box.open(r.private_key_enc as string) } : undefined;
+      },
+      setKeys(k) {
+        run(
+          "INSERT INTO push_keys (id, public_key, private_key_enc) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET public_key = excluded.public_key, private_key_enc = excluded.private_key_enc",
+          k.publicKey, box.seal(k.privateKey),
+        );
+      },
     },
 
     audit: {

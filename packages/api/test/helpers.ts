@@ -166,7 +166,7 @@ export function fakeAgent() {
   return { agent, calls, handlers, streams, uploads, consoles, failConsole: (e: Error | null) => void (consoleError = e), failUploads: (e: Error | null) => void (uploadError = e) };
 }
 
-export async function makeApi(opts: { maxUploadBytes?: number; publicIps?: string[] } = {}) {
+export async function makeApi(opts: { maxUploadBytes?: number; publicIps?: string[]; pushSender?: ApiContext["pushSender"] } = {}) {
   /** Fake DNS: hostname -> addresses (edit it in a test to "change the zone"). */
   const zone: Record<string, string[]> = {};
   const dns = {
@@ -198,6 +198,7 @@ export async function makeApi(opts: { maxUploadBytes?: number; publicIps?: strin
     trustProxy: true,
     dns,
     publicIps: opts.publicIps ?? ["203.0.113.7"],
+    pushSender: opts.pushSender,
   };
   const api = createApi(ctx);
   const handler = toWebHandler(api.app);

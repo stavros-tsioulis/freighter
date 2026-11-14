@@ -13,3 +13,4 @@ export * from "./servers.ts";
 export * from "./dns.ts";
 export * from "./upgrade.ts";
 export * from "./control-settings.ts";
+export * from "./notify.ts";

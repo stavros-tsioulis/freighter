@@ -444,3 +444,23 @@ export interface HostSample {
   diskUsed: number | null;
   diskTotal: number | null;
 }
+
+export interface PushEventInfo {
+  kind: string;
+  label: string;
+  /** On for a new device. */
+  on: boolean;
+}
+export interface PushSubscriptionRow {
+  id: string;
+  label: string;
+  events: string[];
+  createdAt: string;
+  lastDeliveredAt: string | null;
+  lastError: string | null;
+}
+export interface PushInfo {
+  publicKey: string;
+  events: PushEventInfo[];
+  subscriptions: PushSubscriptionRow[];
+}

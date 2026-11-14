@@ -11,17 +11,19 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@freighter/core": "workspace:*",
     "@freighter/haproxy": "workspace:*",
     "@freighter/manifest": "workspace:*",
+    "@freighter/pki": "workspace:*",
     "@freighter/protocol": "workspace:*",
     "@freighter/registry": "workspace:*",
     "h3": "^1.15.0",
-    "zod": "^3.25.0",
-    "@freighter/pki": "workspace:*",
-    "@freighter/core": "workspace:*"
+    "web-push": "3.6.7",
+    "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@freighter/agent": "workspace:*",
     "@freighter/tsconfig": "workspace:*",
-    "@freighter/agent": "workspace:*"
+    "@types/web-push": "3.6.4"
   }
 }

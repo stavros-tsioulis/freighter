@@ -16,6 +16,7 @@ const groups = computed(() => [
       { to: "/certs", label: "Certificates", icon: "pi pi-shield" },
     ],
   },
+  { label: "Account", items: [{ to: "/settings/notifications", label: "Notifications", icon: "pi pi-bell" }] },
   ...(can("admin")
     ? [
         {

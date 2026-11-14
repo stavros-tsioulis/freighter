@@ -289,4 +289,26 @@ export const migrations: string[] = [
   -- A public storage also serves everything in it, read-only and without a key, from a second endpoint.
   ALTER TABLE storages ADD COLUMN public INTEGER NOT NULL DEFAULT 0;
   `,
+  `
+  -- Web push: the browsers that asked to be told about events, and the keys the control plane signs its pushes with.
+  CREATE TABLE push_subscriptions (
+    id TEXT PRIMARY KEY,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    token_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    origin TEXT,
+    events_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_delivered_at TEXT,
+    last_error TEXT
+  );
+  CREATE INDEX push_subscriptions_token ON push_subscriptions (token_id);
+  CREATE TABLE push_keys (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    public_key TEXT NOT NULL,
+    private_key_enc TEXT NOT NULL
+  );
+  `,
 ];

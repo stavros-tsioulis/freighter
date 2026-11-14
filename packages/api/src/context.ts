@@ -3,6 +3,7 @@ import type { DnsResolver } from "./dns.ts";
 import type { KeyPair } from "@freighter/pki";
 import type { Registry, Role } from "@freighter/registry";
 import type { ControlSettings } from "./control-settings.ts";
+import type { Notifier, PushSender } from "./notify.ts";
 
 /** Resolves the agent for a registered server ("local" is the unix socket; others use mutual TLS). */
 export interface AgentDirectory {
@@ -37,6 +38,10 @@ export interface ApiContext {
   metricsRetentionHours?: number;
   /** The control plane's own settings (saved in the registry, overridden by environment variables). */
   controlSettings?: ControlSettings;
+  /** Web push: made by `createApi` when not set. */
+  notifier?: Notifier;
+  /** How a push is sent (default: the push service of the browser, through the `web-push` library; replaceable in tests). */
+  pushSender?: PushSender;
   now?: () => Date;
 }
 

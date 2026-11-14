@@ -45,6 +45,7 @@ import { checkDomainDns, type ChallengeProbe, isLocalName, isPrivateOrLoopback, 
 import { checkServer, reachableServers } from "./servers.ts";
 import { checkServerUpdates, controlVersion, startServerUpgrade, UpgradeRefused, upgradeView } from "./upgrade.ts";
 import { syncAll, syncApp, type SyncResult } from "./sync.ts";
+import { NOTIFY_EVENTS, createNotifier, defaultNotifyKinds, isNotifyKind } from "./notify.ts";
 
 const execFileP = promisify(execFile);
 
@@ -54,6 +55,21 @@ export interface Api {
   jobs: Jobs;
   syncAll(opts?: { force?: boolean }): Promise<SyncResult | { skipped: true }>;
 }
+
+/**
+ * Where a browser's push service can be. The control plane sends to the address a subscriber gives it, so only the
+ * services browsers really use are accepted: anything else would let a token make this server call any address.
+ */
+const PUSH_SERVICE_HOSTS = ["fcm.googleapis.com", "updates.push.services.mozilla.com", "push.services.mozilla.com", "web.push.apple.com", "push.apple.com", "notify.windows.com"];
+const isPushService = (endpoint: string) => {
+  try {
+    const u = new URL(endpoint);
+    return u.protocol === "https:" && !u.port && PUSH_SERVICE_HOSTS.some((h) => u.hostname === h || u.hostname.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+};
+const pushEvents = z.array(z.string().refine(isNotifyKind, "unknown event")).max(NOTIFY_EVENTS.length);
 
 const appName = z.string().regex(IDENT_RE, "invalid app name");
 const envKey = z.string().regex(/^[A-Z_][A-Z0-9_]*$/, "invalid env key");
@@ -116,6 +132,8 @@ async function readManifestText(artifact: string): Promise<string> {
 
 export function createApi(ctx: ApiContext): Api {
   const limiter = createFailureLimiter();
+  ctx.notifier ??= createNotifier(ctx);
+  const notifier = ctx.notifier;
   const jobs = createJobs(ctx);
   const app = createApp();
   const router = createRouter();
@@ -787,8 +805,59 @@ export function createApi(ctx: ApiContext): Api {
   router.delete("/v1/tokens/:id", route("admin", (event, who) => {
     const id = getRouterParam(event, "id") ?? "";
     if (!ctx.registry.tokens.revoke(id)) throw new ApiError(404, "not_found", "unknown or already revoked token");
+    ctx.registry.pushSubscriptions.removeForToken(id); // a revoked token no longer hears about anything
     audit(who, "token.revoke", undefined, { id });
     return { ok: true };
+  }));
+
+  // Web push: the browsers of the signed-in token, and the events each wants.
+  router.get("/v1/push", route("viewer", (_event, who) => ({
+    publicKey: notifier.publicKey(),
+    events: NOTIFY_EVENTS,
+    subscriptions: ctx.registry.pushSubscriptions.list(who.id),
+  })));
+  router.post("/v1/push/subscriptions", route("viewer", async (event, who) => {
+    const b = await body(event, z.object({
+      endpoint: z.string().max(2000).refine(isPushService, "not the address of a browser push service"),
+      keys: z.object({ p256dh: z.string().min(1).max(200), auth: z.string().min(1).max(100) }),
+      events: pushEvents.optional(),
+      label: z.string().trim().max(80).optional(),
+    }));
+    const row = ctx.registry.pushSubscriptions.upsert({
+      endpoint: b.endpoint,
+      p256dh: b.keys.p256dh,
+      auth: b.keys.auth,
+      tokenId: who.id,
+      label: b.label || "Browser",
+      origin: origin(event),
+      events: b.events ?? defaultNotifyKinds(),
+    });
+    audit(who, "push.subscribe", undefined, { id: row.id });
+    setResponseStatus(event, 201);
+    return row;
+  }));
+  /** A subscription of the caller's own; an admin may also remove another's. */
+  const subscriptionParam = (event: H3Event, who: Principal, anyOwner = false) => {
+    const row = ctx.registry.pushSubscriptions.get(getRouterParam(event, "id") ?? "");
+    if (!row || (row.tokenId !== who.id && !(anyOwner && who.role === "admin"))) throw new ApiError(404, "not_found", "unknown subscription");
+    return row;
+  };
+  router.patch("/v1/push/subscriptions/:id", route("viewer", async (event, who) => {
+    const row = subscriptionParam(event, who);
+    const { events } = await body(event, z.object({ events: pushEvents }));
+    ctx.registry.pushSubscriptions.setEvents(row.id, events);
+    return { ...row, events };
+  }));
+  router.delete("/v1/push/subscriptions/:id", route("viewer", (event, who) => {
+    const row = subscriptionParam(event, who, true);
+    ctx.registry.pushSubscriptions.remove(row.id);
+    audit(who, "push.unsubscribe", undefined, { id: row.id });
+    return { ok: true };
+  }));
+  router.post("/v1/push/subscriptions/:id/test", route("viewer", async (event, who) => {
+    const row = subscriptionParam(event, who);
+    const error = await notifier.test(row.id);
+    return { ok: error === null, error };
   }));
 
   router.get("/v1/audit", route("admin", (event) => ({ entries: ctx.registry.audit.list(limitParam(event, 100)) })));
