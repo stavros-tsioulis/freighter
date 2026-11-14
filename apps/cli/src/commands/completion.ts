@@ -8,6 +8,7 @@ export async function commandTree(cmd: CommandDef): Promise<Tree> {
   const subs = typeof cmd.subCommands === "function" ? await cmd.subCommands() : await cmd.subCommands;
   const out: Tree = {};
   for (const [name, sub] of Object.entries(subs ?? {})) {
+    if (name.startsWith("__")) continue; // internal
     const resolved = await (typeof sub === "function" ? (sub as () => Promise<CommandDef>)() : sub);
     out[name] = await commandTree(resolved as CommandDef);
   }

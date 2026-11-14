@@ -10,7 +10,17 @@ The control server serves the CLI that matches it, so the two never drift apart:
 curl -fsSL https://freighter.example.com/install-cli | sh
 ```
 
-It puts `freighter` in `~/.local/bin`. `freighter upgrade` fetches the version the control server runs now.
+It puts `freighter` in `~/.local/bin`. `freighter upgrade` fetches the version the control server serves now.
+
+### Staying current
+
+Once a day, in the background, an installed `freighter` asks the Freighter you are signed in to whether it serves a newer CLI. If it does, the next command you run at a terminal ends with one line:
+
+```
+A newer freighter is available (a1b2c3d -> e4f5a6b). Run: freighter upgrade
+```
+
+It never slows a command down, and it stays quiet in CI, in scripts (`--json`, `-q`) and when the output isn't a terminal. `FREIGHTER_NO_UPDATE_CHECK=1` turns it off.
 
 ## Sign in
 

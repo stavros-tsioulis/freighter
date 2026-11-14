@@ -84,4 +84,7 @@ Who did what: deploys, config changes, [console and exec](/cli/apps#exec) sessio
 freighter sync          # re-read every server now, instead of at the next periodic sync
 freighter version       # this CLI, the control server, and each agent's version
 freighter upgrade       # replace this CLI with the one the control server serves
+freighter upgrade --check   # only say whether a newer one is served
 ```
+
+`upgrade` compares this CLI with the one the control server serves. If they are the same it says so. If not, it downloads the new one, checks it against the checksum the server publishes, makes sure it starts, and only then replaces itself, keeping the old one beside it as `freighter.mjs.prev`. Anything that goes wrong leaves the installed CLI as it was. It needs the CLI to have been installed by [the installer](/cli/).

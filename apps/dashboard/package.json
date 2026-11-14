@@ -9,7 +9,7 @@
     "postinstall": "nuxt prepare",
     "test": "vitest run --passWithNoTests",
     "typecheck": "nuxt typecheck",
-    "build:cli": "node ../../scripts/bundle.mjs ../cli/src/cli.ts public/cli/freighter.mjs"
+    "build:cli": "node ../../scripts/bundle.mjs ../cli/src/cli.ts public/cli/freighter.mjs && node ../../scripts/hash-file.mjs public/cli/freighter.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "3.1.3",
