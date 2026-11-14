@@ -39,8 +39,8 @@ curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/jso
 curl -X POST -H "Authorization: Bearer $TOKEN" https://freighter.example.com/api/v1/apps/shop/domains/shop.example.com/verify
 
 # CLI, on the app's server, as root (no DNS check)
-freighter domain add shop shop.example.com=web          # tls defaults to auto
-freighter domain add shop shop.localhost=web:off
+freighter domain add shop shop.example.com --service web     # tls defaults to automatic HTTPS
+freighter domain add shop shop.localhost --service web --http
 freighter domain list shop
 freighter domain remove shop shop.example.com
 ```
@@ -62,7 +62,7 @@ Freighter asks the server for its check token and requests `http://<hostname>/.w
 
 For this to work:
 
-- **HAProxy must answer the check path** on both listeners. A dedicated HAProxy gets the rule from `freighter haproxy config`. If you keep your own `haproxy.cfg`, add the `use_backend freighter_challenge …` line to both frontends ([The lines to add](/install/haproxy#the-lines-to-add)).
+- **HAProxy must answer the check path** on both listeners. A dedicated HAProxy gets the rule from `freighter host haproxy config`. If you keep your own `haproxy.cfg`, add the `use_backend freighter_challenge …` line to both frontends ([The lines to add](/install/haproxy#the-lines-to-add)).
 - **The proxy must reach the server** on port 80 (or 443 if it connects over HTTPS), as described below. A Cloudflare `52x` error shows up in the failure message.
 
 Freighter recognises a proxied name by its addresses, and today it only knows **Cloudflare's published ranges**. A name that resolves to a mix of your server and other addresses still fails, because some visitors would be sent elsewhere. For a proxy Freighter doesn't recognise, verification reports that the name resolves to addresses that aren't this server's. Verification happens once, when you add the domain, so turn the proxy off for a moment:
@@ -91,7 +91,7 @@ A proxy's own “always use HTTPS” redirect is fine with any of these.
 
 Your server sees the proxy's address, so logs and `X-Forwarded-For` show that instead of the visitor's. Proxies pass the real address in a header (`CF-Connecting-IP` for Cloudflare, `X-Real-IP` or `X-Forwarded-For` for others), which must only be believed when the connection comes from the proxy.
 
-- **Cloudflare:** turn on **Behind Cloudflare's proxy** (`haproxy.trustCloudflare: true`). Freighter's HAProxy then reads `CF-Connecting-IP`, but only on connections from Cloudflare's published ranges. A dedicated HAProxy picks it up with the config; with your own, add the two lines `freighter haproxy setup` prints ([Behind a proxy or CDN](/install/haproxy#if-your-domains-are-behind-a-proxy-or-cdn)).
+- **Cloudflare:** turn on **Behind Cloudflare's proxy** (`haproxy.trustCloudflare: true`). Freighter's HAProxy then reads `CF-Connecting-IP`, but only on connections from Cloudflare's published ranges. A dedicated HAProxy picks it up with the config; with your own, add the two lines `freighter host haproxy setup` prints ([Behind a proxy or CDN](/install/haproxy#if-your-domains-are-behind-a-proxy-or-cdn)).
 - **Other proxies:** add the equivalent rule to your frontends yourself, with that proxy's ranges and header.
 
 ## Certificates
@@ -119,12 +119,12 @@ The DNS challenge exists for Cloudflare only. Behind another proxy, use the HTTP
 
 HTTP requests to a `tls: auto` hostname are redirected to HTTPS. HAProxy adds `X-Forwarded-For`, and `X-Forwarded-Proto: https` on TLS connections.
 
-Renewal is automatic: `freighter-renew.timer` runs `freighter certs renew` daily, renews anything within `acme.renewBeforeDays` (30) of expiry, and reloads HAProxy once. The **Certificates** page lists every certificate with its expiry. Admins can press **Renew due certificates** there.
+Renewal is automatic: `freighter-renew.timer` runs `freighter host certs renew` daily, renews anything within `acme.renewBeforeDays` (30) of expiry, and reloads HAProxy once. The **Certificates** page lists every certificate with its expiry. Admins can press **Renew due certificates** there.
 
 ```sh
-freighter certs status
-freighter certs renew            # only what's due
-freighter certs renew --force    # re-issue everything
+freighter host certs status
+freighter host certs renew            # only what's due
+freighter host certs renew --force    # re-issue everything
 ```
 
 ## Remove a domain

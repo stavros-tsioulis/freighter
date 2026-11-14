@@ -4,4 +4,4 @@ After=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/freighter certs renew
+ExecStart=/usr/local/bin/freighter host certs renew

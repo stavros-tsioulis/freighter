@@ -5,6 +5,7 @@ export * from "./sync.ts";
 export * from "./jobs.ts";
 export * from "./app.ts";
 export * from "./console.ts";
+export * from "./console-wire.ts";
 export * from "./spool.ts";
 export * from "./metrics.ts";
 export * from "./agents.ts";

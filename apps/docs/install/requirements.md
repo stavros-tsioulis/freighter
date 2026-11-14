@@ -47,4 +47,4 @@ The API and dashboard listen on `127.0.0.1:3000` and are published through HAPro
 
 ## Your machine
 
-Only a browser. The `freighter push` command for uploading from CI or a laptop needs Node 24 and a checkout of Freighter. A plain `curl` against the [API](/reference/api) works just as well.
+Only a browser. The `freighter` CLI for deploying from CI or a laptop needs Node 24 (the control server serves the installer: `curl -fsSL https://your-freighter/install-cli | sh`). A plain `curl` against the [API](/reference/api) works just as well.

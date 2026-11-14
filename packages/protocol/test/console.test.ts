@@ -24,7 +24,7 @@ describe("console frames", () => {
   });
 
   it("checks what console.open is asked", () => {
-    expect(ops["console.open"].args.parse({ app: "shop", service: "web" })).toEqual({ app: "shop", service: "web", cols: 80, rows: 24 });
+    expect(ops["console.open"].args.parse({ app: "shop", service: "web" })).toEqual({ app: "shop", service: "web", cols: 80, rows: 24, tty: true });
     expect(() => ops["console.open"].args.parse({ app: "Shop", service: "web" })).toThrow();
     expect(() => ops["console.open"].args.parse({ app: "shop", service: "web", cols: 0 })).toThrow();
   });

@@ -87,7 +87,7 @@ docker/
   Dockerfile        build stage (pnpm install, dashboard build) + the "clean server" image
   compose.yaml      control + remote
   lab.sh            up / down / shell / token / enroll-remote / push / smoke …
-  rootfs/           files placed on the servers: haproxy.cfg (with the lines `freighter haproxy setup` prints), units, config, wrappers
+  rootfs/           files placed on the servers: haproxy.cfg (with the lines `freighter host haproxy setup` prints), units, config, wrappers
   examples/         hello, secure (tls: auto), remote-hello
   workspace/        your own apps (mounted at /work on control)
 ```

@@ -39,7 +39,8 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
   modules: ["@primevue/nuxt-module", "@vite-pwa/nuxt"],
   css: ["primeicons/primeicons.css", "~/assets/css/main.css"],
-  vite: { plugins: [tailwindcss()] },
+  // the plugin is typed against Vite 8 and Nuxt runs Vite 7: the same plugin API, two copies of its types
+  vite: { plugins: [tailwindcss() as never] },
   primevue: {
     options: {
       theme: {

@@ -25,7 +25,7 @@ Start with the deployment itself: the app's **Deployments** tab (open the row), 
 | `certbot failed for host` | DNS doesn't point at this server yet, port 80 doesn't reach HAProxy, or the `freighter_acme` rule is missing from the :80 frontend. Use `tls: off` to go live without HTTPS meanwhile. |
 | `set acme.email` | add `acme.email` to `config.yaml` before using `tls: auto`. |
 | HAProxy won't start | the certs directory is empty (add the placeholder PEM), or `backends.cfg` isn't loaded. Run `haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg`. |
-| domain returns HAProxy's default page | the `use_backend … hostnames.map` line is missing from that frontend. Re-run `freighter haproxy setup` and compare. |
+| domain returns HAProxy's default page | the `use_backend … hostnames.map` line is missing from that frontend. Re-run `freighter host haproxy setup` and compare. |
 
 ## Git
 

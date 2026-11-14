@@ -14,7 +14,7 @@ pnpm --filter @freighter/docs build     # static site in .vitepress/dist
 ```sh
 pnpm --filter @freighter/docs build
 tar -czf /tmp/docs.tgz -C apps/docs app.yaml serve.mjs .vitepress/dist
-freighter push /tmp/docs.tgz
+freighter deploy /tmp/docs.tgz
 ```
 
 `serve.mjs` serves the built files on `$PORT` with clean URLs and a `/health` endpoint.

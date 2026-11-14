@@ -42,7 +42,7 @@ Set `api.metricsSeconds: 0` to turn sampling off.
 ## Status from the shell
 
 ```sh
-freighter status shop                       # current release and each service's state
+freighter ps shop                           # each service's state, restarts and memory
 systemctl list-units 'freighter-*'
 systemctl show -p MemoryMax,CPUQuotaPerSecUSec 'freighter-shop--web*'
 ```

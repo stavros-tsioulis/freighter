@@ -10,20 +10,23 @@
     "build": "node ../../scripts/bundle.mjs src/cli.ts dist/cli.js"
   },
   "dependencies": {
+    "@freighter/api": "workspace:*",
     "@freighter/core": "workspace:*",
+    "@freighter/haproxy": "workspace:*",
     "@freighter/manifest": "workspace:*",
+    "@freighter/pki": "workspace:*",
+    "@freighter/registry": "workspace:*",
     "@freighter/systemd": "workspace:*",
     "citty": "^0.1.6",
-    "zod": "^3.25.0",
-    "@freighter/haproxy": "workspace:*",
-    "@freighter/registry": "workspace:*",
-    "@freighter/pki": "workspace:*",
-    "@freighter/api": "workspace:*"
+    "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@freighter/protocol": "workspace:*",
     "@freighter/tsconfig": "workspace:*",
+    "@types/ws": "8.18.1",
     "h3": "^1.15.0",
-    "@freighter/protocol": "workspace:*"
+    "ws": "8.18.3",
+    "@freighter/agent": "workspace:*"
   },
   "bin": {
     "freighter": "./dist/cli.js"

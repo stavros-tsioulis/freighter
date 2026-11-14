@@ -15,6 +15,7 @@ export default defineConfig({
       { text: "Install", link: "/install/requirements", activeMatch: "/install/" },
       { text: "Deploy", link: "/deploy/first-app", activeMatch: "/deploy/" },
       { text: "Operate", link: "/operate/dashboard", activeMatch: "/operate/" },
+      { text: "CLI", link: "/cli/", activeMatch: "/cli/" },
       { text: "Reference", link: "/reference/app-yaml", activeMatch: "/reference/" },
     ],
     sidebar: [
@@ -69,11 +70,25 @@ export default defineConfig({
         ],
       },
       {
+        text: "CLI",
+        items: [
+          { text: "Overview", link: "/cli/" },
+          { text: "Deploy", link: "/cli/deploy" },
+          { text: "Apps and services", link: "/cli/apps" },
+          { text: "Configure", link: "/cli/configure" },
+          { text: "Servers", link: "/cli/servers" },
+          { text: "Storage", link: "/cli/storage" },
+          { text: "Access", link: "/cli/access" },
+          { text: "Scripting and CI", link: "/cli/scripting" },
+          { text: "On the server", link: "/cli/host" },
+        ],
+      },
+      {
         text: "Reference",
         items: [
           { text: "app.yaml", link: "/reference/app-yaml" },
           { text: "config.yaml", link: "/reference/config-yaml" },
-          { text: "CLI", link: "/reference/cli" },
+          { text: "CLI", link: "/cli/" },
           { text: "HTTP API", link: "/reference/api" },
           { text: "Files and paths", link: "/reference/paths" },
         ],

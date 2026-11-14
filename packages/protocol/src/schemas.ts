@@ -444,7 +444,18 @@ export const ops = {
    * followed by frames in both directions until the shell ends or the connection closes (see console.ts).
    */
   "console.open": {
-    args: z.object({ app: ident, service: ident, cols: z.number().int().min(1).max(1000).default(80), rows: z.number().int().min(1).max(1000).default(24) }),
+    args: z.object({
+      app: ident,
+      service: ident,
+      cols: z.number().int().min(1).max(1000).default(80),
+      rows: z.number().int().min(1).max(1000).default(24),
+      /** Run this command (as it is, no shell) instead of an interactive shell. */
+      command: z.array(z.string().max(8192)).min(1).max(512).optional(),
+      /** On a terminal (the default), or with plain pipes: separate standard output and error, no terminal behaviour. */
+      tty: z.boolean().default(true),
+      /** Variables for the command, over the service's own. */
+      env: z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(32768)).optional(),
+    }),
     result: z.object({ kind: z.enum(["host", "container"]), user: z.string(), cwd: z.string(), shell: z.string() }),
   },
   /** The reply line is followed by a ZIP of the paths, until the connection closes. */

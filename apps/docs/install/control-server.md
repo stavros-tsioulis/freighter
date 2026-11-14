@@ -163,7 +163,7 @@ Remote servers reach the control server's address (`api.publicUrl`) to enroll, s
 Tokens are created against the registry database, which belongs to the `freighter` user:
 
 ```sh
-sudo -u freighter freighter token create --name you --role admin
+sudo -u freighter freighter host token create you --role admin
 ```
 
 The token (`fr_…`) is printed once. Open the dashboard, paste it on the sign-in page, and you're in. Create separate tokens for each person and each CI pipeline from **API tokens** in the dashboard. See [Users and tokens](/operate/access).

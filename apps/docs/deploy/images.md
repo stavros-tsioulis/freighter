@@ -49,12 +49,12 @@ services:
 
 In the dashboard, **Apps → Deploy → Container image** takes an app name, one or more image services (image, ports, volumes, limits, health check, environment, secret names) and, with several servers, the server to run on. It shows the equivalent `app.yaml`, then pulls the image and follows the deployment's log. It warns if the server has no Podman.
 
-With the [CLI](/reference/cli#push), against your control server:
+With the [CLI](/cli/deploy#from-an-image), against your control server:
 
 ```sh
-freighter push app.yaml --url https://freighter.example.com --token $FREIGHTER_TOKEN
+freighter deploy app.yaml
 # or, without a file
-freighter push --image ghcr.io/acme/shop:1.4 --name shop --port 3000
+freighter deploy --image ghcr.io/acme/shop:1.4 --app shop --port 3000
 ```
 
 There is nothing to upload: the server pulls the image. The deployment log shows the pull, the resolved digest, the health check and the traffic switch, in the dashboard under **Deployments** like any other.
@@ -91,7 +91,7 @@ Use `docker.io` for Docker Hub.
 
 ### Several logins for one registry
 
-A registry can have more than one login (say, two GitHub accounts). Each app pulls with the one chosen for it, per registry. In **Deploy → Container image**, a registry with several logins shows a **Pull with** picker, and the deploy button waits until you choose; the choice is remembered for the app, so redeploys, **Pull again** and **Change image** use it. Change it any time on the app's **Source** tab. From the CLI, `freighter push app.yaml --login ghcr.io=alice` chooses (and remembers) it, and `freighter registry remove ghcr.io --username alice` says which login to delete. With one login for a registry nothing needs choosing. With several and no choice, a deploy is refused rather than guessing which account to use. A login applies to every image from that registry host. Prefer an access token with read-only access to the package over a password.
+A registry can have more than one login (say, two GitHub accounts). Each app pulls with the one chosen for it, per registry. In **Deploy → Container image**, a registry with several logins shows a **Pull with** picker, and the deploy button waits until you choose; the choice is remembered for the app, so redeploys, **Pull again** and **Change image** use it. Change it any time on the app's **Source** tab. From the CLI, `freighter deploy app.yaml --login ghcr.io=alice` chooses (and remembers) it, and `freighter registry remove ghcr.io --username alice` names the login to delete. With one login for a registry nothing needs choosing. With several and no choice, a deploy is refused rather than guessing which account to use. A login applies to every image from that registry host. Prefer an access token with read-only access to the package over a password.
 
 ## From CI
 
@@ -101,7 +101,7 @@ Build and push the image, then tell Freighter to pull it:
 - run: docker build -t ghcr.io/acme/shop:${{ github.sha }} . && docker push ghcr.io/acme/shop:${{ github.sha }}
 - run: |
     sed -i "s|image: .*|image: ghcr.io/acme/shop:${{ github.sha }}|" app.yaml
-    freighter push app.yaml
+    freighter deploy app.yaml
   env:
     FREIGHTER_URL: ${{ vars.FREIGHTER_URL }}
     FREIGHTER_TOKEN: ${{ secrets.FREIGHTER_TOKEN }}
@@ -116,5 +116,5 @@ Over the API, `POST /apps/:app/image-deployments` takes `{"manifest": "<app.yaml
 - Podman only; there is no Docker support. Images must be pullable by Podman (`linux/amd64` or `linux/arm64`, matching the server).
 - One container per service and one instance per service, like other services.
 - Containers are rootless and use user networking, so they can't bind ports below 1024. Inside a container `127.0.0.1` is the container itself; the server's loopback is `10.0.2.2` (not `host.containers.internal`, which Podman points at the server's public address). That is how a container reaches another service's published port, for example `10.0.2.2:24814`; `@service.host` and `@service.internal` give it for you. It also means a container can reach anything listening on the server's loopback, including other apps' ports, so run only images you trust.
-- Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy → Container image** or `freighter push`.
+- Apps linked to a Git repository can use image services too, but private registry logins aren't passed to Git deploys yet. Deploy those through **Deploy → Container image** or `freighter deploy --image`.
 - The dashboard's **Container image** form needs every service to be an image. To mix in command services, upload an archive.

@@ -91,7 +91,7 @@ Used by every server that routes domains.
 | `mainConfig` | `/etc/haproxy/haproxy.cfg` | Your config, included when validating before a reload. |
 | `bin` | `haproxy` | The HAProxy binary used for `haproxy -c`. |
 | `reloadCommand` | `[systemctl, reload, haproxy]` | How to reload gracefully. A dedicated HAProxy uses `[systemctl, reload, freighter-haproxy]`. |
-| `httpPort` | `80` | The port HAProxy listens on for HTTP. Used by `freighter haproxy setup` and `freighter haproxy config`. |
+| `httpPort` | `80` | The port HAProxy listens on for HTTP. Used by `freighter host haproxy setup` and `freighter host haproxy config`. |
 | `httpsPort` | `443` | The port HAProxy listens on for HTTPS. |
 | `publicHttpsPort` | `httpsPort` | The HTTPS port clients are redirected to. Set `443` when your own proxy maps 443 to a different `httpsPort`. |
 | `acceptProxy` | `false` | Expect the PROXY protocol on both ports, for a TCP proxy in front that sends it. |
@@ -112,7 +112,7 @@ Let's Encrypt certificates for `tls: auto` domains.
 | `dnsPropagationSeconds` | `30` | For `cloudflare-dns`: how long certbot waits after creating the TXT record (10–600). |
 | `challengePort` | `8888` | Local port certbot listens on during HTTP-01 challenges. HAProxy forwards to it. |
 | `letsencryptDir` | `/etc/letsencrypt` | certbot's directory. |
-| `renewBeforeDays` | `30` | `freighter certs renew` renews certificates expiring within this many days. |
+| `renewBeforeDays` | `30` | `freighter host certs renew` renews certificates expiring within this many days. |
 
 ## ports and drainSeconds
 

@@ -63,23 +63,24 @@ Then on the **Apps** page choose **Deploy**, then **Archive**, enter the app nam
 **From your machine or CI**, with a deployer token:
 
 ```sh
-FREIGHTER_URL=https://freighter.example.com FREIGHTER_TOKEN=fr_… freighter push ./hello
+freighter login https://freighter.example.com
+freighter deploy ./hello
 ```
 
-`push` packs the directory, uploads it, and waits for the result.
+`deploy` packs the directory, uploads it, and waits for the result. In CI, set `FREIGHTER_URL` and `FREIGHTER_TOKEN` instead of signing in.
 
 **On the server itself**, as root:
 
 ```sh
-freighter deploy ./hello -f ./hello/app.yaml
+freighter host deploy ./hello -f ./hello/app.yaml
 ```
 
-Add `--dry-run` to see what would change without changing anything.
+The same commands as above work from the server too. `host deploy` needs no sign-in and no control server.
 
 ## 4. Check it
 
 ```sh
-freighter status hello
+freighter ps hello
 curl http://127.0.0.1:3100/
 ```
 

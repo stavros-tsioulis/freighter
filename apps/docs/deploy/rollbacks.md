@@ -35,7 +35,7 @@ If the very first deploy of an app fails, its services are stopped, because ther
 **CLI**, on the server:
 
 ```sh
-freighter releases shop                       # * marks the current release
+freighter release list shop                  # the current one is marked
 freighter rollback shop                       # previous good release
 freighter rollback shop r20261106-134501      # a specific one
 ```

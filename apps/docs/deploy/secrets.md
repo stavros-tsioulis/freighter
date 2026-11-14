@@ -43,9 +43,9 @@ curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json
 **CLI**, on the app's server, as root:
 
 ```sh
-freighter env set shop web DATABASE_URL=postgres://…
-printf '%s' "$VALUE" | freighter env set shop web SESSION_SECRET    # value from stdin keeps it out of shell history
-freighter env list shop web                                         # names only
+freighter var set shop/web DATABASE_URL=postgres://…           # a plain variable; a secret:
+printf '%s' "$VALUE" | freighter secret set shop/web SESSION_SECRET --stdin    # value from stdin keeps it out of shell history
+freighter secret list shop/web                                         # names only
 ```
 
 Values can't contain newlines.

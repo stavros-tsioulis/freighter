@@ -2,7 +2,7 @@
 
 If you'd rather build in GitHub Actions or GitLab CI and keep toolchains off your servers, build there and upload the result. No deploy key or webhook is needed.
 
-1. Create a token with the **deployer** role (**API tokens**, then **New token**, or `sudo -u freighter freighter token create --name ci-github --role deployer`).
+1. Create a token with the **deployer** role (**API tokens**, then **New token**, or `sudo -u freighter freighter host token create ci-github --role deployer`).
 2. Store it as the CI secret `FREIGHTER_TOKEN`, and your Freighter URL as `FREIGHTER_URL`.
 3. Package everything the server needs to run the app (`app.yaml`, build output, production dependencies) as a `.tar.gz` with `app.yaml` at its root. `name:` in `app.yaml` decides which app is deployed.
 
@@ -51,10 +51,10 @@ The Freighter repository has this pipeline and a GitLab one in `docs/ci/`.
 
 ## With the CLI
 
-If the runner has a Freighter checkout, `freighter push` does the packing, upload and waiting:
+With the CLI on the runner (`curl -fsSL "$FREIGHTER_URL/install-cli" | sh`), `freighter deploy` does the packing, upload and waiting:
 
 ```sh
-freighter push ./dist-app --url "$FREIGHTER_URL" --token "$FREIGHTER_TOKEN"
+freighter deploy ./dist-app            # FREIGHTER_URL and FREIGHTER_TOKEN are in the environment
 ```
 
 | Flag | Meaning |

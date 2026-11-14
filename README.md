@@ -21,7 +21,7 @@ freighter deploy <dir|artifact.tar.gz> -f app.yaml [--dry-run]
 freighter rollback <app> [release] | releases <app>
 freighter status <app> | logs <app> <service> | start|stop|restart <app> [service]
 freighter env set <app> <service> KEY[=VALUE] | env list <app> <service>
-freighter haproxy setup | haproxy sync | certs renew [--force] | certs status
+freighter host haproxy setup | haproxy sync | certs renew [--force] | certs status
 freighter ssh-key import|list|remove                            # SSH keys for private repositories (docs/git-deploys.md)
 freighter git add|link|show|check|deploy|rotate-secret|unlink   # deploy from a Git repository over SSH
 freighter token create|list|revoke | push <dir|tar.gz> --url U --token T [--server S]   # control plane (phase 5)

@@ -25,6 +25,8 @@ export interface ConsoleSession {
   /** Keystrokes (or pasted text) for the shell. */
   write(data: Uint8Array | string): void;
   resize(cols: number, rows: number): void;
+  /** No more input is coming (a command reading standard input sees the end of it). */
+  end(): void;
   /** Every frame the agent sends: `data` (output), then `exit` or `error`. */
   onFrame(cb: (frame: Frame) => void): void;
   /** The connection ended, whichever way. */
@@ -233,6 +235,7 @@ export function createAgentClient(target: string | AgentTarget, defaults: { time
             result: parsed.data,
             write: (data) => void (socket.destroyed || socket.write(encodeFrame(FRAME.data, data))),
             resize: (cols, rows) => void (socket.destroyed || socket.write(resizeFrame(cols, rows))),
+            end: () => void (socket.destroyed || socket.write(encodeFrame(FRAME.eof))),
             onFrame: (cb) => {
               frameCbs.push(cb);
             },

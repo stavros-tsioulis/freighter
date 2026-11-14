@@ -18,7 +18,7 @@ wait_ready() { # wait for systemd to finish booting in a container
 }
 
 new_token() { # new_token <role> -> prints a fresh API token
-  $DC exec -T control sudo -u freighter freighter token create --name "lab-$1-$RANDOM" --role "$1" | grep -o 'fr_[A-Za-z0-9_-]*'
+  $DC exec -T control sudo -u freighter freighter host token create "lab-$1-$RANDOM" --role "$1" | grep -o 'fr_[A-Za-z0-9_-]*'
 }
 control() { $DC exec -T control "$@"; }
 demo() { control lab-git-demo "$@"; }
@@ -144,15 +144,15 @@ MSG
       $DC exec -T $s systemctl list-units --no-legend --no-pager 'freighter*' haproxy.service || true
     done ;;
   shell)  $DC exec "${1:-control}" bash ;;
-  token)  $DC exec -T control sudo -u freighter freighter token create --name "lab-${1:-admin}" --role "${1:-admin}" ;;
+  token)  $DC exec -T control sudo -u freighter freighter host token create "lab-${1:-admin}" --role "${1:-admin}" ;;
   enroll-remote)
-    out=$($DC exec -T control sudo -u freighter freighter server add remote --address remote --control http://control:3000)
+    out=$($DC exec -T control freighter server add remote --address remote --url http://control:3000 --token "$(new_token admin)")
     echo "$out"
     token=$(echo "$out" | grep -o 'fre_[A-Za-z0-9_-]*'); fp=$(echo "$out" | grep -o 'SHA256:[0-9A-F:]*')
     $DC exec -T remote freighter-agent enroll --control http://control:3000 --token "$token" --ca-fingerprint "$fp"
     $DC exec -T remote systemctl restart freighter-agent
     sleep 2
-    $DC exec -T control sudo -u freighter freighter server check remote ;;
+    $DC exec -T control freighter server check remote --url http://localhost:3000 --token "$(new_token admin)" ;;
   push)
     ex=${1:?usage: push <example|/path> [server]}; server=${2:-}
     tok=${FREIGHTER_TOKEN:-$(new_token admin)}   # admin: pushing also sets the example's domain (saved before the first deploy)
@@ -160,7 +160,7 @@ MSG
     TOK=$tok set_lab_domain "$(basename "$ex")" "$server" || exit 1
     # An example that only has an app.yaml with `image:` services is deployed without an upload (the server pulls the image).
     [ -f "$dir/app.yaml" ] && [ "$($DC exec -T control ls "$dir" | tr -d '\r')" = app.yaml ] && src=$dir/app.yaml || src=$dir
-    $DC exec -T control freighter push "$src" --url http://localhost:3000 --token "$tok" ${server:+--server "$server"} ;;
+    $DC exec -T control freighter deploy "$src" --url http://localhost:3000 --token "$tok" ${server:+--server "$server"} ;;
   git-demo) git_demo "$@" ;;
   git-push) demo push "${1:-gitdemo}" "${2:-Update from the lab}" ;;
   smoke)
@@ -179,7 +179,7 @@ MSG
     check "deploy an image app (the server pulls nginx)" "$SELF" push image-hello
     check "the image is served through HAProxy :8080"   wait_for 60 serves image-hello.localhost 8080 "Welcome to nginx"
     check "redeploy pulls the image again and swaps"    bash -c "$DC exec -T control freighter redeploy image-hello --url http://localhost:3000 --token $TOK | grep -q 'deployed image-hello'"
-    check "a bad image tag fails the deploy..."         bash -c "! printf 'name: image-hello\\nservices:\\n  web:\\n    image: nginx:no-such-tag-xyz\\n' | $DC exec -T control sh -c 'cat > /tmp/bad.yaml && freighter push /tmp/bad.yaml --url http://localhost:3000 --token $TOK'"
+    check "a bad image tag fails the deploy..."         bash -c "! printf 'name: image-hello\\nservices:\\n  web:\\n    image: nginx:no-such-tag-xyz\\n' | $DC exec -T control sh -c 'cat > /tmp/bad.yaml && freighter deploy /tmp/bad.yaml --url http://localhost:3000 --token $TOK'"
     check "...and the working release keeps serving"    serves image-hello.localhost 8080 "Welcome to nginx"
     check "tls: auto app deploys (certbot shim)"       "$SELF" push secure
     check "http redirects to https"                    bash -c 'curl -s -o /dev/null -w "%{redirect_url}" http://secure.localhost:8080/ | grep -q "https://secure.localhost:8443"'
@@ -188,7 +188,7 @@ MSG
     check "deploy remote-hello on the remote"          "$SELF" push remote-hello remote
     check "remote-hello served by the remote :8081"    serves remote-hello.localhost 8081 "hello from the remote server"
     check "remote-hello is NOT on control"             bash -c '! curl -s -m 5 http://remote-hello.localhost:8080/ | grep -q "remote server"'
-    check "app stays pinned to its server"             bash -c "! $DC exec -T control freighter push /opt/freighter-lab/examples/remote-hello --url http://localhost:3000 --token $TOK --server local"
+    check "app stays pinned to its server"             bash -c "! $DC exec -T control freighter deploy /opt/freighter-lab/examples/remote-hello --url http://localhost:3000 --token $TOK --server local"
     # ---- deploy from Git over SSH: import a key -> branches -> inspect -> clone -> sandboxed build -> deploy -> webhook ----
     check "importing the lab SSH key works"            import_key
     check "the key is stored (and listed without its private half)" bash -c 'api GET ssh-keys | jq -e "(.keys | length) == 1 and (tostring | contains(\"PRIVATE\") | not)"'

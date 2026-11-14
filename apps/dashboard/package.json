@@ -4,11 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "nuxt dev",
-    "build": "nuxt build",
+    "dev": "pnpm build:cli && nuxt dev",
+    "build": "pnpm build:cli && nuxt build",
     "postinstall": "nuxt prepare",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck",
+    "build:cli": "node ../../scripts/bundle.mjs ../cli/src/cli.ts public/cli/freighter.mjs"
   },
   "dependencies": {
     "@dagrejs/dagre": "3.1.3",

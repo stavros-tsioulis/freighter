@@ -2,7 +2,7 @@
 
 Provisioning playbooks will live here. A host needs:
 
-- HAProxy >= 2.4, loaded with `-f /etc/haproxy/freighter/backends.cfg` (see `freighter haproxy setup`)
+- HAProxy >= 2.4, loaded with `-f /etc/haproxy/freighter/backends.cfg` (see `freighter host haproxy setup`)
 - `certbot` (standalone mode is used; HAProxy forwards `/.well-known/acme-challenge/` to it)
 - a self-signed placeholder PEM in `/etc/haproxy/freighter/certs/` so `bind :443 ssl crt <dir>/certs/` starts on an empty host
 - `/etc/freighter/config.yaml` with at least `acme.email`

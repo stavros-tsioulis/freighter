@@ -74,7 +74,7 @@ On the new server, as root:
 
    [Service]
    Type=oneshot
-   ExecStart=/usr/local/bin/freighter certs renew
+   ExecStart=/usr/local/bin/freighter host certs renew
    ```
    ```ini
    # /etc/systemd/system/freighter-renew.timer
@@ -106,7 +106,7 @@ On the control server, from the dashboard: **Servers**, then **Add server**. Giv
 Or from the CLI, as the `freighter` user:
 
 ```sh
-sudo -u freighter freighter server add vps-fra-1 --address vps1.example.com --control https://freighter.example.com
+freighter server add vps-fra-1 --address vps1.example.com
 ```
 
 Either way you get a command to run on the new server. It's shown once, and its token expires after one hour.
@@ -126,7 +126,7 @@ After the restart, the agent also listens on `:7443`. Within a minute the server
 
 ## 4. Deploy to it
 
-Choose the server when you create an app: the **Server** field in the *Deploy* forms (shown once you have more than one server), `--server vps-fra-1` with `freighter push` and `freighter git add`, or `?server=vps-fra-1` on the API. The app stays on that server for good.
+Choose the server when you create an app: the **Server** field in the *Deploy* forms (shown once you have more than one server), `--server vps-fra-1` with `freighter deploy`, or `?server=vps-fra-1` on the API. The app stays on that server for good.
 
 Builds from Git run on the app's server, so install the build toolchain there.
 
@@ -139,8 +139,8 @@ Agent certificates last one year. The Servers page shows the days left and warns
 A remote server runs the agent and CLI from a git checkout the installer made (`/opt/freighter`). To bring it to the version the control server runs, press **Upgrade** on the Servers page (it is highlighted, with *update available* next to the agent version, when the server is behind), or run this on the control server:
 
 ```sh
-sudo -u freighter freighter server upgrade vps-fra-1            # to the version this control server runs
-sudo -u freighter freighter server upgrade vps-fra-1 --ref v1.4.0   # a branch, tag or commit instead (a commit may be abbreviated: the server finds it in its branches' recent history)
+freighter server upgrade vps-fra-1            # to the version this control server runs
+freighter server upgrade vps-fra-1 --ref v1.4.0   # a branch, tag or commit instead (a commit may be abbreviated: the server finds it in its branches' recent history)
 ```
 
 The version is the git commit the control server runs, found from its checkout. A control server that runs from a container image has no checkout (on Railway, for instance), so set `FREIGHTER_COMMIT` to the commit it was built from (Railway's `RAILWAY_GIT_COMMIT_SHA` is picked up automatically), or give the version yourself with `--ref` or "Upgrade to a different version". Without either, Freighter can't tell what "the same version" is and asks you to choose.
@@ -158,7 +158,7 @@ What happens, all on the server:
 
 The upgrade runs as its own systemd unit (`freighter-upgrade`), so it carries on while the agent restarts, and survives the control server or your browser going away. Its state and log are in `/var/lib/freighter/upgrade/` (`state`, `message`, `log`). HAProxy is restarted once near the end, which is a brief blip for traffic. Don't deploy to the server while it upgrades, because a restart of the agent interrupts a deployment that is running.
 
-**Whose HAProxy it is.** The installer records whether it set up a HAProxy of its own for Freighter (*dedicated*) or wired into one you already ran (*existing*), in `/etc/haproxy/freighter/mode`. It sticks across upgrades and re-runs of the installer. With a dedicated HAProxy, Freighter owns `haproxy.cfg` and an upgrade rewrites it. With your own, Freighter never edits it, so after an upgrade compare your frontends with `freighter haproxy setup` ([After an upgrade](/install/haproxy#after-an-upgrade)). Servers installed before the record existed are told apart by where their `haproxy.cfg` lives.
+**Whose HAProxy it is.** The installer records whether it set up a HAProxy of its own for Freighter (*dedicated*) or wired into one you already ran (*existing*), in `/etc/haproxy/freighter/mode`. It sticks across upgrades and re-runs of the installer. With a dedicated HAProxy, Freighter owns `haproxy.cfg` and an upgrade rewrites it. With your own, Freighter never edits it, so after an upgrade compare your frontends with `freighter host haproxy setup` ([After an upgrade](/install/haproxy#after-an-upgrade)). Servers installed before the record existed are told apart by where their `haproxy.cfg` lives.
 
 **Servers installed before this feature** can't upgrade themselves, because their agent doesn't know how. Run the installer on them once, as in step 1 (`curl … | sudo sh -s -- --role agent`). From then on **Upgrade** works. The same goes for a server that wasn't installed with the script, since it has no checkout to upgrade.
 

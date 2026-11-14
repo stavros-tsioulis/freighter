@@ -11,6 +11,8 @@ An interactive shell in a service, in the dashboard. It is the **Console** tab o
 
 The service has to be running. The shell is a normal terminal: colors, `vim`, `htop`, a resizable window, copy and paste. It can only do what the app's user can: it is not root.
 
+From a terminal, [`freighter shell app/service`](/cli/apps#shell) opens the same shell, and [`freighter exec`](/cli/apps#exec) runs one command and returns its exit code.
+
 ## Sessions
 
 - Each session is in the [audit log](/operate/dashboard#access-admin) when it opens and when it closes, with the service and how long it lasted. What you type is not recorded.

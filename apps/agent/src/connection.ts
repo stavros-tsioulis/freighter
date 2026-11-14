@@ -141,15 +141,15 @@ let consoles = 0;
 function handleConsole(d: Deps, socket: Duplex, reader: LineReader, id: string, rawArgs: unknown) {
   const parsed = ops["console.open"].args.safeParse(rawArgs);
   if (!parsed.success) return rejectAndClose(socket, id, { code: "bad_request", message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") });
-  const { app, service, cols, rows } = parsed.data;
+  const { app, service, cols, rows, command, tty, env } = parsed.data;
   const { enabled, idleMinutes, maxSessions } = d.config.agent.console;
   void (async () => {
     let counted = false;
     try {
       if (!enabled) throw new ConsoleError("bad_request", "the console is turned off on this server (agent.console.enabled in its config.yaml)");
       if (consoles >= maxSessions) throw new ConsoleError("conflict", `${maxSessions} consoles are already open on this server`);
-      const plan = await consolePlan(d, app, service);
-      const child = await spawnConsole(plan, { cols, rows });
+      const plan = await consolePlan(d, app, service, { command, tty, env });
+      const child = await spawnConsole(plan, { cols, rows, tty });
       consoles++;
       counted = true;
       let ended = false;

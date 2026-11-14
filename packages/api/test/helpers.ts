@@ -121,7 +121,9 @@ export function fakeAgent() {
         resized: [] as [number, number][],
         closed: false,
         say: (text: string) => frames.forEach((cb) => cb({ type: FRAME.data, payload: Buffer.from(text) })),
-        end: (code: number) => frames.forEach((cb) => cb({ type: FRAME.exit, payload: exitFrame(code).subarray(5) })),
+        finish: (code: number) => frames.forEach((cb) => cb({ type: FRAME.exit, payload: exitFrame(code).subarray(5) })),
+        errput: (text: string) => frames.forEach((cb) => cb({ type: FRAME.stderr, payload: Buffer.from(text) })),
+        ended: false,
         warn: (text: string) => frames.forEach((cb) => cb({ type: FRAME.error, payload: Buffer.from(text) })),
         drop: () => closers.forEach((cb) => cb()),
         result: { kind: "host" as const, user: args.app, cwd: "/srv/apps/shop/shared", shell: "bash or sh" },
@@ -130,6 +132,9 @@ export function fakeAgent() {
         },
         resize(c: number, r: number) {
           session.resized.push([c, r]);
+        },
+        end() {
+          session.ended = true;
         },
         onFrame: (cb: (f: Frame) => void) => void frames.push(cb),
         onClose: (cb: () => void) => void closers.push(cb),

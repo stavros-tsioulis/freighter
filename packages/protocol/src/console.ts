@@ -11,6 +11,10 @@ export const FRAME = {
   exit: 2,
   /** From the agent: why the session could not start or had to end, as UTF-8. */
   error: 3,
+  /** From the agent, for a command run without a terminal: what it wrote to standard error (data is its standard output). */
+  stderr: 5,
+  /** Towards the command: no more standard input will come (a terminal sends Ctrl+D as data instead). */
+  eof: 6,
 } as const;
 
 export const MAX_FRAME_BYTES = 1_048_576;

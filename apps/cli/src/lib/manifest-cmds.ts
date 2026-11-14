@@ -4,11 +4,11 @@ import { defineCommand } from "citty";
 import { fileArg, guard, readManifestText } from "../common.ts";
 
 export const validate = defineCommand({
-  meta: { name: "validate", description: "Parse and validate a manifest" },
-  args: { ...fileArg },
+  meta: { name: "validate", description: "Check an app.yaml: no server and no sign-in needed" },
+  args: { path: { type: "positional", required: false, description: "The app.yaml (default: ./app.yaml)", default: "app.yaml" } },
   run: ({ args }) =>
     guard(() => {
-      const m = parseManifest(readManifestText(args.file));
+      const m = parseManifest(readManifestText(args.path));
       console.log(`ok: ${m.name} (${Object.keys(m.services).join(", ")})`);
     }),
 });

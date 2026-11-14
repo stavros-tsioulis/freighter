@@ -73,7 +73,7 @@ What each line does:
 | `use_backend %[…hostnames.map…] if {…}` | Route a request to the backend of the app whose domain it asks for. Hostnames Freighter doesn't know fall through to your own rules. |
 | `bind :443 ssl crt …/certs/` | Serve each domain's certificate from the directory Freighter writes them to. |
 
-`freighter haproxy setup` prints the same lines for **your** ports and directory (`haproxy.httpPort`, `haproxy.httpsPort`, `haproxy.dir`), so copy from its output when they differ from the defaults. They need HAProxy 2.4 or later.
+`freighter host haproxy setup` prints the same lines for **your** ports and directory (`haproxy.httpPort`, `haproxy.httpsPort`, `haproxy.dir`), so copy from its output when they differ from the defaults. They need HAProxy 2.4 or later.
 
 ### Installed with the script
 
@@ -199,7 +199,7 @@ What is left for HAProxy is the **visitor's address**: without it, logs and `X-F
 Use the header your proxy documents. Behind **Cloudflare** this is built in: turn on **Behind Cloudflare's proxy** in the server's settings (or `haproxy.trustCloudflare: true` in `config.yaml`), then print the lines again:
 
 ```sh
-freighter haproxy setup
+freighter host haproxy setup
 ```
 
 It now includes the two lines below at the top of each frontend, with Cloudflare's current ranges and the `CF-Connecting-IP` header:
@@ -213,10 +213,10 @@ Copy the full `acl` line from the command's output, because the list of ranges i
 
 ### After an upgrade
 
-Upgrading Freighter on a server never changes your `haproxy.cfg`, so rules that a newer version needs are yours to add. Compare your frontends with what `freighter haproxy setup` prints for that server's ports, and add whatever is missing:
+Upgrading Freighter on a server never changes your `haproxy.cfg`, so rules that a newer version needs are yours to add. Compare your frontends with what `freighter host haproxy setup` prints for that server's ports, and add whatever is missing:
 
 ```sh
-freighter haproxy setup
+freighter host haproxy setup
 haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg && systemctl reload haproxy
 ```
 
@@ -257,7 +257,7 @@ Add a certbot deploy hook that rebuilds that PEM and reloads HAProxy, so renewal
 
 On a deploy that touches routing, Freighter writes the new maps and backends, validates the whole configuration with `haproxy -c -f <mainConfig> -f backends.cfg`, and reloads gracefully with `systemctl reload haproxy`. If validation fails, the previous files are restored and the deploy fails without changing anything that's live.
 
-`freighter haproxy sync` rebuilds the files from the recorded state and reloads if anything changed. Use it after editing your own config or restoring a backup.
+`freighter host haproxy sync` rebuilds the files from the recorded state and reloads if anything changed. Use it after editing your own config or restoring a backup.
 
 ## Run a dedicated HAProxy
 
@@ -288,13 +288,13 @@ touch /etc/haproxy/freighter/hostnames.map /etc/haproxy/freighter/https.map
 printf '# Managed by freighter. Do not edit; regenerated on every deploy.\n\nbackend freighter_acme\n    server certbot 127.0.0.1:8888\n\nbackend freighter_challenge\n    http-request return status 200 content-type text/plain string "unset"\n' > /etc/haproxy/freighter/backends.cfg
 echo dedicated > /etc/haproxy/freighter/mode
 # then the placeholder certificate from step 2 of "Fully manual" above
-freighter haproxy config > /etc/freighter/haproxy/haproxy.cfg
+freighter host haproxy config > /etc/freighter/haproxy/haproxy.cfg
 cp /opt/freighter/infra/systemd/freighter-haproxy.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now freighter-haproxy
 ```
 
-`freighter haproxy config` prints a complete `haproxy.cfg` for the ports and options in `config.yaml`. Run it again after changing them, and `systemctl reload freighter-haproxy`.
+`freighter host haproxy config` prints a complete `haproxy.cfg` for the ports and options in `config.yaml`. Run it again after changing them, and `systemctl reload freighter-haproxy`.
 
 ## Choose the ports
 
@@ -306,7 +306,7 @@ haproxy:
   httpsPort: 4443
 ```
 
-They apply to `freighter haproxy config` (the dedicated setup) and to the lines `freighter haproxy setup` prints (the shared setup). Everything else follows from them. [All the keys](/reference/config-yaml#haproxy)
+They apply to `freighter host haproxy config` (the dedicated setup) and to the lines `freighter host haproxy setup` prints (the shared setup). Everything else follows from them. [All the keys](/reference/config-yaml#haproxy)
 
 ## Behind your own reverse proxy
 

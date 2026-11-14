@@ -21,7 +21,7 @@ A CI pipeline that uploads builds needs **deployer**. Uploaded archives are unpa
 **CLI**, on the control server, as the user that owns the registry:
 
 ```sh
-sudo -u freighter freighter token create --name ci-github --role deployer
+sudo -u freighter freighter host token create ci-github --role deployer
 sudo -u freighter freighter token list
 sudo -u freighter freighter token revoke <id>
 ```

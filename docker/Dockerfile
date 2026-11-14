@@ -40,7 +40,7 @@ COPY --from=build /app /opt/freighter
 COPY docker/rootfs/ /
 COPY docker/examples/ /opt/freighter-lab/examples/
 
-# haproxy.cfg is the "existing" HAProxy config an operator would already have, plus the lines `freighter haproxy setup`
+# haproxy.cfg is the "existing" HAProxy config an operator would already have, plus the lines `freighter host haproxy setup`
 # prints. The redirect target must be the *published* HTTPS port so a browser on the host can follow it.
 RUN sed -i "s/__PUBLIC_HTTPS_PORT__/${PUBLIC_HTTPS_PORT}/g" /etc/haproxy/haproxy.cfg \
  && chmod +x /usr/local/bin/freighter /usr/local/bin/freighter-agent /usr/local/bin/certbot /usr/local/bin/lab-post-receive /usr/local/bin/lab-git-demo \

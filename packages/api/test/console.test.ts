@@ -7,9 +7,10 @@ const APP = "name: shop\nservices:\n  web:\n    command: node web.mjs\n";
 async function setup() {
   const t = await makeApi();
   t.registry.apps.upsert({ name: "shop", server: "local", manifestText: APP, currentRelease: "r1", previousRelease: null, status: "deployed" });
-  const out = { data: [] as string[], exits: [] as number[], errors: [] as string[], closed: 0 };
+  const out = { data: [] as string[], stderr: [] as string[], exits: [] as number[], errors: [] as string[], closed: 0 };
   const sink: ConsoleSink = {
     data: (c) => out.data.push(c.toString()),
+    stderr: (c) => out.stderr.push(c.toString()),
     exit: (c) => out.exits.push(c),
     error: (m) => out.errors.push(m),
     closed: () => void out.closed++,
@@ -31,7 +32,7 @@ describe("console sessions", () => {
     const { t, out, sink, req } = await setup();
     const handle = await openConsole(t.ctx, req({ token: t.tokens.admin }), sink);
     const session = t.consoles[0]!;
-    expect(session.args).toEqual({ app: "shop", service: "web", cols: 100, rows: 30 });
+    expect(session.args).toEqual({ app: "shop", service: "web", cols: 100, rows: 30, tty: true });
     expect(handle.info).toMatchObject({ kind: "host", user: "shop" });
 
     handle.write("ls\n");
@@ -40,8 +41,9 @@ describe("console sessions", () => {
     expect(session.resized).toEqual([[120, 40]]);
     session.say("file.txt\r\n");
     session.warn("closed after 30 minutes without input");
-    session.end(0);
-    expect(out).toMatchObject({ data: ["file.txt\r\n"], errors: ["closed after 30 minutes without input"], exits: [0] });
+    session.errput("warn\n");
+    session.finish(0);
+    expect(out).toMatchObject({ data: ["file.txt\r\n"], errors: ["closed after 30 minutes without input"], exits: [0], stderr: ["warn\n"] });
 
     handle.close();
     expect(out.closed).toBe(1);
@@ -49,6 +51,22 @@ describe("console sessions", () => {
     expect(log).toEqual(expect.arrayContaining(["console.open", "console.close"]));
     const opened = t.registry.audit.list().find((a) => a.action === "console.open")!;
     expect(opened.detail).toMatchObject({ service: "web", kind: "host", ip: "198.51.100.9" });
+  });
+
+  it("runs a command without a terminal, with extra variables, and says only its name in the audit log", async () => {
+    const { t, out, sink, req } = await setup();
+    const cmd = encodeURIComponent(JSON.stringify(["/usr/bin/psql", "-c", "select 'secret-arg'"]));
+    const env = encodeURIComponent(JSON.stringify({ PGDATABASE: "shop" }));
+    const handle = await openConsole(t.ctx, req({ token: t.tokens.admin, query: `app=shop&service=web&cmd=${cmd}&tty=0&env=${env}` }), sink);
+    expect(t.consoles[0]!.args).toMatchObject({ command: ["/usr/bin/psql", "-c", "select 'secret-arg'"], tty: false, env: { PGDATABASE: "shop" } });
+    handle.end();
+    expect(t.consoles[0]!.ended).toBe(true);
+    const opened = t.registry.audit.list().find((a) => a.action === "console.open")!;
+    expect(opened.detail).toMatchObject({ command: "psql" });
+    expect(JSON.stringify(opened.detail)).not.toContain("secret-arg");
+    expect((await refusal(openConsole(t.ctx, req({ token: t.tokens.admin, query: "app=shop&service=web&cmd=notjson" }), sink)))?.status).toBe(400);
+    expect((await refusal(openConsole(t.ctx, req({ token: t.tokens.admin, query: `app=shop&service=web&env=${encodeURIComponent('{"bad name":"x"}')}` }), sink)))?.status).toBe(400);
+    void out;
   });
 
   it("is for admins only, and needs a valid token", async () => {

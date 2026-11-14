@@ -10,3 +10,4 @@ dist
 docker/workspace/*
 !docker/workspace/.gitkeep
 .vitepress/cache
+apps/dashboard/public/cli/

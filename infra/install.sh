@@ -375,14 +375,14 @@ setup_haproxy() {
 	# backends, so this is safe for the HAProxy that is running now), then write rules that need them.
 	if [ "$HAPROXY_MODE" = dedicated ]; then hap_unit=freighter-haproxy; else hap_unit=haproxy; fi
 	if systemctl is-active --quiet "$hap_unit" 2>/dev/null; then
-		/usr/local/bin/freighter haproxy sync >>"$LOG" 2>&1 || warn "could not refresh HAProxy's generated backends (see $LOG)"
+		/usr/local/bin/freighter host haproxy sync >>"$LOG" 2>&1 || warn "could not refresh HAProxy's generated backends (see $LOG)"
 	fi
 
 	if [ "$HAPROXY_MODE" = dedicated ]; then
 		# The config comes from Freighter itself, so the ports and redirects match /etc/freighter/config.yaml.
 		install -d /etc/freighter/haproxy
 		# Generate first: a failing `freighter` must not leave an empty config behind a pipe.
-		cfg=$(/usr/local/bin/freighter haproxy config) || die "could not generate the HAProxy config (is /etc/freighter/config.yaml valid?)"
+		cfg=$(/usr/local/bin/freighter host haproxy config) || die "could not generate the HAProxy config (is /etc/freighter/config.yaml valid?)"
 		printf '%s\n' "$cfg" | write_file /etc/freighter/haproxy/haproxy.cfg 0644 || true
 	elif [ -f /etc/default/haproxy ] && grep -q 'freighter/backends.cfg' /etc/default/haproxy; then
 		skip "HAProxy already loads backends.cfg"
@@ -461,7 +461,7 @@ start_services() {
 	else
 		run "enabled HAProxy" systemctl enable haproxy
 		if [ "$DRY_RUN" != 1 ] && ! haproxy -c -f /etc/haproxy/haproxy.cfg -f /etc/haproxy/freighter/backends.cfg >>"$LOG" 2>&1; then
-			warn "HAProxy config does not validate yet (see $LOG). Fix it with 'freighter haproxy setup', then: systemctl restart haproxy"
+			warn "HAProxy config does not validate yet (see $LOG). Fix it with 'freighter host haproxy setup', then: systemctl restart haproxy"
 		else
 			run "restarted HAProxy" systemctl restart haproxy
 		fi
@@ -504,17 +504,17 @@ summary() {
 			printf '       Point your reverse proxy at them: public :80 -> :%s, public :443 -> :%s.\n       Let'"'"'s Encrypt validates over public :80, so it must reach :%s. See "Behind your own reverse proxy" in the docs.\n' "$HTTP_PORT" "$HTTPS_PORT" "$HTTP_PORT"
 		fi
 	else
-		printf '  %d. Connect your HAProxy (Freighter does not edit your haproxy.cfg):\n       freighter haproxy setup\n' $n; n=$((n + 1))
+		printf '  %d. Connect your HAProxy (Freighter does not edit your haproxy.cfg):\n       freighter host haproxy setup\n' $n; n=$((n + 1))
 	fi
 	if [ "$ROLE" = control ] && [ "$HAS_AGENT" = 0 ]; then
-		printf '  %d. Create the first admin token:\n       sudo -u freighter freighter token create --name admin --role admin\n' $n; n=$((n + 1))
+		printf '  %d. Create the first admin token:\n       sudo -u freighter freighter host token create admin --role admin\n' $n; n=$((n + 1))
 		printf '  %d. Publish the dashboard (127.0.0.1:3000) through your reverse proxy, with HTTPS.\n' $n; n=$((n + 1))
-		printf '  %d. Add the servers that will run your apps (Servers -> Add server), then enroll each:\n       freighter server add <name> --address <host> --control https://<dashboard>\n' $n
+		printf '  %d. Add the servers that will run your apps (Servers -> Add server), then enroll each:\n       freighter login https://<dashboard>; freighter server add <name> --address <host>\n' $n
 	elif [ "$ROLE" = control ]; then
-		printf '  %d. Create the first admin token%s:\n       sudo -u freighter freighter token create --name admin --role admin\n' $n "$([ "$HAPROXY_MODE" = existing ] && echo ", then publish 127.0.0.1:3000 through HAProxy" || echo ", then publish 127.0.0.1:3000 as your dashboard hostname")"
+		printf '  %d. Create the first admin token%s:\n       sudo -u freighter freighter host token create admin --role admin\n' $n "$([ "$HAPROXY_MODE" = existing ] && echo ", then publish 127.0.0.1:3000 through HAProxy" || echo ", then publish 127.0.0.1:3000 as your dashboard hostname")"
 	else
 		printf '  %d. Allow only the control server to reach the agent:\n       ufw allow from <control-server-ip> to any port 7443 proto tcp\n' $n; n=$((n + 1))
-		printf '  %d. On the control server add this server, then run the printed command here:\n       freighter server add <name> --address <this-host> --control https://<dashboard>\n       freighter-agent enroll --control URL --token fre_... --ca-fingerprint SHA256:...\n       systemctl restart freighter-agent\n' $n
+		printf '  %d. On the control server add this server, then run the printed command here:\n       freighter server add <name> --address <this-host>\n       freighter-agent enroll --control URL --token fre_... --ca-fingerprint SHA256:...\n       systemctl restart freighter-agent\n' $n
 	fi
 	[ "${HAPROXY_MANUAL:-0}" = 0 ] || printf '\n  %s!%s add  -f /etc/haproxy/freighter/backends.cfg  to EXTRAOPTS in /etc/default/haproxy\n' "$YLW" "$RST"
 	[ "$DRY_RUN" = 1 ] || printf '\nInstall log: %s\n' "$LOG"

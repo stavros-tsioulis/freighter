@@ -15,6 +15,10 @@ export const MSG = {
   ready: 4,
   /** Browser to server: still here. Keeps the connection from being dropped as idle; the shell does not see it. */
   ping: 5,
+  /** To the server: no more input will come (the CLI, for a command). */
+  eof: 6,
+  /** To the client: what a command wrote to standard error (the browser has a terminal, so never). */
+  stderr: 7,
 } as const;
 
 export interface ConsoleInfo {

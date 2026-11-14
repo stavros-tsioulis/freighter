@@ -101,7 +101,8 @@ watch(current, () => {
 });
 onBeforeUnmount(teardown);
 
-const where = computed(() => (info.value ? `${info.value.user} in ${info.value.kind === "container" ? "the container" : info.value.cwd}` : ""));
+// where a host shell starts; a container has no directory worth naming
+const where = computed(() => (info.value?.kind === "host" ? `${info.value.user} in ${info.value.cwd}` : ""));
 </script>
 
 <template>

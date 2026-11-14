@@ -49,7 +49,7 @@ The open tab is part of the URL (`/apps/shop?tab=logs`), so you can share a link
 
 ### Delete an app
 
-Admins see **Delete app** in the app's header. The dialog lists what goes: the services, the routing and certificates for its domains, every release, the shared directory (where databases and uploads live), the secrets, the deploy key and the deployment history here. Its Git repository stays. You must type the app's name to enable the button, and there is no undo. If the app's server can't be reached, the dialog offers to remove only the dashboard's records. An app the server no longer reports (*Missing*) is removed from the dashboard alone. From a terminal: [`freighter app delete`](/reference/cli#app).
+Admins see **Delete app** in the app's header. The dialog lists what goes: the services, the routing and certificates for its domains, every release, the shared directory (where databases and uploads live), the secrets, the deploy key and the deployment history here. Its Git repository stays. You must type the app's name to enable the button, and there is no undo. If the app's server can't be reached, the dialog offers to remove only the dashboard's records. An app the server no longer reports (*Missing*) is removed from the dashboard alone. From a terminal: [`freighter app delete`](/cli/apps#app).
 
 ## Servers
 
