@@ -861,6 +861,34 @@ export function useCancelDeployment() {
   });
 }
 
+/** Forget a finished deployment and its log; what it released keeps running. */
+export function useDeleteDeployment() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean }>(`/deployments/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      notify.ok("Deployment deleted");
+      for (const key of ["deployment", "app-deployments", "deployments"]) void qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (e) => notify.fail("Could not delete the deployment", e),
+  });
+}
+
+/** Re-run the live deployment: Git builds the branch head again, images are pulled again. */
+export function useRetryDeployment() {
+  const qc = useQueryClient();
+  const notify = useNotify();
+  return useMutation({
+    mutationFn: (v: { id: string; app: string }) => api<{ id: string }>(`/deployments/${v.id}/retry`, { method: "POST" }),
+    onSuccess: (_r, v) => {
+      notify.started(v.app);
+      for (const key of ["deployment", "app-deployments", "deployments", "app", "apps"]) void qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (e) => notify.fail("Could not retry the deployment", e),
+  });
+}
+
 /** Deploy an app from the configuration it has, pulling its images. For apps whose services all run images. */
 export function useDeployConfig(app: MaybeRef<string>) {
   const qc = useQueryClient();

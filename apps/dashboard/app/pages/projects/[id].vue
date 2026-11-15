@@ -87,7 +87,7 @@ const warning = computed(() => {
           @layout="(p) => save.mutate(p)"
         />
         <Transition name="slide">
-          <div v-if="selected" class="absolute inset-y-0 right-0 w-full sm:w-[27rem] z-10">
+          <div v-if="selected" class="absolute inset-y-0 right-0 w-full sm:w-[35rem] z-10">
             <CanvasPanel :graph="graph" :selection="selected" @close="select(null)" @select="select" />
           </div>
         </Transition>

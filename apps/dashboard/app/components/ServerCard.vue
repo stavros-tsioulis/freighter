@@ -125,7 +125,11 @@ async function copy(text: string, what: string) {
       <div class="metric">
         <div class="metric-label">Uptime <Clock3 :size="15" /></div>
         <div class="metric-value">
-          <template v-if="uptimeParts.length"><template v-for="(part, i) in uptimeParts" :key="i">{{ part.value }}<span v-if="part.unit" class="unit">{{ part.unit }}</span> </template></template>
+          <template v-if="uptimeParts.length">
+            <template v-for="(part, i) in uptimeParts" :key="i">
+              {{ part.value }}<span v-if="part.unit" class="unit">{{ part.unit }}</span>
+            </template>
+          </template>
           <template v-else>–</template>
         </div>
         <p>{{ host ? "Running continuously" : "No readings yet" }}</p>
@@ -342,6 +346,7 @@ async function copy(text: string, what: string) {
   font-size: 0.6em;
   color: var(--p-text-muted-color);
   font-weight: 500;
+  margin-right: 0.5rem;
 }
 .metric p {
   color: var(--p-text-muted-color);

@@ -509,6 +509,49 @@ export function createApi(ctx: ApiContext): Api {
     return { id: d.id, status: outcome };
   }));
 
+  // Forget a finished deployment and its log. Nothing on the server changes: the release keeps running.
+  router.delete("/v1/deployments/:id", route("deployer", (event, who) => {
+    const d = ctx.registry.deployments.get(getRouterParam(event, "id") ?? "");
+    if (!d) throw new ApiError(404, "not_found", "unknown deployment");
+    if (d.status === "queued" || d.status === "running") throw new ApiError(409, "conflict", "this deployment is still in progress; cancel it before deleting it");
+    ctx.registry.deployments.remove(d.id);
+    audit(who, "deploy.delete", d.app, { deployment: d.id, status: d.status, release: d.releaseId });
+    return { ok: true, id: d.id };
+  }));
+
+  // Re-run the deployment that is live now: a Git app builds the branch head again, an image app pulls its images again.
+  // Only the live one can be retried; an older one is a rollback, not a retry.
+  router.post("/v1/deployments/:id/retry", route("deployer", (event, who) => {
+    const d = ctx.registry.deployments.get(getRouterParam(event, "id") ?? "");
+    if (!d) throw new ApiError(404, "not_found", "unknown deployment");
+    if (d.action !== "deploy") throw new ApiError(409, "conflict", "a rollback is switched back to with another rollback; it cannot be retried");
+    if (d.status !== "success") throw new ApiError(409, "conflict", "only a deployment that succeeded can be retried");
+    const app = ctx.registry.apps.get(d.app);
+    if (!app) throw new ApiError(404, "not_found", `unknown app "${d.app}"`);
+    // todo: implement querying for the live deployment instead of this
+    const live = app.currentRelease && ctx.registry.deployments.list({ app: d.app, limit: 500 }).find((x) => x.status === "success" && x.releaseId === app.currentRelease);
+    if (!live || live.id !== d.id) throw new ApiError(409, "conflict", "only the deployment that is live can be retried");
+    const link = ctx.registry.gitLinks.get(d.app);
+    if (link) {
+      const r = queueGitDeploy(d.app, link, "manual", who.id, false);
+      audit(who, "deploy.retry", d.app, { deployment: r.id, retried: d.id, source: "git" });
+      setResponseStatus(event, 202);
+      return r;
+    }
+    const text = app.manifestText;
+    let imagesOnly = false;
+    try {
+      const manifest = text ? parseManifest(text, { legacy: true }) : null;
+      imagesOnly = !!manifest && Object.keys(imageServices(manifest)).length === Object.keys(manifest.services).length;
+    } catch {
+      /* an unreadable configuration can't be redeployed from images */
+    }
+    if (!text || !imagesOnly) throw new ApiError(409, "conflict", "this app was built from an uploaded archive; upload it again to retry");
+    const r = queueImageDeploy(event, who, d.app, text, "manual");
+    audit(who, "deploy.retry", d.app, { deployment: r.id, retried: d.id, source: "images" });
+    return r;
+  }));
+
   // ---- domains: configured on the app (not in app.yaml). A new domain waits for its DNS records, then goes live ----
   /** Read on every use: the DNS servers are a setting that can change while the API runs. */
   const dnsResolver = (): DnsResolver => ctx.dns ?? systemDns;
