@@ -35,6 +35,15 @@ describe("settings form", () => {
     expect(fromSettings(toSettings(f)).services[0]).toMatchObject({ env: [{ key: "A", value: "1" }], secrets: "S" });
   });
 
+  it("keeps the apps a service waits for", () => {
+    const f = emptyForm();
+    f.services[0] = { ...newService("web"), command: "run", dependsOn: "db, cache\n" };
+    expect(toSettings(f).services.web?.dependsOn).toEqual(["db", "cache"]);
+    expect(fromSettings(toSettings(f)).services[0]?.dependsOn).toBe("db\ncache");
+    f.services[0]!.dependsOn = "";
+    expect(toSettings(f).services.web).not.toHaveProperty("dependsOn");
+  });
+
   it("needs a service with a command before it can be deployed", () => {
     expect(hasService(emptyForm())).toBe(false);
     const f = emptyForm();

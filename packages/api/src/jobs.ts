@@ -6,6 +6,7 @@ import { pushConnections } from "./connections.ts";
 import { dependantsOf } from "./dependants.ts";
 import type { ApiContext } from "./context.ts";
 import { deploymentEvent } from "./notify.ts";
+import { awaitDependencies } from "./readiness.ts";
 import { syncApp } from "./sync.ts";
 
 export interface GitJob {
@@ -138,6 +139,33 @@ export function createJobs(ctx: ApiContext): Jobs {
   const skipped = new Set<string>();
   const stopping = new Map<string, string>();
 
+  /** Deployments that are waiting for the apps they depend on (id -> how to stop the wait), and what they said while they did. */
+  const gating = new Map<string, AbortController>();
+  const waitLines = new Map<string, string[]>();
+
+  /**
+   * Hold the deployment until the apps its services depend on are ready; it fails if they are not in time. `text` is the
+   * configuration it will run with: the app's own once it has one, unless this deployment replaces it.
+   */
+  const awaitReady = async (id: string, app: string, server: string, text: string | null | undefined, replaces = false) => {
+    const lines: string[] = [];
+    waitLines.set(id, lines);
+    const control = new AbortController();
+    gating.set(id, control);
+    try {
+      await awaitDependencies(ctx, { app, server, manifestText: replaces ? text : (ctx.registry.apps.get(app)?.manifestText ?? text), log: (l) => lines.push(l), signal: control.signal });
+    } finally {
+      gating.delete(id);
+    }
+  };
+
+  /** Keep the deployment's log with it, with what it said while waiting for dependencies in front. */
+  const storeLog = (id: string, text: string) => {
+    const waited = waitLines.get(id);
+    waitLines.delete(id);
+    ctx.registry.deployments.setLog(id, waited?.length ? `${waited.join("\n")}\n${text}` : text);
+  };
+
   const MAX_DEPTH = 3; // A reaching B reaching C is fine; a loop of apps that read each other must end.
   /** Queue a re-resolve for every app that connects to `target`. They only redeploy when a value they read changed. */
   async function cascade(target: { app: string }, depth = 0): Promise<void> {
@@ -208,6 +236,7 @@ export function createJobs(ctx: ApiContext): Jobs {
           let artifact = artifactPath;
           try {
             // A remote host cannot read our spool: send the file over the connection first.
+            await awaitReady(id, app, server, manifestText);
             if (remote) artifact = (await agent.putArtifact(id, artifactPath)).path;
             await pushConnections(ctx, server, app);
             const r = await agent.call("app.deploy", { artifact, manifestText });
@@ -223,6 +252,7 @@ export function createJobs(ctx: ApiContext): Jobs {
             ctx.registry.deployments.update(id, failure(e));
           } finally {
             if (remote) await agent.call("artifact.delete", { id }).catch(() => {});
+            if (waitLines.get(id)?.length) storeLog(id, "");
           }
         },
         () => rm(artifactPath, { force: true }),
@@ -237,6 +267,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
         try {
+          await awaitReady(id, app, server, manifestText, replaceConfig);
           await pushConnections(ctx, server, app);
           const caps = (await agent.call("ping", {})).capabilities ?? [];
           if (!caps.includes("images")) throw new Error("this server's agent is too old to run images; upgrade it from the Servers page");
@@ -256,8 +287,8 @@ export function createJobs(ctx: ApiContext): Jobs {
         // Keep the log (pull progress included) with the deployment, as Git deployments do.
         await agent
           .call("build.log", { id, from: 0 })
-          .then((l) => ctx.registry.deployments.setLog(id, l.text))
-          .catch(() => {});
+          .then((l) => l.text, () => "")
+          .then((text) => storeLog(id, text));
       }, undefined, 0, id, replaceConfig ? manifestText : configOfNewApp(app, manifestText));
     },
 
@@ -273,6 +304,11 @@ export function createJobs(ctx: ApiContext): Jobs {
         return "canceled";
       }
       stopping.set(id, by);
+      const waiting = gating.get(id);
+      if (waiting) {
+        waiting.abort(); // still waiting for dependencies: nothing runs on the server yet
+        return "stopping";
+      }
       try {
         const r = await ctx.agents.forServer(row.server).call("deploy.cancel", { id }, { timeoutMs: 15_000 });
         if (!r.canceled) stopping.delete(id); // nothing of it is running on the server: it was between steps or already over
@@ -288,6 +324,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         ctx.registry.deployments.update(id, { status: "running", startedAt: now() });
         const agent = ctx.agents.forServer(server);
         try {
+          await awaitReady(id, app, server, manifestText, true);
           await pushConnections(ctx, server, app);
           const r = await agent.call("app.config.set", { app, manifestText, registryAuth: registryAuthFor(app, manifestText, true), logId: id }, { timeoutMs: 30 * 60_000 });
           ctx.registry.deployments.update(id, {
@@ -300,8 +337,8 @@ export function createJobs(ctx: ApiContext): Jobs {
         }
         await agent
           .call("build.log", { id, from: 0 })
-          .then((l) => ctx.registry.deployments.setLog(id, l.text))
-          .catch(() => {});
+          .then((l) => l.text, () => "")
+          .then((text) => storeLog(id, text));
       }, undefined, 0, id, manifestText);
     },
 
@@ -394,6 +431,7 @@ export function createJobs(ctx: ApiContext): Jobs {
         const agent = ctx.agents.forServer(job.server);
         let outcome = "";
         try {
+          await awaitReady(job.id, job.app, job.server, job.configText ?? job.fallbackManifest, job.configText !== undefined);
           await pushConnections(ctx, job.server, job.app);
           const sshKey = job.sshKeyId ? ctx.registry.sshKeys.privateKey(job.sshKeyId) : null;
           if (job.sshKeyId) {
@@ -428,8 +466,8 @@ export function createJobs(ctx: ApiContext): Jobs {
         // Keep the build log with the deployment so it can be read after the agent's copy is pruned.
         await agent
           .call("build.log", { id: job.id, from: 0 })
-          .then((l) => ctx.registry.deployments.setLog(job.id, l.text))
-          .catch(() => {});
+          .then((l) => l.text, () => "")
+          .then((text) => storeLog(job.id, text));
         if (job.trigger === "webhook") ctx.registry.gitLinks.markDelivery(job.app, outcome);
       }, undefined, 0, job.id, shows);
     },

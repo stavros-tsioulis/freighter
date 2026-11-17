@@ -118,8 +118,33 @@ export async function writeRefsEnvs(d: Deps, app: string, env: Record<string, Re
   for (const [service, e] of Object.entries(env)) await writeRefsEnv(d, app, service, e.secret);
 }
 
-export function render(d: Deps, app: string, manifest: Manifest, env: Record<string, ResolvedEnv>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number) {
+/**
+ * Per service, the units of the apps it depends on that run on this server (the ones it can be ordered after at boot).
+ * An app on another server is waited for when deploying, but nothing here can order against it.
+ */
+export async function dependencyUnits(d: Deps, manifest: Manifest, conn: Connections): Promise<Record<string, string[]>> {
+  const out: Record<string, string[]> = {};
+  for (const [service, def] of Object.entries(manifest.services)) {
+    const units: string[] = [];
+    for (const dep of def.dependsOn) {
+      const peer = conn.peers[dep];
+      if (!peer || conn.server === undefined || peer.server !== conn.server) continue;
+      const routed = (await readState(d, dep)).routed;
+      for (const s of peer.services) units.push(routed[s]?.unit ?? unitName({ app: dep, service: s }));
+    }
+    out[service] = units;
+  }
+  return out;
+}
+
+/** The ordering an installed unit was written with, so that re-rendering it for another reason does not make it look changed. */
+export function installedOrdering(unitText: string | undefined): string[] {
+  return (unitText ?? "").split("\n").filter((l) => l.startsWith("After=")).flatMap((l) => l.slice("After=".length).split(" ")).filter((u) => /^freighter-.*\.service$/.test(u));
+}
+
+export function render(d: Deps, app: string, manifest: Manifest, env: Record<string, ResolvedEnv>, service: string, id: string, unit: { routed: boolean }, images: Record<string, string>, containerPorts: Record<string, number>, port?: number, after: readonly string[] = []) {
   return renderUnit({
+    after: [...after],
     containerPort: containerPorts[service],
     image: images[service],
     secrets: manifest.services[service]!.secrets,
@@ -146,8 +171,9 @@ async function restoreInPlace(d: Deps, app: string, previous: string, domains: r
   const keep = new Set(Object.values(state.routed).map((r) => r.unit));
   const environment = resolveAppEnvironment(d, withVariables(manifest, await readVariables(d, app)), domains, await liveTargets(d, app, manifest), conn);
   await writeRefsEnvs(d, app, environment);
+  const after = await dependencyUnits(d, manifest, conn);
   for (const p of plannedUnits(app, manifest, previous, domains).filter((p) => !p.routed)) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, previous, p, images, containerPorts));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, previous, p, images, containerPorts, undefined, after[p.service]));
     await d.systemd.enable(p.unit);
     await d.systemd.restart(p.unit);
     keep.add(p.unit);
@@ -216,8 +242,9 @@ export async function goLive(
     return { ok: false, manifest, failures };
   };
 
+  const after = await dependencyUnits(d, manifest, conn);
   for (const p of plan) {
-    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, id, p, images, containerPorts, targets[p.service]!.port));
+    await d.systemd.installUnit(p.unit, render(d, app, manifest, environment, p.service, id, p, images, containerPorts, targets[p.service]!.port, after[p.service]));
     await d.systemd.enable(p.unit);
   }
   for (const p of plan) {

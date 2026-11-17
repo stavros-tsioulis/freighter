@@ -78,6 +78,8 @@ export const serviceSchema = z
   environment: z.record(envKey, z.string()).default({}),
   /** Names of this service's secrets. Their values are set on the server and never appear in app.yaml. */
   secrets: z.array(envKey).default([]),
+  /** Other apps of the project that must be up before this service is deployed (and, on one server, started). */
+  dependsOn: z.array(ident).default([]),
   })
   .superRefine((s, ctx) => {
     if ((s.command === undefined) === (s.image === undefined)) {
@@ -139,6 +141,10 @@ function crossCheck(m: z.infer<typeof manifestBase>, ctx: z.RefinementCtx) {
     }
   }
   for (const [name, svc] of Object.entries(m.services)) {
+    svc.dependsOn.forEach((dep, i) => {
+      if (dep === m.name) ctx.addIssue({ code: "custom", path: ["services", name, "dependsOn", i], message: `${dep} is this app: dependsOn names other apps` });
+      else if (svc.dependsOn.indexOf(dep) !== i) ctx.addIssue({ code: "custom", path: ["services", name, "dependsOn", i], message: `duplicate dependency ${dep}` });
+    });
     if (SHARED_VOLUME in (svc.volumes ?? {})) ctx.addIssue({ code: "custom", path: ["services", name, "volumes", SHARED_VOLUME], message: `"${SHARED_VOLUME}" is the app's shared directory; pick another name` });
     for (const s of svc.secrets) {
       if (s in effective(svc)) {

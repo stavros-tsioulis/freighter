@@ -83,12 +83,31 @@ Each key is the service name (an identifier, such as `web`) and becomes the unit
 | `replicas` | integer | `1` | Accepted, but only one instance runs for now, and values above 1 produce a warning. |
 | `environment` | map of `UPPER_SNAKE_CASE` to string | `{}` | Plain environment values for this service. Variables added or changed on the service's **Variables** tab are saved here, in the app's configuration. Values may contain [connections](/deploy/connections). |
 | `secrets` | list of `UPPER_SNAKE_CASE` | `[]` | Names that must have a value (set separately) before a deploy. See [secrets](/deploy/secrets). A name can't be in both `environment` and `secrets`. |
+| `dependsOn` | list of app names | `[]` | Other apps of the same [project](/deploy/connections) that must be running before this service is deployed. See [Waiting for other apps](#waiting-for-other-apps). |
 
 Set exactly one of `command` and `image` on each service. An app can mix both kinds.
 
 An `app.yaml` with `secrets:` at the top, from before they belonged to services, is refused. Move them under the services that use them. Releases that are already deployed keep working: their top-level secrets count for every service, and secrets saved for the app move to its services the next time the app is deployed or its Variables are opened. Variables an older version kept apart from the configuration are moved into it the first time the configuration is read.
 
 Durations are a number followed by `ms`, `s`, `m` or `h`, such as `500ms`, `30s`, `15m` or `1h`.
+
+### Waiting for other apps
+
+`dependsOn:` makes a deploy wait until the apps it names are ready: deployed, with every service running. A web app that needs a database app can say so, and a project deployed all at once settles in order.
+
+```yaml
+services:
+  web:
+    command: node server.js
+    dependsOn: [database]
+```
+
+- The wait happens before anything of the new release is touched, and shows in the deployment's log. It applies to deploys, Git deploys and configuration changes, not to rollbacks.
+- It gives up after 5 minutes. The deployment then fails and what is running stays as it is.
+- The apps must be in the same project as this one. An app can't depend on itself, and two apps that depend on each other are refused.
+- Deployments on one server run one at a time, so an app that is queued behind this deployment on the same server can't be waited for: the deployment fails at once and says to deploy that app first.
+- For a dependency on the same server, the service's unit is also ordered after it (`After=`), so a reboot starts them in order. That is ordering only: it doesn't wait for the other app to be healthy.
+- A first Git deploy takes its configuration from the repository, which isn't read until the build, so its `dependsOn` isn't waited for. Later deploys are.
 
 ## build
 

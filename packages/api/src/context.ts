@@ -42,6 +42,8 @@ export interface ApiContext {
   notifier?: Notifier;
   /** How a push is sent (default: the push service of the browser, through the `web-push` library; replaceable in tests). */
   pushSender?: PushSender;
+  /** How a deploy waits for the apps its services depend on (defaults: give up after 5 minutes, look every 3 seconds; tests shorten it). */
+  dependencyWait?: { timeoutMs?: number; pollMs?: number };
   now?: () => Date;
 }
 

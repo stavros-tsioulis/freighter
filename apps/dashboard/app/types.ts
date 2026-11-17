@@ -162,6 +162,7 @@ export interface AppSettings {
       restart?: "always" | "on-failure" | "no";
       environment?: Record<string, string>;
       secrets?: string[];
+      dependsOn?: string[];
     }
   >;
   /** Remote folders (SMB, NFS) the app can mount; the password is set separately and never read back. */

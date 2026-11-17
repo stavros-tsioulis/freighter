@@ -1,6 +1,6 @@
 import type { Service } from "@freighter/manifest";
 import { containerHome, containerName, containerRuntimeDir, containerRuntimeName, defaultLayout, envFile, refsEnvFile, releasePath, sharedDir, volumeDir, workingDir, type Layout } from "./layout.ts";
-import { assertIdent } from "./names.ts";
+import { assertIdent, assertUnitName } from "./names.ts";
 import type { Volume } from "@freighter/manifest";
 import { splitCommand, toExecStart } from "./exec.ts";
 
@@ -38,6 +38,8 @@ export interface RenderInput {
   secrets?: string[];
   /** Names of the attached volumes that live on another machine: the unit waits for their mounts. */
   remoteVolumes?: string[];
+  /** Units of the apps this service depends on, when they run on this server: it starts after them at boot (ordering only, not health). */
+  after?: string[];
   /** Names of environment values that hold credentials from connections: read from the app's root-only refs file, not written here. */
   refSecrets?: string[];
 }
@@ -86,6 +88,12 @@ function mountDeps(input: RenderInput, layout: Layout): string[] {
   return names.length ? [line("RequiresMountsFor", names.map((n) => volumeDir(layout, input.app, assertIdent("volume", n))).join(" "))] : [];
 }
 
+/** `After=` the units of the apps this service depends on; a unit that does not exist is ignored by systemd. */
+function orderingDeps(input: RenderInput): string[] {
+  const units = [...new Set(input.after ?? [])].sort().map((u) => assertUnitName(u));
+  return units.length ? [line("After", units.join(" "))] : [];
+}
+
 function renderImageUnit(input: RenderInput): string {
   const { app, service, def, instance } = input;
   const layout = input.layout ?? defaultLayout;
@@ -102,6 +110,7 @@ function renderImageUnit(input: RenderInput): string {
     line("StartLimitIntervalSec", 60),
     line("StartLimitBurst", 5),
     ...mountDeps(input, layout),
+    ...orderingDeps(input),
   ];
   const svc = [
     line("Type", "simple"),
@@ -161,6 +170,7 @@ export function renderUnit(input: RenderInput): string {
     line("StartLimitIntervalSec", 60),
     line("StartLimitBurst", 5),
     ...mountDeps(input, layout),
+    ...orderingDeps(input),
   ];
 
   const svc = [

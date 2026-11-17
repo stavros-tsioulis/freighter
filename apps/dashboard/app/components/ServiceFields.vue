@@ -59,6 +59,10 @@ const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid 
     <div class="flex flex-col gap-1"><label :for="`svc-mem-${id}`" class="text-sm font-medium">Memory limit</label><InputText :id="`svc-mem-${id}`" v-model="s.memory" placeholder="512M" autocomplete="off" /></div>
     <div class="flex flex-col gap-1"><label :for="`svc-cpu-${id}`" class="text-sm font-medium">CPU limit</label><InputNumber :input-id="`svc-cpu-${id}`" v-model="s.cpu" :min="0.1" :max="64" :min-fraction-digits="0" :max-fraction-digits="2" placeholder="none" fluid /></div>
   </div>
+  <div class="flex flex-col gap-1 mt-3">
+    <label :for="`svc-deps-${id}`" class="text-sm font-medium">Waits for apps <span class="text-muted-color font-normal">(deploys once they are running)</span></label>
+    <InputText :id="`svc-deps-${id}`" v-model="s.dependsOn" placeholder="database, cache" autocomplete="off" spellcheck="false" class="font-mono" />
+  </div>
   <div class="grid sm:grid-cols-3 gap-3 mt-3">
     <div class="flex flex-col gap-1"><label :for="`svc-hc-${id}`" class="text-sm font-medium">Health check path</label><InputText :id="`svc-hc-${id}`" v-model="s.healthPath" placeholder="/up" autocomplete="off" /></div>
     <div class="flex flex-col gap-1"><label :for="`svc-hct-${id}`" class="text-sm font-medium">Healthy within</label><InputText :id="`svc-hct-${id}`" v-model="s.healthTimeout" placeholder="30s" autocomplete="off" :disabled="!s.healthPath" /></div>

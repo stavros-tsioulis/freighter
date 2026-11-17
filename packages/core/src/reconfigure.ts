@@ -1,7 +1,7 @@
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { parseManifest, routingProblems, type Manifest } from "@freighter/manifest";
 import { unitName } from "@freighter/systemd";
-import { loadReleaseManifest, plannedUnits, render, resolveAppEnvironment, retire, withVariables, writeRoutes, type ResolvedEnv } from "./apply.ts";
+import { dependencyUnits, installedOrdering, loadReleaseManifest, plannedUnits, render, resolveAppEnvironment, retire, withVariables, writeRoutes, type ResolvedEnv } from "./apply.ts";
 import { readConnections } from "./connections.ts";
 import type { Deps } from "./deps.ts";
 import { noLog, type DeployLog } from "./deploylog.ts";
@@ -111,7 +111,10 @@ export async function reconfigure(
         }
       }
       const targets = () => Object.fromEntries([...slots.values()].map((s) => [s.service, { unit: s.unit, port: s.port } satisfies Target]));
-      const textOf = (env: Record<string, ResolvedEnv>, s: Slot) => render(d, app, manifest, env, s.service, s.release, { routed: s.routed }, images, containerPorts, s.port);
+      // A unit that stays as it is keeps the ordering it was written with: a dependency's instance unit changing is not a reason to restart it.
+      const fresh = await dependencyUnits(d, manifest, conn);
+      const textOf = (env: Record<string, ResolvedEnv>, s: Slot) =>
+        render(d, app, manifest, env, s.service, s.release, { routed: s.routed }, images, containerPorts, s.port, s.changed || s.isNew ? fresh[s.service] : installedOrdering(installed.get(s.unit)));
 
       // A service whose unit (or credentials) would differ is changed. A routed one that changes gets a new instance on a
       // new port, which can change what others read of it, so this repeats until nothing more moves.

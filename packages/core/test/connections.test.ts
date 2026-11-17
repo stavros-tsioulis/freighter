@@ -94,3 +94,31 @@ describe("reapply", () => {
     expect(units(h)).toContain("BILLING=https://pay.example.com");
   });
 });
+
+describe("dependsOn ordering", () => {
+  const needs = (extra = "") => `name: web
+services:
+  web:
+    command: node server.mjs
+    port: 3000
+    dependsOn: [billing, other]
+${extra}`;
+  const unitOf = (h: Awaited<ReturnType<typeof makeDeps>>) => h.unitFiles().map((u) => h.unitText(u)).join("\n");
+
+  it("starts after the units of dependencies on the same server, and ignores ones elsewhere", async () => {
+    const h = await makeDeps();
+    await writeConnections(h.deps, "web", { server: "s1", peers: { billing: peer, other: { ...peer, name: "other", server: "s2", services: ["worker"] } } });
+    await deploy(h.deps, { manifestText: needs(), source: await artifact() });
+    expect(unitOf(h)).toContain("After=freighter-billing--api.service\n");
+    expect(unitOf(h)).not.toContain("freighter-other--");
+  });
+
+  it("is not restarted by a re-resolve just because a dependency's unit moved", async () => {
+    const { reapply } = await import("../src/index.ts");
+    const h = await makeDeps();
+    await writeConnections(h.deps, "web", { server: "s1", peers: { billing: peer } });
+    await deploy(h.deps, { manifestText: needs(), source: await artifact() });
+    await writeConnections(h.deps, "web", { server: "s1", peers: { billing: { ...peer, services: ["api", "worker"] } } });
+    expect((await reapply(h.deps, "web")).changed).toBe(false);
+  });
+});

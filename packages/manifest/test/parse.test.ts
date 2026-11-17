@@ -200,3 +200,22 @@ describe("@self", () => {
     expect(parseManifest(yaml).services.web!.environment.A).toBe("@self.B");
   });
 });
+
+describe("dependsOn", () => {
+  const text = (deps: string) => `name: shop\nservices:\n  web:\n    command: x\n    dependsOn: ${deps}\n`;
+  it("lists the apps a service waits for", () => {
+    expect(parseManifest(text("[db, cache]")).services.web!.dependsOn).toEqual(["db", "cache"]);
+  });
+  it("defaults to none", () => {
+    expect(parseManifest("name: a\nservices:\n  web:\n    command: x\n").services.web!.dependsOn).toEqual([]);
+  });
+  it("cannot name the app itself", () => {
+    expect(() => parseManifest(text("[shop]"))).toThrow(/names other apps/);
+  });
+  it("cannot name an app twice", () => {
+    expect(() => parseManifest(text("[db, db]"))).toThrow(/duplicate dependency db/);
+  });
+  it("must name valid apps", () => {
+    expect(() => parseManifest(text("[Not_An_App]"))).toThrow();
+  });
+});

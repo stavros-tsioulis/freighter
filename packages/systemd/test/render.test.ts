@@ -178,3 +178,22 @@ describe("volumes", () => {
     expect(nfs).toContain("Options=vers=4.1,soft,timeo=100,retrans=2");
   });
 });
+
+describe("ordering after other apps", () => {
+  const def = parseManifest("name: shop\nservices:\n  web:\n    command: node x.js\n").services.web!;
+  const image = parseManifest("name: shop\nservices:\n  web:\n    image: nginx\n").services.web!;
+
+  it("starts after the units it is given, once each", () => {
+    const out = renderUnit({ app: "shop", service: "web", def, after: ["freighter-db--pg.service", "freighter-cache--redis--20260101.service", "freighter-db--pg.service"] });
+    expect(out).toContain("After=freighter-cache--redis--20260101.service freighter-db--pg.service\n");
+  });
+  it("does the same for an image service", () => {
+    expect(renderUnit({ app: "shop", service: "web", def: image, after: ["freighter-db--pg.service"] })).toContain("After=freighter-db--pg.service\n");
+  });
+  it("adds nothing without dependencies", () => {
+    expect(renderUnit({ app: "shop", service: "web", def, after: [] })).not.toMatch(/After=freighter-/);
+  });
+  it("refuses something that is not a Freighter unit", () => {
+    expect(() => renderUnit({ app: "shop", service: "web", def, after: ["sshd.service"] })).toThrow(/invalid unit name/);
+  });
+});
