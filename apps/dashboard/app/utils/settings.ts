@@ -22,8 +22,8 @@ export interface ServiceForm {
   env: { key: string; value: string }[];
   /** One name per line (or comma separated). */
   secrets: string;
-  /** Apps of the project this service waits for, one per line (or comma separated). */
-  dependsOn: string;
+  /** Apps of the project this service waits for. */
+  dependsOn: string[];
 }
 /** A remote folder as the form edits it: every field of both kinds, only the ones of the chosen type are sent. */
 export interface RemoteVolumeForm {
@@ -55,7 +55,7 @@ export interface SettingsForm {
   keep: number;
 }
 
-export const newService = (name = "web", kind: ServiceForm["kind"] = "command"): ServiceForm => ({ name, kind, command: "", image: "", containerPort: null, volumes: [], port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure", env: [], secrets: "", dependsOn: "" });
+export const newService = (name = "web", kind: ServiceForm["kind"] = "command"): ServiceForm => ({ name, kind, command: "", image: "", containerPort: null, volumes: [], port: null, replicas: 1, memory: "", cpu: null, healthPath: "", healthTimeout: "", restart: "on-failure", env: [], secrets: "", dependsOn: [] });
 
 export const emptyForm = (): SettingsForm => ({
   services: [newService()],
@@ -79,7 +79,7 @@ export function toSettings(f: SettingsForm): AppSettings {
     const volumes = s.volumes.filter((v) => v.name.trim() && v.path.trim());
     const env = s.env.filter((e) => e.key.trim());
     const secrets = lines(s.secrets);
-    const dependsOn = lines(s.dependsOn);
+    const dependsOn = s.dependsOn;
     services[s.name.trim()] = {
       ...(s.kind === "image"
         ? {
@@ -139,7 +139,7 @@ export function fromSettings(s: AppSettings | null | undefined): SettingsForm {
     restart: v.restart ?? "on-failure",
     env: Object.entries(v.environment ?? {}).map(([key, value]) => ({ key, value })),
     secrets: (v.secrets ?? []).join("\n"),
-    dependsOn: (v.dependsOn ?? []).join("\n"),
+    dependsOn: [...(v.dependsOn ?? [])],
   }));
   return {
     services: services.length ? services : [newService()],

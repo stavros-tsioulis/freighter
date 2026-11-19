@@ -37,10 +37,10 @@ describe("settings form", () => {
 
   it("keeps the apps a service waits for", () => {
     const f = emptyForm();
-    f.services[0] = { ...newService("web"), command: "run", dependsOn: "db, cache\n" };
+    f.services[0] = { ...newService("web"), command: "run", dependsOn: ["db", "cache"] };
     expect(toSettings(f).services.web?.dependsOn).toEqual(["db", "cache"]);
-    expect(fromSettings(toSettings(f)).services[0]?.dependsOn).toBe("db\ncache");
-    f.services[0]!.dependsOn = "";
+    expect(fromSettings(toSettings(f)).services[0]?.dependsOn).toEqual(["db", "cache"]);
+    f.services[0]!.dependsOn = [];
     expect(toSettings(f).services.web).not.toHaveProperty("dependsOn");
   });
 

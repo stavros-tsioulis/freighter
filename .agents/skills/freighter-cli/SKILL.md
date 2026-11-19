@@ -55,6 +55,8 @@ printf %s "$VALUE" | freighter secret set shop/web KEY --stdin
 freighter config diff shop -f app.yaml           # always diff before apply
 freighter config apply shop -f app.yaml
 ```
+A service can wait for other apps of its project with `dependsOn: [other-app]` in `app.yaml`: its deploy holds (up to 5 minutes, shown in the deployment log) until they are running, then fails if they aren't, leaving the old release up. If `freighter deploy` seems slow, check `freighter deployment logs <id>` for "waiting for … to be ready" and deploy the dependency first.
+
 Never pass a secret as an argument or echo it; use `--stdin` from an environment variable the user already has. Variables may reference other services (`@api.url`, `@self.KEY`, `${api.host}`); plain values only — secrets never go in `app.yaml`.
 
 **Domains** — `domain add` waits for nothing; the domain is pending until DNS exists

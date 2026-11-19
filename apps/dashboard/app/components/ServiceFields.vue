@@ -2,7 +2,7 @@
 import { isImage, type ServiceForm } from "~/utils/settings";
 
 /** The fields of one service: what it runs, port, limits, health check, volumes, environment and secrets. */
-defineProps<{
+const props = defineProps<{
   /** Keeps element ids unique when several services are on screen. */
   id: string;
   appName: string;
@@ -17,6 +17,13 @@ defineProps<{
   lockName?: boolean;
 }>();
 const s = defineModel<ServiceForm>({ required: true });
+/** The other apps of this app's project (what a dependency can be), plus any already chosen so none is silently dropped. */
+const { data: apps } = useApps();
+const projectId = computed(() => apps.value?.find((a) => a.name === props.appName)?.projectId ?? null);
+const dependencyChoices = computed(() => {
+  const inProject = projectId.value ? (apps.value ?? []).filter((a) => a.projectId === projectId.value && a.name !== props.appName).map((a) => a.name) : [];
+  return [...new Set([...inProject, ...s.value.dependsOn])].sort();
+});
 const restarts = ["on-failure", "always", "no"];
 const kinds = [{ label: "Command", value: "command" }, { label: "Container image", value: "image" }];
 const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid image reference, e.g. ghcr.io/acme/shop:1.4" : "");
@@ -61,7 +68,7 @@ const imageError = (ref: string) => (ref.trim() && !isImage(ref) ? "Not a valid 
   </div>
   <div class="flex flex-col gap-1 mt-3">
     <label :for="`svc-deps-${id}`" class="text-sm font-medium">Waits for apps <span class="text-muted-color font-normal">(deploys once they are running)</span></label>
-    <InputText :id="`svc-deps-${id}`" v-model="s.dependsOn" placeholder="database, cache" autocomplete="off" spellcheck="false" class="font-mono" />
+    <MultiSelect :input-id="`svc-deps-${id}`" v-model="s.dependsOn" :options="dependencyChoices" display="chip" filter :show-toggle-all="false" :placeholder="dependencyChoices.length ? 'None' : 'No other apps in this project'" :disabled="!dependencyChoices.length" fluid />
   </div>
   <div class="grid sm:grid-cols-3 gap-3 mt-3">
     <div class="flex flex-col gap-1"><label :for="`svc-hc-${id}`" class="text-sm font-medium">Health check path</label><InputText :id="`svc-hc-${id}`" v-model="s.healthPath" placeholder="/up" autocomplete="off" /></div>
